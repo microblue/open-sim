@@ -1,0 +1,36 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/Flight.gd" id="1"]
+[ext_resource type="Script" path="res://ui/FlightHUD.gd" id="2"]
+[ext_resource type="Script" path="res://camera/CameraRig.gd" id="3"]
+
+[node name="Flight" type="Node3D"]
+script = ExtResource("1")
+
+[node name="Transmitter" type="RCInputNode" parent="."]
+
+[node name="Aircraft" type="RCSimulationNode" parent="."]
+aircraft_definition = "Data/Aircraft/Trainer1500.json"
+physics_rate_hz = 240
+spawn_mode = 0
+spawn_altitude_m = 60.0
+spawn_offset = Vector3(-16, 0, 8)
+spawn_heading_deg = 0.0
+input_path = NodePath("../Transmitter")
+wind_speed_mps = 2.5
+wind_direction_deg = 200.0
+gust_amplitude_mps = 1.5
+turbulence_mps = 0.6
+wind_seed = 1
+
+[node name="Field" type="Node3D" parent="."]
+
+[node name="CameraRig" type="Node3D" parent="."]
+script = ExtResource("3")
+simulation_path = NodePath("../Aircraft")
+pilot_eye_height = 1.65
+
+[node name="FlightHUD" type="CanvasLayer" parent="."]
+script = ExtResource("2")
+simulation_path = NodePath("../Aircraft")
+input_path = NodePath("../Transmitter")

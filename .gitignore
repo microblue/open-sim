@@ -1,0 +1,43 @@
+# --- Godot ------------------------------------------------------------------
+# The editor's import cache. Regenerated on open.
+Godot/.godot/
+# Compiled GDExtension binaries. Built from source by CMake; see README.
+Godot/bin/
+# Godot editor logs and per-user settings.
+Godot/logs/
+export_presets.cfg
+
+# --- Third party ------------------------------------------------------------
+# godot-cpp is fetched at a pinned commit by scripts/bootstrap.sh rather than
+# vendored, so the repository stays small.
+ThirdParty/godot-cpp/
+
+# --- CMake ------------------------------------------------------------------
+build/
+build-godot/
+cmake-build-*/
+compile_commands.json
+CMakeCache.txt
+CMakeFiles/
+CTestTestfile.cmake
+Testing/
+
+# --- Source art that should not be committed --------------------------------
+# Godot-imported assets (.glb, .png, .tres) DO belong in the repo; their bulky
+# authoring files do not.
+Godot/**/*.blend1
+Godot/**/*.psd
+Godot/**/*.tif
+
+# --- Editors and OS ---------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# --- Local ------------------------------------------------------------------
+.env
+*.log
+Godot/shots/

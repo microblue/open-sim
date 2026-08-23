@@ -1,0 +1,43 @@
+{
+  // OpenRC Simulator - built-in transmitter profile.
+  //
+  // EdgeTX / OpenTX radios in USB Joystick (HID) mode, model set up AETR.
+  // Covers RadioMaster (Boxer, TX16S, TX12, Zorro, Pocket), Jumper (T-Pro,
+  // T20), FrSky (X9D, Taranis, X-Lite) - the RF module makes no difference, an
+  // ELRS Boxer and a stock Boxer present the same USB device.
+  //
+  // Axis assignment is fixed by EdgeTX and was confirmed against a RadioMaster
+  // Boxer (USB 1209:4f54): the radio publishes seven evdev axes in ascending
+  // ABS code order, so channel N lands on axis N-1.
+  //
+  //   ax0  ABS_X         ch1  aileron    self-centring
+  //   ax1  ABS_Y         ch2  elevator   self-centring
+  //   ax2  ABS_Z         ch3  throttle   rests at raw -1 (closed)
+  //   ax3  ABS_RX        ch4  rudder     self-centring
+  //   ax4  ABS_RY        ch5  switch
+  //   ax5  ABS_RZ        ch6  switch
+  //   ax6  ABS_THROTTLE  ch7  switch
+  //
+  // Raw range is +/-1 by construction: the kernel scales each axis onto its
+  // declared extremes, and EdgeTX declares the full channel range, which a
+  // gimbal calibrated in the radio does reach.
+  //
+  // Expo and dual rate are deliberately ZERO/unity here. EdgeTX applies the
+  // curves you set on the radio before the value ever leaves the USB port, so
+  // shaping it again in the simulator would double-apply it and the sim would
+  // stop feeling like your transmitter. Shape it on the radio, as you would for
+  // the real aircraft.
+  //
+  // Deadzone is small: hall-effect gimbals are clean, and a wide deadzone
+  // teaches a stick feel the real aircraft will not have.
+
+  "format_version": 1,
+  "channels": {
+    "aileron":  { "axis": 0, "raw_min": -1.0, "raw_center": 0.0, "raw_max": 1.0, "deadzone": 0.015, "reversed": false, "expo": 0.0, "dual_rate": 1.0, "trim": 0.0, "raw_mode": false },
+    "elevator": { "axis": 1, "raw_min": -1.0, "raw_center": 0.0, "raw_max": 1.0, "deadzone": 0.015, "reversed": true,  "expo": 0.0, "dual_rate": 1.0, "trim": 0.0, "raw_mode": false },
+    "throttle": { "axis": 2, "raw_min": -1.0, "raw_center": 0.0, "raw_max": 1.0, "deadzone": 0.0,   "reversed": false, "expo": 0.0, "dual_rate": 1.0, "trim": 0.0, "raw_mode": false },
+    "rudder":   { "axis": 3, "raw_min": -1.0, "raw_center": 0.0, "raw_max": 1.0, "deadzone": 0.015, "reversed": false, "expo": 0.0, "dual_rate": 1.0, "trim": 0.0, "raw_mode": false },
+    "flap":     { "axis": 4, "raw_min": -1.0, "raw_center": 0.0, "raw_max": 1.0, "deadzone": 0.05,  "reversed": false, "expo": 0.0, "dual_rate": 1.0, "trim": 0.0, "raw_mode": false },
+    "aux1":     { "axis": 5, "raw_min": -1.0, "raw_center": 0.0, "raw_max": 1.0, "deadzone": 0.05,  "reversed": false, "expo": 0.0, "dual_rate": 1.0, "trim": 0.0, "raw_mode": false }
+  }
+}
