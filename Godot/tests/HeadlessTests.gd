@@ -17,12 +17,15 @@ extends SceneTree
 
 const SPAWN_ALTITUDE: float = 200.0
 const RUN_SECONDS: float = 15.0
+const ModelScript := preload("res://aircraft/Trainer1500/AircraftModel.gd")
 
 var _checks: int = 0
 var _failures: int = 0
 var _sim: RCSimulationNode
 var _input: RCInputNode
 var _started: bool = false
+var _surface_model: Node3D
+var _surface_start_s: float = -1.0
 var _start_altitude: float = 0.0
 var _min_airspeed: float = 1e30
 var _max_airspeed: float = 0.0
@@ -79,6 +82,7 @@ func _start() -> void:
 	_test_input_without_a_device()
 	_test_wind()
 	_test_reset()
+	_test_audio()
 
 	_sim.wind_speed_mps = 0.0
 	_sim.turbulence_mps = 0.0
@@ -86,6 +90,59 @@ func _start() -> void:
 	_sim.reset_state()
 	_start_altitude = _sim.get_altitude_m()
 	print("\n  free glide, elevator neutral, still air")
+
+
+## The sound bank is generated, not shipped, so nothing catches a silent or
+## clipped buffer except a check like this one. Silence in particular is easy to
+## produce and impossible to notice until someone puts headphones on.
+func _test_audio() -> void:
+	print("  procedurally generated audio")
+	var Bank := preload("res://audio/SoundBank.gd")
+
+	var engine: AudioStreamWAV = Bank.engine()
+	_check(engine.mix_rate == Bank.MIX_RATE, "engine loop mix rate")
+	_check(engine.format == AudioStreamWAV.FORMAT_16_BITS, "engine loop is 16 bit")
+	_check(engine.loop_mode == AudioStreamWAV.LOOP_FORWARD, "engine loop loops")
+	_check(not engine.stereo, "engine loop is mono, so it can be positioned")
+
+	# A whole number of cycles of the fundamental, or the loop clicks every time
+	# it wraps - which at these lengths is several times a second.
+	var frames: int = engine.data.size() / 2
+	var cycles: float = float(frames) * Bank.REFERENCE_HZ / float(Bank.MIX_RATE)
+	_check_near(cycles - roundf(cycles), 0.0, 1e-6,
+		"engine loop is a whole number of cycles (%.4f)" % cycles)
+
+	var engine_stats: Dictionary = _pcm_stats(engine.data)
+	_check(engine_stats["peak"] > 0.25, "engine loop is not silent")
+	_check(engine_stats["peak"] < 0.999, "engine loop leaves headroom")
+	_check(engine_stats["rms"] > 0.05, "engine loop carries real level")
+
+	for named in [["airflow", Bank.airflow()], ["ground roll", Bank.ground_roll()]]:
+		var stream: AudioStreamWAV = named[1]
+		var stats: Dictionary = _pcm_stats(stream.data)
+		_check(stream.loop_mode == AudioStreamWAV.LOOP_FORWARD,
+			"%s loops" % named[0])
+		_check(stats["peak"] > 0.25 and stats["peak"] < 0.999,
+			"%s is audible and unclipped" % named[0])
+
+	var impact: AudioStreamWAV = Bank.impact()
+	_check(impact.loop_mode == AudioStreamWAV.LOOP_DISABLED, "the crash does not loop")
+	# It has to decay, or a crash leaves a tone hanging over the field.
+	var impact_frames: int = impact.data.size() / 2
+	var head: float = absf(impact.data.decode_s16(int(impact_frames * 0.05) * 2) / 32768.0)
+	var tail: float = absf(impact.data.decode_s16(int(impact_frames * 0.95) * 2) / 32768.0)
+	_check(head > tail * 4.0, "the crash decays (%.3f -> %.3f)" % [head, tail])
+
+
+func _pcm_stats(data: PackedByteArray) -> Dictionary:
+	var frames: int = data.size() / 2
+	var peak: float = 0.0
+	var sum_squares: float = 0.0
+	for i in frames:
+		var value: float = data.decode_s16(i * 2) / 32768.0
+		peak = maxf(peak, absf(value))
+		sum_squares += value * value
+	return {"peak": peak, "rms": sqrt(sum_squares / maxf(float(frames), 1.0))}
 
 
 func _test_aircraft_definition() -> void:
@@ -163,11 +220,19 @@ func _process(_delta: float) -> bool:
 		_min_airspeed = minf(_min_airspeed, airspeed)
 		_max_airspeed = maxf(_max_airspeed, airspeed)
 
+	if _surface_start_s >= 0.0:
+		# Half a second of held aileron: long enough for the roll to establish,
+		# short enough that the aircraft has not rolled past ninety degrees.
+		if _sim.get_simulated_time_s() - _surface_start_s < 0.5:
+			return false
+		_finish_control_surfaces()
+		return true
+
 	if _sim.get_simulated_time_s() < RUN_SECONDS:
 		return false
 
 	_finish()
-	return true
+	return false
 
 
 func _finish() -> void:
@@ -230,7 +295,86 @@ func _finish() -> void:
 
 	print("  steps: %d  dropped: %d  sim time: %.3f s"
 		% [_sim.get_total_steps(), _sim.get_dropped_steps(), _sim.get_simulated_time_s()])
+
+	_begin_control_surface_phase()
+
+
+## The visible control surfaces must move the way the flight model deflected
+## them. A wrong hinge sign is invisible to every physics test - the aircraft
+## still flies correctly, it just shows the pilot the opposite of what it is
+## doing - so the two are pinned together: command a right roll, then assert
+## both that the aircraft rolls right and that the right aileron came up.
+##
+## It runs as a second phase rather than inline because the simulation is
+## stepped by the scene tree, so the aircraft needs real frames to respond.
+func _begin_control_surface_phase() -> void:
+	print("\n  control surfaces follow the flight model")
+
+	_surface_model = ModelScript.new()
+	_surface_model.name = "SurfaceModel"
+	_surface_model.simulation_path = NodePath("..")
+	_sim.add_child(_surface_model)
+
+	_sim.reset_state()
+	_sim.set_manual_channel(RCInputNode.CHANNEL_AILERON, 1.0)
+	_surface_start_s = _sim.get_simulated_time_s()
+
+
+func _finish_control_surfaces() -> void:
+	var right: Node3D = _surface_model.get_node_or_null("hinge_wing_right_4_tip")
+	var left: Node3D = _surface_model.get_node_or_null("hinge_wing_left_4_tip")
+	_check(right != null and left != null, "aileron hinges exist as separate nodes")
+
+	if right != null and left != null:
+		_check(absf(right.rotation.x) > deg_to_rad(2.0),
+			"the aileron deflected (%.1f deg)" % rad_to_deg(right.rotation.x))
+		_check(signf(right.rotation.x) != signf(left.rotation.x),
+			"the ailerons deflect in opposite directions")
+
+		# Trailing edge of each surface in world space. A right roll puts the
+		# right aileron up and the left one down.
+		var index: int = _section_index("wing_right_4_tip")
+		var chord: float = _sim.get_section_chord_m(index) \
+			* _sim.get_section_control_chord_fraction(index)
+		# Measured in the aircraft's own frame, not the world's. By this point it
+		# is rolling, and a rolled attitude moves the wing tips far more than an
+		# aileron ever does - in world space the attitude would swamp the very
+		# thing being measured.
+		var right_edge: Vector3 = right.transform * Vector3(0.0, 0.0, chord)
+		var left_edge: Vector3 = left.transform * Vector3(0.0, 0.0, chord)
+		print("       trailing edge above hinge, body frame:  right %+.4f m   left %+.4f m"
+			% [right_edge.y - right.position.y, left_edge.y - left.position.y])
+		_check(right_edge.y > left_edge.y,
+			"right aileron up, left aileron down for a right roll command")
+
+	# And the aircraft must be rolling the way the surfaces say it is.
+	# get_attitude_degrees().x is roll, the same component the glide test reports.
+	var roll: float = _sim.get_attitude_degrees().x
+	var rates: Vector3 = _sim.get_angular_velocity_degrees()
+	print("       roll %+.1f deg   body rates %+.1f %+.1f %+.1f deg/s"
+		% [roll, rates.x, rates.y, rates.z])
+	_check(roll > 5.0, "the aircraft has rolled right")
+
+	# Every surface the definition declares must exist in the model, or a pilot
+	# would be watching an aircraft with a missing control.
+	var hinges: int = 0
+	for child in _surface_model.get_children():
+		if str(child.name).begins_with("hinge_"):
+			hinges += 1
+	# Four aileron panels (the ailerons span the outer two sections of each
+	# wing), two elevator halves and the rudder.
+	_check(hinges == 7, "seven hinged surfaces are built from the definition")
+
+	_sim.clear_manual_channels()
+
 	print("\n%d checks, %d failed" % [_checks, _failures])
 	if _failures == 0:
 		print("in-engine tests passed")
 	quit(1 if _failures > 0 else 0)
+
+
+func _section_index(section_name: String) -> int:
+	for i in _sim.get_section_count():
+		if _sim.get_section_name(i) == section_name:
+			return i
+	return 0

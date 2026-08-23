@@ -55,6 +55,10 @@ public:
     /** Re-read the definition and rebuild the flight model in place, keeping
      *  the current position and velocity. This is the tuning loop: edit the
      *  JSON, press a key, feel the difference. */
+    /** Locate a file under Data/, whether running from the repository or from
+     *  an installed build. See the implementation for the two layouts. */
+    godot::String resolve_data_path(const godot::String& relative) const;
+
     bool reload_aircraft();
 
     bool is_aircraft_loaded() const { return AircraftLoaded; }
@@ -186,6 +190,18 @@ public:
     // aerodynamics does not think it is.
 
     double get_section_span_m(int index) const;
+
+    /** Control surface geometry and live deflection, so the visible model can
+     *  hinge exactly what the flight model deflected. */
+    /** Drive the controls directly when no transmitter node is wired up - the
+     *  in-engine tests, a demo, a replay. Ignored while an input node is set. */
+    void set_manual_channel(int channel, double value);
+    void clear_manual_channels();
+
+    bool   get_section_has_control(int index) const;
+    double get_section_control_chord_fraction(int index) const;
+    double get_section_control_span_fraction(int index) const;
+    double get_section_control_deflection_deg(int index) const;
     double get_section_chord_m(int index) const;
     double get_section_incidence_deg(int index) const;
     double get_section_dihedral_deg(int index) const;
@@ -222,6 +238,7 @@ private:
     rc::FlatGround      Ground{0.0};
     rc::CrashResult     Crash;
     rc::ChannelValues   Channels;
+    rc::ChannelValues   ManualChannels;
     rc::AircraftForces  LastForces;
 
     godot::String AircraftPath = "Data/Aircraft/Trainer1500.json";

@@ -1,9 +1,13 @@
 #include "RCSimulationNode.h"
 
+#include <algorithm>
+
 #include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/core/class_db.hpp>
 
+#include "../Bridge/RCDataPaths.h"
 #include "../Bridge/RCGodotConversion.h"
 #include "../Input/RCInputNode.h"
 #include "RCPhysics/Aircraft/AircraftLoader.h"
@@ -53,7 +57,11 @@ void RCSimulationNode::_process(double deltaSeconds)
     }
     else
     {
-        Channels = rc::ChannelValues::Neutral();
+        // No transmitter node wired up. Manual channels take over, which is how
+        // the in-engine tests fly the aircraft and how a demo or a replay would
+        // drive it. They default to neutral, so the absence of both an input
+        // node and a manual command still means sticks centred, motor stopped.
+        Channels = ManualChannels;
     }
 
     Clock.AddFrameTime(deltaSeconds);
@@ -128,19 +136,12 @@ rc::PropulsionOutput RCSimulationNode::StepPropulsion(rc::Real dt)
 
 String RCSimulationNode::ResolveAircraftPath() const
 {
-    if (AircraftPath.begins_with("res://") || AircraftPath.begins_with("user://") ||
-        AircraftPath.begins_with("/"))
-    {
-        return AircraftPath;
-    }
-    // A bare relative path lives in the repository, one level above the Godot
-    // project, so that Data/ is the single source of truth shared with the
-    // offline validation suite.
-    ProjectSettings* settings = ProjectSettings::get_singleton();
-    const String projectRoot = (settings != nullptr)
-                             ? settings->globalize_path("res://")
-                             : String("./");
-    return projectRoot + String("../") + AircraftPath;
+    return openrc::ResolveDataPath(AircraftPath);
+}
+
+String RCSimulationNode::resolve_data_path(const String& relative) const
+{
+    return openrc::ResolveDataPath(relative);
 }
 
 bool RCSimulationNode::reload_aircraft()
@@ -272,6 +273,21 @@ void RCSimulationNode::ApplyEnvironment()
     // aircraft rather than merely displace it.
     Wind.SetTurbulence(TurbulenceIntensity,
                        AircraftLoaded ? rc::Max(Definition.WingSpan * 3.0, 2.0) : 5.0);
+}
+
+void RCSimulationNode::set_manual_channel(int channel, double value)
+{
+    if (channel < 0 || channel >= static_cast<int>(rc::kChannelCount)) { return; }
+    const rc::RCChannel which = static_cast<rc::RCChannel>(channel);
+    // Clamped to each channel's own range so a test cannot command a deflection
+    // the flight model would never see from a transmitter.
+    const double low = rc::IsBipolar(which) ? -1.0 : 0.0;
+    ManualChannels.Set(which, std::min(std::max(value, low), 1.0));
+}
+
+void RCSimulationNode::clear_manual_channels()
+{
+    ManualChannels = rc::ChannelValues::Neutral();
 }
 
 RCInputNode* RCSimulationNode::ResolveInput()
@@ -491,6 +507,36 @@ double RCSimulationNode::get_section_span_m(int index) const
     return Definition.Surfaces[static_cast<size_t>(index)].Span;
 }
 
+// ------------------------------------------------------- control surfaces --
+// The visible model hinges its surfaces from these, so what the pilot watches
+// move is the same deflection the flight model integrated - not an animation
+// driven separately off the stick.
+
+bool RCSimulationNode::get_section_has_control(int index) const
+{
+    if (!AircraftLoaded || !HasSurface(Definition, index)) { return false; }
+    return Definition.Surfaces[static_cast<size_t>(index)].HasControl;
+}
+
+double RCSimulationNode::get_section_control_chord_fraction(int index) const
+{
+    if (!get_section_has_control(index)) { return 0.0; }
+    return Definition.Surfaces[static_cast<size_t>(index)].Control.ChordFraction;
+}
+
+double RCSimulationNode::get_section_control_span_fraction(int index) const
+{
+    if (!get_section_has_control(index)) { return 0.0; }
+    return Definition.Surfaces[static_cast<size_t>(index)].Control.SpanFraction;
+}
+
+double RCSimulationNode::get_section_control_deflection_deg(int index) const
+{
+    if (!IsValidSection(index)) { return 0.0; }
+    // Positive is trailing edge down, matching the flight model's convention.
+    return rc::units::ToDegrees(LastForces.Sections[static_cast<size_t>(index)].Deflection);
+}
+
 double RCSimulationNode::get_section_chord_m(int index) const
 {
     if (!AircraftLoaded || !HasSurface(Definition, index)) { return 0.0; }
@@ -557,6 +603,7 @@ void RCSimulationNode::_bind_methods()
     OPENRC_BIND(get_aircraft_definition);
     ADD_PROPERTY(PropertyInfo(Variant::STRING, "aircraft_definition"),
                  "set_aircraft_definition", "get_aircraft_definition");
+    OPENRC_BIND1(resolve_data_path, "relative");
     OPENRC_BIND(reload_aircraft);
     OPENRC_BIND(is_aircraft_loaded);
     OPENRC_BIND(get_aircraft_name);
@@ -665,6 +712,9 @@ void RCSimulationNode::_bind_methods()
     OPENRC_BIND(get_total_steps);
     OPENRC_BIND(get_dropped_steps);
     OPENRC_BIND(get_channels);
+    ClassDB::bind_method(D_METHOD("set_manual_channel", "channel", "value"),
+                         &RCSimulationNode::set_manual_channel);
+    OPENRC_BIND(clear_manual_channels);
 
     OPENRC_BIND(get_section_count);
     OPENRC_BIND1(get_section_name, "index");
@@ -674,6 +724,10 @@ void RCSimulationNode::_bind_methods()
     OPENRC_BIND1(get_section_position, "index");
     OPENRC_BIND1(get_section_lift_direction, "index");
     OPENRC_BIND1(get_section_span_m, "index");
+    OPENRC_BIND1(get_section_has_control, "index");
+    OPENRC_BIND1(get_section_control_chord_fraction, "index");
+    OPENRC_BIND1(get_section_control_span_fraction, "index");
+    OPENRC_BIND1(get_section_control_deflection_deg, "index");
     OPENRC_BIND1(get_section_chord_m, "index");
     OPENRC_BIND1(get_section_incidence_deg, "index");
     OPENRC_BIND1(get_section_dihedral_deg, "index");

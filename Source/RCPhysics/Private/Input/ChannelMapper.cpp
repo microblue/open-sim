@@ -119,7 +119,7 @@ std::string ChannelMapper::ToJson() const
 {
     std::ostringstream out;
     out.precision(9);
-    out << "{\n  \"format_version\": 1,\n  \"channels\": {";
+    out << "{\n  \"format_version\": " << kProfileFormatVersion << ",\n  \"channels\": {";
 
     for (size_t i = 0; i < kChannelCount; ++i)
     {
@@ -149,6 +149,25 @@ bool ChannelMapper::FromJson(const std::string& text, std::string* outError)
     if (!result.Success)
     {
         if (outError) { *outError = result.Describe(); }
+        return false;
+    }
+
+    // Version 1 profiles were captured while Godot was still applying an SDL
+    // gamepad mapping to the transmitter. That mapping renumbers axes and
+    // rescales some of them to 0..1, so a version 1 file binds channels to axes
+    // that now mean something entirely different - a throttle bound to what is
+    // really a three-position switch, for instance. Silently loading one puts
+    // the aircraft in the air under controls the pilot is not holding, so it is
+    // refused and the caller falls back to a built-in profile or the wizard.
+    const int version = static_cast<int>(root.GetNumber("format_version", 1.0));
+    if (version < kProfileFormatVersion)
+    {
+        if (outError)
+        {
+            *outError = "profile format version " + std::to_string(version) +
+                        " predates the raw-axis input path and cannot be "
+                        "trusted; recalibrate with the wizard";
+        }
         return false;
     }
 

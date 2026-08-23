@@ -1,5 +1,7 @@
 #include "RCInputNode.h"
 
+#include "../Bridge/RCDataPaths.h"
+
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/input.hpp>
 #include <godot_cpp/core/class_db.hpp>
@@ -145,6 +147,11 @@ String RCInputNode::get_device_name() const
 int RCInputNode::get_device_id() const { return ActiveDeviceId; }
 
 bool RCInputNode::is_throttle_armed() const { return ThrottleArming_.IsArmed(); }
+
+String RCInputNode::resolve_data_path(const String& relative) const
+{
+    return openrc::ResolveDataPath(relative);
+}
 int RCInputNode::get_axis_count() const { return static_cast<int>(RawAxes.AxisCount); }
 
 double RCInputNode::get_raw_axis(int axisIndex) const
@@ -353,6 +360,7 @@ void RCInputNode::_bind_methods()
 {
     ClassDB::bind_method(D_METHOD("is_connected"), &RCInputNode::is_connected);
     ClassDB::bind_method(D_METHOD("is_throttle_armed"), &RCInputNode::is_throttle_armed);
+    ClassDB::bind_method(D_METHOD("resolve_data_path", "relative"), &RCInputNode::resolve_data_path);
     ClassDB::bind_method(D_METHOD("get_device_name"), &RCInputNode::get_device_name);
     ClassDB::bind_method(D_METHOD("get_device_id"), &RCInputNode::get_device_id);
     ClassDB::bind_method(D_METHOD("get_axis_count"), &RCInputNode::get_axis_count);

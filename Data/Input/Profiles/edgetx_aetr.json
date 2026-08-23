@@ -31,7 +31,7 @@
   // Deadzone is small: hall-effect gimbals are clean, and a wide deadzone
   // teaches a stick feel the real aircraft will not have.
 
-  "format_version": 1,
+  "format_version": 2,
   "channels": {
     "aileron":  { "axis": 0, "raw_min": -1.0, "raw_center": 0.0, "raw_max": 1.0, "deadzone": 0.015, "reversed": false, "expo": 0.0, "dual_rate": 1.0, "trim": 0.0, "raw_mode": false },
     "elevator": { "axis": 1, "raw_min": -1.0, "raw_center": 0.0, "raw_max": 1.0, "deadzone": 0.015, "reversed": true,  "expo": 0.0, "dual_rate": 1.0, "trim": 0.0, "raw_mode": false },

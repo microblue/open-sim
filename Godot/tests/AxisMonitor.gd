@@ -118,4 +118,4 @@ func _finalize() -> void:
 
 
 func _repo_path(relative: String) -> String:
-	return ProjectSettings.globalize_path("res://").path_join("../").path_join(relative)
+	return _transmitter.resolve_data_path(relative)

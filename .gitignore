@@ -5,7 +5,8 @@ Godot/.godot/
 Godot/bin/
 # Godot editor logs and per-user settings.
 Godot/logs/
-export_presets.cfg
+# export_presets.cfg IS committed: it is how `opensim` is built reproducibly.
+# It holds no credentials - the one remote-deploy field is off.
 
 # --- Third party ------------------------------------------------------------
 # godot-cpp is fetched at a pinned commit by scripts/bootstrap.sh rather than
@@ -15,6 +16,7 @@ ThirdParty/godot-cpp/
 # --- CMake ------------------------------------------------------------------
 build/
 build-godot/
+build-godot-release/
 cmake-build-*/
 compile_commands.json
 CMakeCache.txt
@@ -36,6 +38,9 @@ Godot/**/*.tif
 *~
 .DS_Store
 Thumbs.db
+
+# Packaged application, produced by scripts/package.sh.
+dist/
 
 # --- Local ------------------------------------------------------------------
 .env

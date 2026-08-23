@@ -68,6 +68,9 @@ public:
     bool is_fully_bound() const;
     bool is_throttle_armed() const;
 
+    /** Locate a file under Data/. See Bridge/RCDataPaths.h. */
+    godot::String resolve_data_path(const godot::String& relative) const;
+
     // ------------------------------------------------- calibration wizard ---
 
     /** Start collecting samples. `centre` selects whether the samples describe

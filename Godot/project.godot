@@ -16,6 +16,14 @@ run/main_scene="res://scenes/Flight.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 
 [debug]
+# An exported release build does not write print() to stdout, so without this a
+# pilot troubleshooting a transmitter has nothing to send us. The log lands in
+# user://logs/ - on Linux, ~/.local/share/godot/app_userdata/OpenRC Simulator/logs/.
+file_logging/enable_file_logging=true
+file_logging/enable_file_logging.pc=true
+file_logging/log_path="user://logs/opensim.log"
+file_logging/max_log_files=5
+
 
 gdscript/warnings/untyped_declaration=1
 

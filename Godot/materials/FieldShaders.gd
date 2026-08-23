@@ -22,6 +22,117 @@ extends RefCounted
 
 ## Grass. Vertex displacement driven by a wind vector and world position, so
 ## the whole field ripples in the same direction the aircraft is being pushed.
+## Sky. A physical-looking gradient with a drifting cloud deck on top.
+##
+## Godot's PhysicalSkyMaterial gives a good clear-day gradient and nothing else,
+## and a cloudless sky is most of why a rendered field reads as a diagram. It
+## also costs the pilot something real: clouds are a depth cue and a wind cue,
+## and on a hazy day they are the only thing that makes the top half of the
+## frame anything other than flat colour.
+##
+## The deck is a flat plane at CLOUD_HEIGHT intersected with the view ray, which
+## is enough at these viewing angles - the pilot is looking up at a shallow
+## slant, never straight down through the layer. It drifts with the wind, so the
+## sky agrees with the grass and the windsock about which way the air is moving.
+static func sky_shader() -> Shader:
+	var shader := Shader.new()
+	shader.code = """
+shader_type sky;
+
+uniform vec3 zenith_colour : source_color = vec3(0.16, 0.33, 0.66);
+uniform vec3 horizon_colour : source_color = vec3(0.62, 0.72, 0.86);
+uniform vec3 ground_colour : source_color = vec3(0.26, 0.29, 0.22);
+uniform vec3 cloud_lit : source_color = vec3(1.0, 0.98, 0.95);
+uniform vec3 cloud_shadow : source_color = vec3(0.52, 0.56, 0.64);
+
+uniform float cloud_cover = 0.42;
+uniform float cloud_sharpness = 2.6;
+uniform vec3 wind_vector = vec3(0.0, 0.0, 0.0);
+uniform float cloud_height = 900.0;
+uniform float cloud_scale = 0.00042;
+
+float hash(vec2 p) {
+	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+float value_noise(vec2 p) {
+	vec2 cell = floor(p);
+	vec2 f = fract(p);
+	// Smoothstep interpolation: linear interpolation leaves visible cell edges
+	// across a sky, which read as creases rather than cloud.
+	f = f * f * (3.0 - 2.0 * f);
+	float a = hash(cell);
+	float b = hash(cell + vec2(1.0, 0.0));
+	float c = hash(cell + vec2(0.0, 1.0));
+	float d = hash(cell + vec2(1.0, 1.0));
+	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float fbm(vec2 p, int octaves) {
+	float total = 0.0;
+	float amplitude = 0.5;
+	float normalisation = 0.0;
+	for (int i = 0; i < octaves; i++) {
+		total += value_noise(p) * amplitude;
+		normalisation += amplitude;
+		p *= 2.03;
+		amplitude *= 0.5;
+	}
+	return total / normalisation;
+}
+
+void sky() {
+	vec3 dir = EYEDIR;
+
+	// --- the gradient ---------------------------------------------------
+	float up = clamp(dir.y, -1.0, 1.0);
+	vec3 base = mix(horizon_colour, zenith_colour, pow(clamp(up, 0.0, 1.0), 0.55));
+	// Below the horizon the sky still lights the scene, so it fades to ground
+	// rather than going black - which would suck the light out of the ambient.
+	base = mix(base, ground_colour, clamp(-up * 6.0, 0.0, 1.0));
+
+	// --- the sun --------------------------------------------------------
+	float sun_dot = clamp(dot(dir, LIGHT0_DIRECTION), -1.0, 1.0);
+	// A broad forward-scattering halo, then the disc itself.
+	base += LIGHT0_COLOR * pow(max(sun_dot, 0.0), 8.0) * 0.28;
+	base += LIGHT0_COLOR * smoothstep(0.9994, 0.9997, sun_dot) * LIGHT0_ENERGY * 4.0;
+
+	// --- the cloud deck --------------------------------------------------
+	if (up > 0.012) {
+		float distance_to_deck = cloud_height / up;
+		vec2 sample_point = dir.xz * distance_to_deck * cloud_scale;
+		// The deck drifts downwind. Scaled well down from the true wind speed:
+		// cloud a kilometre up moving at the speed of the grass would tear
+		// across the frame.
+		sample_point += vec2(wind_vector.x, wind_vector.z) * TIME * cloud_scale * 9.0;
+
+		// The radiance cubemap only needs the shape, not the detail, and it is
+		// regenerated often enough that the octaves show up in the frame time.
+		int octaves = AT_CUBEMAP_PASS ? 3 : 5;
+		float density = fbm(sample_point, octaves);
+		// Cover raises the whole field; sharpness decides whether it is a soft
+		// overcast or separate cumulus with clear sky between.
+		density = clamp((density - (1.0 - cloud_cover)) * cloud_sharpness, 0.0, 1.0);
+
+		// Lit from the sun side. Sampling the field again a short way towards
+		// the sun approximates self-shadowing for the cost of one more fbm.
+		vec2 towards_sun = normalize(LIGHT0_DIRECTION.xz + vec2(1e-4)) * 0.25;
+		float lit = fbm(sample_point + towards_sun, 3);
+		vec3 cloud = mix(cloud_shadow, cloud_lit, clamp(lit * 1.5, 0.0, 1.0));
+
+		// Fade the deck out towards the horizon: at a grazing angle the ray
+		// travels far enough through haze that the cloud is lost in it, and
+		// without this the deck ends in a hard line across the treeline.
+		float horizon_fade = smoothstep(0.012, 0.16, up);
+		base = mix(base, cloud, density * horizon_fade * 0.95);
+	}
+
+	COLOR = base;
+}
+"""
+	return shader
+
+
 static func grass_shader() -> Shader:
 	var shader := Shader.new()
 	shader.code = """
@@ -30,19 +141,47 @@ render_mode cull_disabled, diffuse_burley, specular_disabled;
 
 uniform vec3 wind_vector = vec3(0.0, 0.0, 0.0);
 uniform float gust = 0.0;
-uniform vec3 blade_base : source_color = vec3(0.042, 0.082, 0.023);
-uniform vec3 blade_tip : source_color = vec3(0.115, 0.205, 0.058);
+// These sit at and just above the ground shader's own grass tone. The first
+// version had the blades DARKER than the sward they stand in, which turned a
+// field into a scatter of dark spikes on flat green - the single thing that
+// most made the ground read as a diagram.
+uniform vec3 blade_base : source_color = vec3(0.070, 0.132, 0.038);
+uniform vec3 blade_tip : source_color = vec3(0.165, 0.275, 0.088);
 uniform float sway_scale = 0.045;
+uniform float blade_height = 0.115;
+// Radius the tufts are scattered over. Blades shrink into the ground over the
+// last stretch of it, so the field does not end in a visible ring.
+uniform float scatter_radius = 55.0;
+uniform float fade_fraction = 0.28;
 
 varying float height_fraction;
+varying float tint;
+
+float tuft_hash(vec2 p) {
+	return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+}
 
 void vertex() {
-	height_fraction = clamp(VERTEX.y / 0.115, 0.0, 1.0);
+	height_fraction = clamp(VERTEX.y / blade_height, 0.0, 1.0);
+
+	vec3 world = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+
+	// Per-tuft colour and height variation. A field of identical blades reads
+	// as a texture swatch; real grass is patchy, and the patchiness is most of
+	// what the eye uses to judge that it is looking at ground.
+	tint = tuft_hash(floor(world.xz * 3.7));
+	VERTEX.y *= 0.72 + tint * 0.62;
+
+	// Shrink towards nothing at the edge of the scattered area so the boundary
+	// is a gradient rather than the hard ring it was.
+	float edge = length(world.xz) / scatter_radius;
+	float keep = 1.0 - smoothstep(1.0 - fade_fraction, 1.0, edge);
+	VERTEX.xz *= keep;
+	VERTEX.y *= keep;
 
 	// Only the top of the blade moves, and it moves further in a gust. The
 	// travelling phase term is what makes the field ripple rather than sway
 	// as one piece.
-	vec3 world = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	float speed = length(wind_vector);
 	float phase = TIME * (1.2 + speed * 0.35) + world.x * 0.55 + world.z * 0.41;
 	// Bounded: an unbounded wind term laid the whole field flat at five metres
@@ -56,9 +195,22 @@ void vertex() {
 }
 
 void fragment() {
-	// Darker at the root, where light does not reach.
-	ALBEDO = mix(blade_base, blade_tip, height_fraction);
+	// Darker at the root, where light does not reach, and varied tuft to tuft.
+	vec3 colour = mix(blade_base, blade_tip, height_fraction);
+	colour *= 0.82 + tint * 0.40;
+	ALBEDO = colour;
 	ROUGHNESS = 1.0;
+
+	// Bias the shading normal towards straight up.
+	//
+	// The quads are double-sided, and Godot flips the normal on a back face -
+	// so every tuft had a lit side and a side facing directly away from the
+	// sky, which rendered each one as a hard black cone. Grass is a canopy: it
+	// is lit from above almost regardless of which way an individual blade
+	// happens to face, and shading it that way is both what it looks like and
+	// what removes the cones.
+	vec3 up_view = (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz;
+	NORMAL = normalize(mix(NORMAL, up_view, 0.80));
 }
 """
 	return shader
@@ -128,8 +280,14 @@ uniform vec3 leaf_colour : source_color = vec3(0.050, 0.098, 0.030);
 uniform vec3 trunk_colour : source_color = vec3(0.085, 0.062, 0.042);
 
 varying float canopy;
+varying vec3 instance_tint;
 
 void vertex() {
+	// Per-tree colour, set on the MultiMesh. A treeline where every tree is the
+	// same green reads as a repeated stamp however much the sizes vary, and it
+	// is the one thing the eye picks up immediately.
+	instance_tint = COLOR.rgb;
+
 	vec3 world = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	float speed = length(wind_vector);
 	float phase = TIME * (0.7 + speed * 0.12) + world.x * 0.21 + world.z * 0.17;
@@ -151,7 +309,7 @@ void vertex() {
 void fragment() {
 	// Trunk below the canopy, leaves above. Both need to be light enough to
 	// read as green rather than as a black silhouette against a bright sky.
-	ALBEDO = mix(trunk_colour, leaf_colour, canopy);
+	ALBEDO = mix(trunk_colour, leaf_colour * instance_tint, canopy);
 	ROUGHNESS = 1.0;
 }
 """

@@ -15,6 +15,16 @@ extends Node3D
 const TRUNK_COLOUR := Color(0.66, 0.65, 0.62)
 const TRIM_COLOUR := Color(0.72, 0.20, 0.12)
 const DARK_COLOUR := Color(0.20, 0.22, 0.26)
+## Control surfaces are a shade darker than the panel they hinge from, and sit a
+## few millimetres clear of it, so they read as separate surfaces from the
+## pilot's position rather than as a painted line.
+const SURFACE_COLOUR := Color(0.30, 0.31, 0.34)
+const SURFACE_GAP: float = 0.006
+const PLATE_THICKNESS: float = 0.008
+## Sign relating the flight model's deflection to a rotation about the pivot's
+## own X axis. Pinned by the in-engine check in tests/HeadlessTests.gd, which
+## commands a roll and asserts the correct aileron rises.
+const HINGE_SIGN: float = 1.0
 
 @export var simulation_path: NodePath
 ## Draw the local airflow and lift vector at each section.
@@ -25,6 +35,7 @@ var _built: bool = false
 var _propeller: Node3D
 var _debug: ImmediateMesh
 var _spin: float = 0.0
+var _surfaces: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -45,6 +56,8 @@ func _process(delta: float) -> void:
 		_spin += delta * _sim.get_rpm() * 0.012
 		_propeller.rotation.z = _spin
 
+	_update_surfaces()
+
 	if show_debug_vectors and _debug != null:
 		_draw_debug_vectors()
 
@@ -63,17 +76,14 @@ func _material(colour: Color, unshaded: bool = false) -> StandardMaterial3D:
 ## A flat panel for one aerodynamic section, in Godot axes.
 ## `position` is the quarter chord relative to the CG; the panel runs a quarter
 ## chord forward and three quarters aft, and `span` wide along its own axis.
-func _panel(centre: Vector3, span_axis: Vector3, span: float, chord: float,
-			pitch: float, colour: Color, name_hint: String) -> void:
-	var mesh := BoxMesh.new()
-	# Thin in the lift direction: a model wing is essentially a plate.
-	mesh.size = Vector3(span, 0.008, chord)
-
-	var instance := MeshInstance3D.new()
-	instance.name = name_hint
-	instance.mesh = mesh
-	instance.material_override = _material(colour)
-
+##
+## A section carrying a control surface is built as two pieces - the fixed part
+## ahead of the hinge line and the moving part behind it, parented to a pivot at
+## the hinge. The pivot is driven every frame from the deflection the flight
+## model integrated, so what the pilot watches move is the same number the
+## aerodynamics used, not a separate animation off the stick.
+func _panel(index: int, centre: Vector3, span_axis: Vector3, span: float,
+			chord: float, pitch: float, colour: Color, name_hint: String) -> void:
 	# Build a basis whose X runs along the span and whose Z runs along the chord.
 	var x_axis: Vector3 = span_axis.normalized()
 	var z_axis: Vector3 = Vector3(0, 0, 1)
@@ -83,10 +93,62 @@ func _panel(centre: Vector3, span_axis: Vector3, span: float, chord: float,
 	# Rigging angle: leading edge up is a nose-up rotation about the span axis.
 	basis = basis.rotated(x_axis, -pitch)
 
-	# The quarter chord sits a quarter of the way back from the leading edge, so
-	# the panel's centre is a quarter chord behind it.
-	instance.transform = Transform3D(basis, centre + basis.z * (chord * 0.25))
+	var leading_edge: Vector3 = centre - basis.z * (chord * 0.25)
+
+	if not _sim.get_section_has_control(index):
+		_plate(basis, leading_edge, span, chord, colour, "sec_" + name_hint)
+		return
+
+	# Hinge line as a fraction of chord back from the leading edge.
+	var moving_chord: float = chord * _sim.get_section_control_chord_fraction(index)
+	var fixed_chord: float = chord - moving_chord
+	var moving_span: float = span * _sim.get_section_control_span_fraction(index)
+
+	_plate(basis, leading_edge, span, fixed_chord, colour, "sec_" + name_hint)
+
+	var pivot := Node3D.new()
+	pivot.name = "hinge_" + name_hint
+	pivot.transform = Transform3D(basis, leading_edge + basis.z * fixed_chord)
+	add_child(pivot)
+
+	# The moving surface hangs off the pivot in the pivot's own frame, so
+	# rotating the pivot about its X axis swings the trailing edge.
+	var surface := MeshInstance3D.new()
+	surface.name = "surface_" + name_hint
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(moving_span - SURFACE_GAP, PLATE_THICKNESS, moving_chord)
+	surface.mesh = mesh
+	surface.material_override = _material(SURFACE_COLOUR)
+	surface.position = Vector3(0.0, 0.0, moving_chord * 0.5)
+	pivot.add_child(surface)
+
+	_surfaces.append({"pivot": pivot, "index": index})
+
+
+## One flat plate, positioned from its leading edge rather than its centre so
+## that a split section's two halves meet exactly at the hinge.
+func _plate(basis: Basis, leading_edge: Vector3, span: float, chord: float,
+			colour: Color, name_hint: String) -> void:
+	var mesh := BoxMesh.new()
+	# Thin in the lift direction: a model wing is essentially a plate.
+	mesh.size = Vector3(span, PLATE_THICKNESS, chord)
+
+	var instance := MeshInstance3D.new()
+	instance.name = name_hint
+	instance.mesh = mesh
+	instance.material_override = _material(colour)
+	instance.transform = Transform3D(basis, leading_edge + basis.z * (chord * 0.5))
 	add_child(instance)
+
+
+## Swing every control surface to the deflection the flight model is holding.
+func _update_surfaces() -> void:
+	for entry in _surfaces:
+		var pivot: Node3D = entry["pivot"]
+		var degrees: float = _sim.get_section_control_deflection_deg(entry["index"])
+		# Positive is trailing edge down in the section's own frame, which is the
+		# frame the pivot was built in - so the sign carries straight across.
+		pivot.rotation = Vector3(deg_to_rad(degrees) * HINGE_SIGN, 0.0, 0.0)
 
 
 func _build() -> void:
@@ -119,7 +181,7 @@ func _build() -> void:
 		var outer: bool = name_hint.find("_3") >= 0 or name_hint.find("_4") >= 0
 		var colour: Color = TRIM_COLOUR if (name_hint.find("tail") >= 0 or outer) \
 			else TRUNK_COLOUR
-		_panel(centre, span_axis, span, chord, incidence, colour, "sec_" + name_hint)
+		_panel(i, centre, span_axis, span, chord, incidence, colour, name_hint)
 
 		span_total = maxf(span_total, absf(centre.x) + span * 0.5)
 		nose_z = minf(nose_z, centre.z)

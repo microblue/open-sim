@@ -29,6 +29,7 @@ const WizardScript := preload("res://ui/ControllerWizard.gd")
 const MenuScript := preload("res://ui/MainMenu.gd")
 const TuningScript := preload("res://ui/TuningPanel.gd")
 const ModelScript := preload("res://aircraft/Trainer1500/AircraftModel.gd")
+const AudioScript := preload("res://aircraft/Trainer1500/AircraftAudio.gd")
 
 @onready var aircraft: RCSimulationNode = $Aircraft
 @onready var transmitter: RCInputNode = $Transmitter
@@ -62,6 +63,13 @@ func _ready() -> void:
 	model.name = "Model"
 	model.simulation_path = NodePath("..")
 	aircraft.add_child(model)
+
+	# Parented to the aircraft so distance, stereo placement and Doppler all
+	# come out of how it is actually flying.
+	var audio := AudioScript.new()
+	audio.name = "Audio"
+	audio.simulation_path = NodePath("..")
+	aircraft.add_child(audio)
 
 	var tuning := TuningScript.new()
 	tuning.name = "TuningPanel"
@@ -170,8 +178,10 @@ func _try_autobind() -> bool:
 		for name in profile["names"]:
 			if device.find(name) < 0:
 				continue
-			if not transmitter.load_profile(_repo_path(profile["path"])):
-				push_warning("Built-in profile %s failed to load." % profile["path"])
+			var resolved: String = _repo_path(profile["path"])
+			if not transmitter.load_profile(resolved):
+				push_warning("Built-in profile for %s did not load from %s."
+						% [profile["label"], resolved])
 				return false
 			print("Recognised %s - applied the built-in %s binding. Press F3 to recalibrate."
 					% [transmitter.get_device_name(), profile["label"]])
@@ -180,6 +190,6 @@ func _try_autobind() -> bool:
 
 
 func _repo_path(relative: String) -> String:
-	# Data/ lives one level above the Godot project so the validation suite and
-	# the running simulator read the very same files.
-	return ProjectSettings.globalize_path("res://").path_join("../").path_join(relative)
+	# One implementation, in C++, so the repository layout and an installed
+	# build are resolved the same way here as for the aircraft definition.
+	return aircraft.resolve_data_path(relative)

@@ -480,3 +480,58 @@ RC_TEST(ThrottleArming, AcceptsASlightlyMiscalibratedBottomEnd)
     RC_CHECK_NEAR(arming.Apply(0.04), 0.04, 1e-12);
     RC_CHECK(arming.IsArmed());
 }
+
+// ------------------------------------------------------- profile versioning --
+
+RC_TEST(ProfileFormat, RejectsPreRawAxisProfiles)
+{
+    // A version 1 file was captured through Godot's SDL gamepad mapping, which
+    // renumbers axes and rescales some to 0..1. Here it binds the throttle to
+    // axis 4 with a 0..1 range - under the raw axis layout that axis is a
+    // three-position switch, so loading it would hand the motor to a switch.
+    const std::string stale = R"({
+        "format_version": 1,
+        "channels": {
+            "throttle": { "axis": 4, "raw_min": 0.0, "raw_center": 0.5, "raw_max": 1.0 }
+        }
+    })";
+
+    rc::ChannelMapper mapper;
+    std::string error;
+    RC_CHECK(!mapper.FromJson(stale, &error));
+    RC_CHECK(!error.empty());
+
+    // Nothing may have been bound from the rejected file.
+    RC_CHECK(!mapper.Binding(rc::RCChannel::Throttle).IsBound());
+}
+
+RC_TEST(ProfileFormat, AcceptsCurrentProfiles)
+{
+    const std::string current = R"({
+        "format_version": 2,
+        "channels": {
+            "throttle": { "axis": 2, "raw_min": -1.0, "raw_center": 0.0, "raw_max": 1.0 }
+        }
+    })";
+
+    rc::ChannelMapper mapper;
+    std::string error;
+    RC_CHECK(mapper.FromJson(current, &error));
+    RC_CHECK(mapper.Binding(rc::RCChannel::Throttle).AxisIndex == 2);
+}
+
+RC_TEST(ProfileFormat, WhatWeWriteIsWhatWeAccept)
+{
+    // A round trip must survive, or the wizard would save profiles it then
+    // refuses to load.
+    rc::ChannelMapper saved;
+    rc::AxisCalibration calibration;
+    calibration.RawMin = -1.0;
+    calibration.RawMax =  1.0;
+    saved.Bind(rc::RCChannel::Aileron, 0, calibration);
+
+    rc::ChannelMapper loaded;
+    std::string error;
+    RC_CHECK(loaded.FromJson(saved.ToJson(), &error));
+    RC_CHECK(loaded.Binding(rc::RCChannel::Aileron).AxisIndex == 0);
+}

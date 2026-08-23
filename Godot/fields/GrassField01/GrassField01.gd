@@ -32,7 +32,7 @@ const STRIP_CENTRE_X: float = -16.0
 # One instance is a tuft of three blades, not a single blade. At a pilot's eye
 # height a field needs several tufts per square metre before it stops reading as
 # sparse weeds; 90 000 over a 60 m radius is about eight.
-const GRASS_BLADES: int = 120000
+const GRASS_BLADES: int = 210000
 const GRASS_RADIUS: float = 55.0
 const TREE_COUNT: int = 130
 const TREE_RING_RADIUS: float = 125.0
@@ -42,6 +42,7 @@ const TREE_RING_RADIUS: float = 125.0
 var _sim: RCSimulationNode
 var _grass_material: ShaderMaterial
 var _foliage_material: ShaderMaterial
+var _sky_material: ShaderMaterial
 var _windsock: Node3D
 var _rng := RandomNumberGenerator.new()
 
@@ -77,6 +78,8 @@ func _process(_delta: float) -> void:
 	if _foliage_material != null:
 		_foliage_material.set_shader_parameter("wind_vector", wind)
 		_foliage_material.set_shader_parameter("gust", gust)
+	if _sky_material != null:
+		_sky_material.set_shader_parameter("wind_vector", wind)
 
 	if _windsock != null:
 		_update_windsock(wind, gust)
@@ -85,19 +88,23 @@ func _process(_delta: float) -> void:
 # ---------------------------------------------------------------- environment
 
 func _build_environment() -> void:
-	var sky_material := PhysicalSkyMaterial.new()
-	sky_material.rayleigh_coefficient = 2.6
-	sky_material.mie_coefficient = 0.004
-	sky_material.mie_eccentricity = 0.78
-	sky_material.turbidity = 2.6
-	sky_material.ground_color = Color(0.26, 0.29, 0.22)
-	# The sky is a light source as much as a backdrop. At full strength it blows
-	# out to white once the exposure is set for sunlit grass; a third of that
-	# keeps it a believable pale blue while still lighting the shadows.
-	sky_material.energy_multiplier = 0.65
+	# A custom sky rather than PhysicalSkyMaterial: the physical model gives a
+	# convincing clear-day gradient and no clouds at all, and an empty sky is
+	# most of what made the field read as a diagram rather than a place. See
+	# FieldShaders.sky_shader().
+	var sky_material := ShaderMaterial.new()
+	sky_material.shader = FieldShaders.sky_shader()
+	sky_material.set_shader_parameter("zenith_colour", Color(0.14, 0.30, 0.62))
+	sky_material.set_shader_parameter("horizon_colour", Color(0.60, 0.71, 0.86))
+	sky_material.set_shader_parameter("ground_colour", Color(0.26, 0.29, 0.22))
+	# Scattered fair-weather cumulus: enough to give the sky depth and a wind
+	# cue, not so much that the field goes into shadow.
+	sky_material.set_shader_parameter("cloud_cover", 0.44)
+	sky_material.set_shader_parameter("cloud_sharpness", 2.4)
 
 	var sky := Sky.new()
 	sky.sky_material = sky_material
+	_sky_material = sky_material
 
 	var environment := Environment.new()
 	environment.background_mode = Environment.BG_SKY
@@ -299,7 +306,10 @@ func _blade_mesh() -> ArrayMesh:
 	# is what an eye actually resolves at a few metres.
 	for pass_index in 3:
 		var angle: float = float(pass_index) / 3.0 * PI
-		var right := Vector3(cos(angle), 0.0, sin(angle)) * 0.009
+		# Wider than a real blade on purpose. At one instance per tuft a
+		# nine-millimetre quad renders as a needle. Wider than that and the
+		# tuft reads as a solid cone instead, so this is the middle of it.
+		var right := Vector3(cos(angle), 0.0, sin(angle)) * 0.011
 		var top: float = 0.115
 		var base: int = vertices.size()
 		vertices.append_array([
@@ -411,14 +421,69 @@ func _tree_mesh() -> ArrayMesh:
 	return surface.commit()
 
 
+## A rounded broadleaf, to stand among the conifers. A treeline of one species
+## is the giveaway that a scene was generated rather than grown; two shapes and
+## a colour spread is enough to break that up at the distances this is seen at.
+func _broadleaf_mesh() -> ArrayMesh:
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+
+	var trunk_height: float = 3.1
+	var trunk_radius: float = 0.26
+	var sides: int = 7
+	for side in sides:
+		var a0: float = float(side) / float(sides) * TAU
+		var a1: float = float(side + 1) / float(sides) * TAU
+		var p0 := Vector3(cos(a0) * trunk_radius, 0.0, sin(a0) * trunk_radius)
+		var p1 := Vector3(cos(a1) * trunk_radius, 0.0, sin(a1) * trunk_radius)
+		var q0: Vector3 = p0 * 0.75 + Vector3(0.0, trunk_height, 0.0)
+		var q1: Vector3 = p1 * 0.75 + Vector3(0.0, trunk_height, 0.0)
+		# Clockwise: see the note in _tree_mesh().
+		surface.set_normal(Vector3(cos(a0), 0.2, sin(a0)).normalized())
+		for v in [p0, q1, q0, p0, p1, q1]:
+			surface.add_vertex(v)
+
+	# Canopy: a squashed sphere built as stacked rings, deliberately low
+	# resolution and slightly irregular so it does not read as a ball.
+	var rings: int = 5
+	var segments: int = 9
+	var centre := Vector3(0.0, trunk_height + 1.9, 0.0)
+	var radius: float = 3.0
+	for ring in rings:
+		var t0: float = float(ring) / float(rings) * PI
+		var t1: float = float(ring + 1) / float(rings) * PI
+		for segment in segments:
+			var a0: float = float(segment) / float(segments) * TAU
+			var a1: float = float(segment + 1) / float(segments) * TAU
+			var points := []
+			for pair in [[t0, a0], [t0, a1], [t1, a1], [t1, a0]]:
+				var t: float = pair[0]
+				var a: float = pair[1]
+				# Squashed vertically, and nudged per-vertex so the silhouette
+				# is lumpy like foliage rather than a clean dome.
+				var wobble: float = 0.86 + 0.14 * sin(a * 3.0 + t * 5.0)
+				points.append(centre + Vector3(
+					sin(t) * cos(a) * radius * wobble,
+					cos(t) * radius * 0.78 * wobble,
+					sin(t) * sin(a) * radius * wobble))
+			var normal: Vector3 = (points[0] - centre).normalized()
+			surface.set_normal(normal)
+			for v in [points[0], points[1], points[2],
+					  points[0], points[2], points[3]]:
+				surface.add_vertex(v)
+
+	return surface.commit()
+
+
 func _build_trees() -> void:
 	_foliage_material = ShaderMaterial.new()
 	_foliage_material.shader = FieldShaders.foliage_shader()
 
-	var multi := MultiMesh.new()
-	multi.transform_format = MultiMesh.TRANSFORM_3D
-	multi.mesh = _tree_mesh()
-	multi.instance_count = TREE_COUNT
+	# Two species, placed from one ring so they interleave rather than forming
+	# two separate bands.
+	var conifer_count: int = int(TREE_COUNT * 0.58)
+	var broadleaf_count: int = TREE_COUNT - conifer_count
+	var placements: Array[Array] = [[], []]
 
 	for i in TREE_COUNT:
 		# A ragged perimeter ring, with a gap where the pilot looks out so the
@@ -431,18 +496,47 @@ func _build_trees() -> void:
 		var scale: float = _rng.randf_range(0.75, 1.6)
 		var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(
 			Vector3(scale, scale * _rng.randf_range(0.85, 1.3), scale))
-		multi.set_instance_transform(i, Transform3D(basis,
-			Vector3(x, _terrain_height(x, z), z)))
+		var transform := Transform3D(basis, Vector3(x, _terrain_height(x, z), z))
 
-	var instance := MultiMeshInstance3D.new()
-	instance.name = "Trees"
-	instance.multimesh = multi
-	instance.material_override = _foliage_material
-	# Cast shadows onto the field but do not self-shadow: with cull_disabled
-	# geometry this coarse, self-shadowing just turns every tree black.
-	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY \
-		if false else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-	add_child(instance)
+		# Foliage colour spread: yellow-green through to a dark blue-green, with
+		# a little brightness variation on top. Real stands vary by species, age
+		# and how much sun each tree gets.
+		var warmth: float = _rng.randf()
+		var brightness: float = _rng.randf_range(0.78, 1.28)
+		var tint := Color(
+			(0.80 + warmth * 0.55) * brightness,
+			(1.00 - warmth * 0.10) * brightness,
+			(0.95 - warmth * 0.45) * brightness)
+
+		var which: int = 0 if placements[0].size() < conifer_count \
+			and (placements[1].size() >= broadleaf_count or _rng.randf() < 0.58) else 1
+		placements[which].append([transform, tint])
+
+	var meshes: Array[ArrayMesh] = [_tree_mesh(), _broadleaf_mesh()]
+	var names: Array[String] = ["Conifers", "Broadleaves"]
+
+	for species in 2:
+		var entries: Array = placements[species]
+		if entries.is_empty():
+			continue
+
+		var multi := MultiMesh.new()
+		multi.transform_format = MultiMesh.TRANSFORM_3D
+		# Per-instance colour, read as COLOR by the foliage shader.
+		multi.use_colors = true
+		multi.mesh = meshes[species]
+		multi.instance_count = entries.size()
+
+		for i in entries.size():
+			multi.set_instance_transform(i, entries[i][0])
+			multi.set_instance_color(i, entries[i][1])
+
+		var instance := MultiMeshInstance3D.new()
+		instance.name = names[species]
+		instance.multimesh = multi
+		instance.material_override = _foliage_material
+		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		add_child(instance)
 
 
 # ---------------------------------------------------------------------- hills

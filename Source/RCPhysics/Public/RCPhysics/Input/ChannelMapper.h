@@ -15,6 +15,11 @@
 
 namespace rc
 {
+/** Bumped when a saved profile's meaning changes rather than its layout.
+ *  1 -> 2: axes are raw device axes. Version 1 files were captured through
+ *  Godot's SDL gamepad mapping, which renumbers and rescales them. */
+inline constexpr int kProfileFormatVersion = 2;
+
 struct ChannelBinding
 {
     /** Index into RawAxisState. -1 means unbound; the channel reads neutral. */
