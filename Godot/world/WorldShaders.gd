@@ -11,20 +11,61 @@ class_name WorldShaders
 extends RefCounted
 
 
+## Terrain, textured from real scanned PBR sets.
+##
+## Eight materials reachable through three texture arrays, blended by what the
+## ground actually is at that point - altitude, steepness and moisture - rather
+## than by an index, because an index interpolated across a triangle spanning
+## two biomes lands on a third one.
+##
+## Two things stop it looking like a texture on a hill:
+##
+##   Triplanar. A cliff sampled from directly above gets a metre of texture
+##   smeared down a hundred metres of rock. Projecting from all three axes and
+##   weighting by the normal costs three lookups instead of one and is the only
+##   thing that makes steep ground look like ground.
+##
+##   Dual scale. One tiling repeat every few metres is obvious from the air -
+##   the eye finds the grid immediately. Sampling the same material again at a
+##   much larger scale and multiplying breaks the repeat without needing a
+##   second texture.
+##
+## Falls back to flat biome colours when the assets have not been fetched.
 static func terrain_shader() -> Shader:
 	var shader := Shader.new()
 	shader.code = """
 shader_type spatial;
 render_mode diffuse_burley, specular_schlick_ggx;
 
+uniform sampler2DArray ground_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2DArray ground_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2DArray ground_rough : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform bool textured = false;
+
 uniform float snow_line = 1250.0;
-uniform float sea_level = 0.0;
-uniform vec3 rock_colour : source_color = vec3(0.068, 0.064, 0.058);
-uniform vec3 snow_colour : source_color = vec3(0.640, 0.680, 0.760);
+uniform float sea_level = -135.0;
+uniform float beach_height = 5.0;
+
+/** Metres per tile of the detail sample, and of the macro sample that breaks
+ *  its repeat. */
+uniform float detail_scale = 2.4;
+uniform float macro_scale = 34.0;
+
+uniform vec3 wind_vector = vec3(0.0, 0.0, 0.0);
+
+// Layer indices, matching WorldTextures.LAYERS.
+const float L_GRASS  = 0.0;
+const float L_FOREST = 1.0;
+const float L_ROCK   = 2.0;
+const float L_BEACH  = 3.0;
+const float L_DESERT = 4.0;
+const float L_SNOW   = 5.0;
+const float L_DIRT   = 6.0;
 
 varying vec3 world_position;
 varying vec3 world_normal;
 varying vec4 surface;
+varying float moisture;
 
 float hash(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -54,87 +95,123 @@ float fbm(vec2 p, int octaves) {
 	return total / norm;
 }
 
+/** One material, projected from all three axes and sampled at two scales. */
+vec3 triplanar(sampler2DArray tex, float layer, vec3 blend, vec3 position) {
+	vec3 detail =
+		  texture(tex, vec3(position.zy / detail_scale, layer)).rgb * blend.x
+		+ texture(tex, vec3(position.xz / detail_scale, layer)).rgb * blend.y
+		+ texture(tex, vec3(position.xy / detail_scale, layer)).rgb * blend.z;
+	vec3 macro =
+		  texture(tex, vec3(position.zy / macro_scale, layer)).rgb * blend.x
+		+ texture(tex, vec3(position.xz / macro_scale, layer)).rgb * blend.y
+		+ texture(tex, vec3(position.xy / macro_scale, layer)).rgb * blend.z;
+	// Multiplied around a mid grey, so the macro sample varies the detail
+	// rather than replacing it. This is what removes the tiling grid.
+	return detail * (macro * 1.7 + 0.15);
+}
+
 void vertex() {
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
-	// COLOR carries the biome albedo, computed per vertex in C++ where the
-	// biome rules live, so a triangle spanning a boundary blends between two
-	// real colours instead of interpolating an index into a third biome.
+	// COLOR carries the biome albedo computed per vertex in C++, used as the
+	// fallback and as a tint over the textures so the two agree. UV2.x is the
+	// moisture the biome rules were decided from, which is what actually says
+	// whether ground is desert, pasture or woodland.
 	surface = COLOR;
+	moisture = UV2.x;
 }
 
 void fragment() {
-	vec3 albedo = surface.rgb;
 	float steepness = surface.a;
+	float height = world_position.y;
 
-	// Detail at three scales. Terrain lit by a single directional light and
-	// painted one flat colour per biome reads as plastic however good the
-	// silhouette is; this is most of what makes a hillside look like ground.
-	float coarse = fbm(world_position.xz * 0.004, 4);
-	float medium = fbm(world_position.xz * 0.031, 3);
-	float fine   = fbm(world_position.xz * 0.220, 2);
+	// --- how much of each material is here ------------------------------
+	// Decided from the ground itself rather than from an index, so a triangle
+	// spanning a boundary blends between two real materials.
+	float above_water = height - sea_level;
+	float variation = fbm(world_position.xz * 0.012, 3) - 0.5;
 
-	// Centred on 1.0 rather than biased above it: the old weights multiplied
-	// the whole world by up to 1.66 and lifted every surface towards white.
-	albedo *= 0.62 + coarse * 0.76;
-	albedo *= 0.84 + medium * 0.32;
-	albedo *= 0.92 + fine * 0.16;
+	float w_beach  = 1.0 - smoothstep(beach_height * 0.4, beach_height * 1.6, above_water);
+	float w_snow   = smoothstep(snow_line - 260.0, snow_line + 120.0, height)
+					 * (1.0 - smoothstep(0.42, 0.78, steepness));
+	float w_rock   = smoothstep(0.34, 0.72, steepness + variation * 0.30);
+	// The same thresholds TerrainField decides the biome by, so what is drawn
+	// and what the scatter grows on it agree about where the wood ends.
+	float wet = moisture + variation * 0.06;
+	float w_forest = smoothstep(0.56, 0.70, wet);
+	float w_desert = 1.0 - smoothstep(0.26, 0.38, wet);
 
-	// Rock through anything too steep to hold soil. Slope comes from the
-	// terrain function rather than the interpolated normal, so it does not
-	// change with LOD.
-	float rockiness = smoothstep(0.40, 0.85, steepness + medium * 0.18 - 0.09);
-	albedo = mix(albedo, rock_colour * (0.72 + fine * 0.55), rockiness);
+	// Grass is whatever is left.
+	float w_grass = max(0.0, 1.0 - w_beach - w_snow - w_rock - w_forest - w_desert);
 
-	// Snow above the line, but not on cliffs - it does not stick to them, and
-	// letting it turns every mountain into a white cone.
-	float altitude = smoothstep(snow_line - 220.0, snow_line + 140.0, world_position.y);
-	float lying = altitude * (1.0 - smoothstep(0.45, 0.80, steepness));
-	albedo = mix(albedo, snow_colour * (0.90 + fine * 0.18), lying);
+	if (textured) {
+		// Triplanar weights from the surface normal, sharpened so a slope is
+		// mostly one projection rather than a smear of all three.
+		vec3 blend = pow(abs(world_normal), vec3(4.0));
+		blend /= max(blend.x + blend.y + blend.z, 1e-4);
 
-	// Cloud shadow. Large, slow, and drifting downwind - the single cheapest
-	// thing that makes a landscape look like it is under a sky rather than
-	// under a lamp, and the thing whose absence reads as "rendered".
+		float total = w_grass + w_forest + w_rock + w_beach + w_desert + w_snow;
+		total = max(total, 1e-4);
+
+		vec3 albedo =
+			  triplanar(ground_albedo, L_GRASS,  blend, world_position) * w_grass
+			+ triplanar(ground_albedo, L_FOREST, blend, world_position) * w_forest
+			+ triplanar(ground_albedo, L_ROCK,   blend, world_position) * w_rock
+			+ triplanar(ground_albedo, L_BEACH,  blend, world_position) * w_beach
+			+ triplanar(ground_albedo, L_DESERT, blend, world_position) * w_desert
+			+ triplanar(ground_albedo, L_SNOW,   blend, world_position) * w_snow;
+		albedo /= total;
+
+		vec3 rough =
+			  triplanar(ground_rough, L_GRASS,  blend, world_position) * w_grass
+			+ triplanar(ground_rough, L_FOREST, blend, world_position) * w_forest
+			+ triplanar(ground_rough, L_ROCK,   blend, world_position) * w_rock
+			+ triplanar(ground_rough, L_BEACH,  blend, world_position) * w_beach
+			+ triplanar(ground_rough, L_DESERT, blend, world_position) * w_desert
+			+ triplanar(ground_rough, L_SNOW,   blend, world_position) * w_snow;
+		rough /= total;
+
+		// A tint from the vertex colour, so the texture set and the biome
+		// colouring agree instead of arguing. Weak: the scan carries the
+		// colour, this only nudges it.
+		vec3 tint = surface.rgb / max(dot(surface.rgb, vec3(0.333)), 1e-4);
+		ALBEDO = albedo * mix(vec3(1.0), tint, 0.28);
+		ROUGHNESS = clamp(rough.r * 1.15, 0.25, 1.0);
+		SPECULAR = 0.30;
+
+		// Normal, from the same triplanar projection. Whitening at range: relief
+		// finer than a pixel is noise, and noise in the normal makes a distant
+		// hillside sparkle under a moving camera.
+		float range = length(world_position - CAMERA_POSITION_WORLD);
+		float relief = 1.0 - smoothstep(90.0, 1400.0, range);
+		vec3 packed =
+			  triplanar(ground_normal, L_GRASS,  blend, world_position) * w_grass
+			+ triplanar(ground_normal, L_ROCK,   blend, world_position) * w_rock
+			+ triplanar(ground_normal, L_FOREST, blend, world_position) * w_forest
+			+ triplanar(ground_normal, L_BEACH,  blend, world_position) * w_beach
+			+ triplanar(ground_normal, L_DESERT, blend, world_position) * w_desert
+			+ triplanar(ground_normal, L_SNOW,   blend, world_position) * w_snow;
+		packed /= total;
+		vec3 tangent_normal = normalize(packed * 2.0 - 1.0);
+		NORMAL_MAP = mix(vec3(0.5, 0.5, 1.0), tangent_normal * 0.5 + 0.5, relief);
+		NORMAL_MAP_DEPTH = 1.6;
+	} else {
+		// No assets: the procedural colouring this replaced.
+		vec3 albedo = surface.rgb;
+		float coarse = fbm(world_position.xz * 0.004, 4);
+		float fine = fbm(world_position.xz * 0.220, 2);
+		albedo *= 0.62 + coarse * 0.76;
+		albedo *= 0.92 + fine * 0.16;
+		ALBEDO = albedo;
+		ROUGHNESS = 0.96;
+		SPECULAR = 0.06;
+	}
+
+	// Cloud shadow. Large, slow, drifting downwind - the cheapest thing that
+	// makes a landscape look like it is under a sky rather than under a lamp.
 	vec2 drift = world_position.xz * 0.00032 + vec2(TIME * 0.0016, TIME * 0.0009);
 	float cover = fbm(drift, 4);
-	float shade = 1.0 - 0.42 * smoothstep(0.46, 0.72, cover);
-	albedo *= shade;
-
-	ALBEDO = albedo;
-
-	// Wet sand near the water line, and snow is smoother than rock.
-	float shoreline = 1.0 - smoothstep(0.0, 6.0, world_position.y - sea_level);
-	ROUGHNESS = mix(mix(0.96, 0.72, lying), 0.55, shoreline);
-	// Soil, grass and rock have almost no specular response. At 0.28 the whole
-	// landscape carried a broad sheen from the sky that washed the colour out
-	// of it - a mint-green world under a white haze.
-	SPECULAR = mix(0.06, 0.30, shoreline);
-
-	// Surface relief.
-	//
-	// The mesh carries the shape of the land and nothing smaller; without this
-	// a hillside is a smooth sheet whatever colour it is painted, which is what
-	// made the whole landscape read as plaster. Perturbing the normal from the
-	// same noise the albedo uses puts the texture of ground back without
-	// needing any geometry for it.
-	//
-	// The strength falls off with distance, because relief finer than a pixel
-	// is just noise - and noise in the normal is what makes a distant hillside
-	// sparkle under a moving camera.
-	float range = length(world_position - CAMERA_POSITION_WORLD);
-	float relief = 1.0 - smoothstep(120.0, 2200.0, range);
-
-	vec2 d = vec2(0.75, 0.0);
-	float scale = 0.20;
-	float hx = fbm((world_position.xz + d.xy) * scale, 3)
-			 - fbm((world_position.xz - d.xy) * scale, 3);
-	float hz = fbm((world_position.xz + d.yx) * scale, 3)
-			 - fbm((world_position.xz - d.yx) * scale, 3);
-
-	// Rock is coarse, grass is fine, snow is nearly smooth.
-	float strength = mix(1.0, 2.6, rockiness) * (1.0 - lying * 0.75) * relief;
-	vec3 perturbed = normalize(world_normal + vec3(-hx, 0.0, -hz) * strength * 1.6);
-	NORMAL = normalize((VIEW_MATRIX * vec4(perturbed, 0.0)).xyz);
+	ALBEDO *= 1.0 - 0.38 * smoothstep(0.46, 0.72, cover);
 }
 """
 	return shader

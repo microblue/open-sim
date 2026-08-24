@@ -165,7 +165,7 @@ func _build_environment() -> void:
 	# More highlight headroom. At 3.0 a sunlit hillside sat near the top of the
 	# curve and everything above it - snow, sand, the water glitter - flattened
 	# into the same white.
-	environment.tonemap_white = 3.2
+	environment.tonemap_white = 5.0
 	environment.tonemap_exposure = 1.0
 
 	# SDFGI is deliberately OFF.
@@ -232,7 +232,11 @@ func _build_environment() -> void:
 	# it had to light was the grass shader. Now every surface carries a real
 	# reflectance, and at 12 a whole landscape of correctly-dark albedos came out
 	# a pale mint green - the light was doing the work the albedo should have.
-	sun.light_energy = 3.4
+	# The HDRI supplies the sky's own light; this is the sun on top of it.
+	# Real surface albedos are dark - scanned grass is around 0.08 - so the key
+	# light has to be strong enough to lift them without the ambient flattening
+	# the shading, which is why this went back up after the textures went in.
+	sun.light_energy = 6.5
 	sun.light_color = Color(1.0, 0.97, 0.91)
 	sun.shadow_enabled = true
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS

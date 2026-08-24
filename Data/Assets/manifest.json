@@ -24,15 +24,19 @@
       "use": "alternative: overcast open field" }
   ],
 
+  // Chosen by looking at them, not by their names. The first set was picked
+  // from the catalogue listing and half of it was wrong: forest_ground_04 is a
+  // grey gravel path, coast_sand_05 is dark wet earth. What a terrain texture
+  // is called and what it looks like from above are different questions.
   "textures": [
-    { "name": "aerial_grass_rock",  "res": "2k", "use": "grassland" },
-    { "name": "forest_ground_04",   "res": "2k", "use": "forest floor" },
-    { "name": "aerial_rocks_02",    "res": "2k", "use": "rock and scree" },
-    { "name": "coast_sand_05",      "res": "2k", "use": "beach" },
+    { "name": "sparse_grass",       "res": "2k", "use": "grassland - real green sward" },
+    { "name": "forest_leaves_03",   "res": "2k", "use": "forest floor - conifer needles" },
+    { "name": "aerial_rocks_04",    "res": "2k", "use": "rock and scree, with moss" },
+    { "name": "aerial_beach_02",    "res": "2k", "use": "beach" },
     { "name": "aerial_sand",        "res": "2k", "use": "desert" },
-    { "name": "snow_02",            "res": "2k", "use": "snow" },
-    { "name": "brown_mud_leaves_01","res": "2k", "use": "dirt and worn ground" },
-    { "name": "aerial_ground_rock", "res": "2k", "use": "transition, high ground" }
+    { "name": "snow_field_aerial",  "res": "2k", "use": "snow, with rock showing through" },
+    { "name": "dry_mud_field_001",  "res": "2k", "use": "dry ground, worn grass, the strip" },
+    { "name": "aerial_grass_rock",  "res": "2k", "use": "transition between sward and rock" }
   ],
 
   "models": [

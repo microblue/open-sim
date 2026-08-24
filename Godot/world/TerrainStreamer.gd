@@ -15,6 +15,7 @@
 extends Node3D
 
 const WorldShaders := preload("res://world/WorldShaders.gd")
+const WorldTex := preload("res://world/WorldTextures.gd")
 
 ## A geometric clipmap.
 ##
@@ -60,6 +61,19 @@ func _ready() -> void:
 	_terrain_material.shader = WorldShaders.terrain_shader()
 	_terrain_material.set_shader_parameter("snow_line", 1250.0)
 	_terrain_material.set_shader_parameter("sea_level", _sim.get_sea_level_y())
+
+	# Real scanned surfaces where they have been fetched, procedural colouring
+	# where they have not. See Docs/ASSETS.md.
+	var ground: Dictionary = WorldTex.build(_sim)
+	if ground.is_empty():
+		push_warning("Ground textures not found - run scripts/fetch-assets.sh. "
+				+ "Falling back to procedural terrain colouring.")
+	else:
+		_terrain_material.set_shader_parameter("ground_albedo", ground["albedo"])
+		_terrain_material.set_shader_parameter("ground_normal", ground["normal"])
+		_terrain_material.set_shader_parameter("ground_rough", ground["roughness"])
+		_terrain_material.set_shader_parameter("textured", true)
+		print("[World] ground: %d scanned PBR materials" % ground["count"])
 
 	for level in LEVELS:
 		var holder := Node3D.new()

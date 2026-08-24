@@ -310,12 +310,14 @@ Ref<ArrayMesh> RCSimulationNode::build_terrain_chunk(double centreX, double cent
     PackedVector3Array normals;
     PackedColorArray   colours;
     PackedVector2Array uvs;
+    PackedVector2Array uv2s;
     PackedInt32Array   indices;
 
     vertices.resize(side * side);
     normals.resize(side * side);
     colours.resize(side * side);
     uvs.resize(side * side);
+    uv2s.resize(side * side);
 
     for (int row = 0; row < side; ++row)
     {
@@ -350,6 +352,13 @@ Ref<ArrayMesh> RCSimulationNode::build_terrain_chunk(double centreX, double cent
             // World-space UV so detail does not swim between chunks or LODs.
             uvs[index] = Vector2(static_cast<real_t>(worldX),
                                  static_cast<real_t>(worldZ));
+
+            // Moisture and height, for the shader to blend surface materials
+            // by. It used to infer how vegetated the ground was from the ratio
+            // of green in the vertex colour, which put leaf litter all over the
+            // pasture: two biomes can share a colour and mean different things.
+            uv2s[index] = Vector2(static_cast<real_t>(sample.Moisture),
+                                  static_cast<real_t>(sample.Height));
         }
     }
 
@@ -377,6 +386,7 @@ Ref<ArrayMesh> RCSimulationNode::build_terrain_chunk(double centreX, double cent
     arrays[Mesh::ARRAY_NORMAL] = normals;
     arrays[Mesh::ARRAY_COLOR]  = colours;
     arrays[Mesh::ARRAY_TEX_UV] = uvs;
+    arrays[Mesh::ARRAY_TEX_UV2] = uv2s;
     arrays[Mesh::ARRAY_INDEX]  = indices;
 
     mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
