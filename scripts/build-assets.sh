@@ -52,25 +52,30 @@ info() { printf '\033[1m%s\033[0m\n' "$*"; }
 ok()   { printf '\033[32m ok \033[0m %s\n' "$*"; }
 warn() { printf '\033[33m -- \033[0m %s\n' "$*"; }
 
-# name  lod0_error  lod1_error  lod0_texture
+# name  lod0_error  lod1_error  lod0_texture  bake
+#
+# `bake` marks a model that also gets a third output, <name>_bake.glb, at an
+# error tight enough to keep its canopy whole. That one is never instanced - it
+# is what tools/BakeImpostors.gd renders from, and an impostor baked off a
+# decimated tree is a photograph of a bare trunk.
 #
 # Error is in units of the model's own size, so 0.001 is a millimetre on a metre.
 # Foliage needs the tight end; a boulder is a lump and tolerates two orders more.
 # A tree carries its shape in its branches and needs more triangles than a rock
 # at the same screen size; a boulder is a lump and decimates almost for free.
 TARGETS=(
-    "fir_tree_01            0.0030  0.015  1024"
-    "pine_tree_01           0.0035  0.018  1024"
-    "island_tree_02         0.0040  0.020  1024"
-    "jacaranda_tree         0.0050  0.022  1024"
-    "dead_tree_trunk        0.0060  0.030  1024"
-    "tree_stump_01          0.0080  0.040   512"
-    "namaqualand_boulder_02 0.0100  0.050   512"
-    "namaqualand_boulder_04 0.0100  0.050   512"
-    "grass_medium_01        0.0060  0.025   512"
-    "grass_medium_02        0.0060  0.025   512"
-    "wild_rooibos_bush      0.0050  0.022   512"
-    "fern_02                0.0040  0.018   512"
+    "fir_tree_01            0.0030  0.015  1024  bake"
+    "pine_tree_01           0.0035  0.018  1024  bake"
+    "island_tree_02         0.0040  0.020  1024  bake"
+    "jacaranda_tree         0.0050  0.022  1024  bake"
+    "dead_tree_trunk        0.0060  0.030  1024  -"
+    "tree_stump_01          0.0080  0.040   512  -"
+    "namaqualand_boulder_02 0.0100  0.050   512  -"
+    "namaqualand_boulder_04 0.0100  0.050   512  -"
+    "grass_medium_01        0.0060  0.025   512  bake"
+    "grass_medium_02        0.0060  0.025   512  bake"
+    "wild_rooibos_bush      0.0050  0.022   512  bake"
+    "fern_02                0.0040  0.018   512  bake"
 )
 
 count_triangles() {
@@ -98,7 +103,7 @@ mkdir -p "$OUT"
 command -v npx >/dev/null || { echo "npx not found; install Node." >&2; exit 1; }
 
 for entry in "${TARGETS[@]}"; do
-    read -r name lod0_error lod1_error texture <<< "$entry"
+    read -r name lod0_error lod1_error texture bake <<< "$entry"
     input="$SOURCE/$name/$name.gltf"
     if [ ! -f "$input" ]; then
         warn "$name not fetched - run scripts/fetch-assets.sh"
@@ -139,6 +144,20 @@ for entry in "${TARGETS[@]}"; do
             ok "$(basename "$output")  $(count_triangles "$output") tris, $(( $(stat -c%s "$output") / 1024 )) KB"
         fi
     done
+
+    # The impostor source, where one is wanted. Tight enough that the
+    # simplifier refuses to collapse across the leaf cards, so the canopy
+    # survives; heavy, and rendered exactly eight times in its life.
+    if [ "$bake" = "bake" ] && [ ! -f "$OUT/${name}_bake.glb" ]; then
+        if npx --yes "$CLI" simplify "$welded" "$OUT/.$name.bake.glb" \
+                --ratio 0.0 --error 0.0005 >/dev/null 2>&1; then
+            npx --yes "$CLI" resize "$OUT/.$name.bake.glb" "$OUT/${name}_bake.glb" \
+                --width "$texture" --height "$texture" >/dev/null 2>&1 || \
+                mv "$OUT/.$name.bake.glb" "$OUT/${name}_bake.glb"
+            rm -f "$OUT/.$name.bake.glb"
+            ok "$(basename "$OUT/${name}_bake.glb")  $(count_triangles "$OUT/${name}_bake.glb") tris  (impostor source)"
+        fi
+    fi
 
     rm -f "$welded"
 done

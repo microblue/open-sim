@@ -40,6 +40,7 @@ const TREE_RING_RADIUS: float = 125.0
 ## The sky, and therefore the light. CC0 from Poly Haven; fetched by
 ## scripts/fetch-assets.sh, which is why this is a path rather than a preload -
 ## the project has to open without the assets present.
+const ImpostorLib := preload("res://world/Impostors.gd")
 const SKY_HDRI: String = "Godot/assets/hdri/kloofendal_43d_clear_puresky.hdr"
 
 @export var simulation_path: NodePath
@@ -48,6 +49,7 @@ var _sim: RCSimulationNode
 var _grass_material: ShaderMaterial
 var _foliage_material: ShaderMaterial
 var _sky_material: ShaderMaterial
+var _rng_unused: int = 0
 var _windsock: Node3D
 var _rng := RandomNumberGenerator.new()
 
@@ -573,29 +575,46 @@ func _build_trees() -> void:
 			and (placements[1].size() >= broadleaf_count or _rng.randf() < 0.58) else 1
 		placements[which].append([transform, tint])
 
+	# The treeline the pilot learns the circuit against. Impostors where they
+	# have been baked - two triangles carrying a photograph of a real scanned
+	# tree - and the generated shapes where they have not, so a checkout without
+	# assets still has a treeline to fly around.
+	var species: Array[String] = ["fir_tree_01", "island_tree_02"]
 	var meshes: Array[ArrayMesh] = [_tree_mesh(), _broadleaf_mesh()]
 	var names: Array[String] = ["Conifers", "Broadleaves"]
 
-	for species in 2:
-		var entries: Array = placements[species]
+	for kind in 2:
+		var entries: Array = placements[kind]
 		if entries.is_empty():
 			continue
 
+		var impostor: Dictionary = ImpostorLib.load_for(_sim, species[kind]) \
+			if _sim != null else {}
+
 		var multi := MultiMesh.new()
 		multi.transform_format = MultiMesh.TRANSFORM_3D
-		# Per-instance colour, read as COLOR by the foliage shader.
 		multi.use_colors = true
-		multi.mesh = meshes[species]
+		multi.mesh = impostor["mesh"] if not impostor.is_empty() else meshes[kind]
 		multi.instance_count = entries.size()
 
 		for i in entries.size():
-			multi.set_instance_transform(i, entries[i][0])
-			multi.set_instance_color(i, entries[i][1])
+			var transform: Transform3D = entries[i][0]
+			if not impostor.is_empty():
+				# The impostor is sized in metres by its own bake metrics, so
+				# the placement's scale only varies it rather than setting it.
+				var scale: float = transform.basis.get_scale().y * 0.42
+				transform = Transform3D(
+					Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(scale, scale, scale)),
+					transform.origin)
+			multi.set_instance_transform(i, transform)
+			multi.set_instance_color(i, entries[i][1] if impostor.is_empty()
+					else Color(0.94, 0.96, 0.94))
 
 		var instance := MultiMeshInstance3D.new()
-		instance.name = names[species]
+		instance.name = names[kind]
 		instance.multimesh = multi
-		instance.material_override = _foliage_material
+		instance.material_override = impostor["material"] if not impostor.is_empty() \
+			else _foliage_material
 		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		add_child(instance)
 

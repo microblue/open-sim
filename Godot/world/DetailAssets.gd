@@ -19,6 +19,7 @@ class_name DetailAssets
 extends RefCounted
 
 const Meshes := preload("res://world/DetailMeshes.gd")
+const ImpostorLib := preload("res://world/Impostors.gd")
 
 const LOD_DIR := "Godot/assets/lod"
 
@@ -47,6 +48,23 @@ const LOD_DIR := "Godot/assets/lod"
 const SPECIES := {
 	Meshes.DEAD_TREE: ["dead_tree_trunk", "tree_stump_01"],
 	Meshes.BOULDER:   ["namaqualand_boulder_02", "namaqualand_boulder_04"],
+}
+
+## Foliage, drawn as impostors rather than geometry - two triangles carrying a
+## photograph of the real scanned plant, from whichever of eight angles the
+## camera is nearest to. See world/Impostors.gd and tools/BakeImpostors.gd.
+## Trees and shrubs only.
+##
+## Ground cover is deliberately not here. An impostor is a flat card, and a card
+## is convincing exactly as long as you are far enough away that its lack of
+## parallax does not show. A tree qualifies - it is never closer than the width
+## of the field. Grass is under the aircraft on every landing, and the scanned
+## grass clump is six metres across, so a field of grass impostors put a wall of
+## flat cards in front of the camera. Ground cover keeps its geometry.
+const IMPOSTORS := {
+	Meshes.CONIFER:   ["fir_tree_01", "pine_tree_01"],
+	Meshes.BROADLEAF: ["island_tree_02", "jacaranda_tree"],
+	Meshes.SHRUB:     ["wild_rooibos_bush"],
 }
 
 ## Scanned models arrive at their real size in metres, which is correct and
@@ -97,6 +115,19 @@ static func mesh_for(sim: Node, kind: int, level: int, variant: int) -> Mesh:
 
 	_cache[key] = found
 	return found
+
+
+## Impostor material and quad for one kind and species, or an empty dictionary
+## where none has been baked.
+static func impostor_for(sim: Node, kind: int, variant: int) -> Dictionary:
+	if not IMPOSTORS.has(kind):
+		return {}
+	var names: Array = IMPOSTORS[kind]
+	return ImpostorLib.load_for(sim, names[variant % names.size()])
+
+
+static func impostor_variants(kind: int) -> int:
+	return IMPOSTORS[kind].size() if IMPOSTORS.has(kind) else 0
 
 
 static func scale_for(kind: int) -> float:

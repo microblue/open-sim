@@ -219,9 +219,24 @@ func _build_next() -> void:
 		if indices.is_empty():
 			continue
 
-		var variants: int = Assets.variant_count(kind)
 		var far_start: float = Meshes.view_distance(kind) * LOD_SPLIT
 
+		# Foliage first: an impostor is the only affordable way to draw a
+		# scanned tree, so where one has been baked it carries the whole range.
+		var impostor_variants: int = Assets.impostor_variants(kind)
+		var used_impostors := false
+		for variant in impostor_variants:
+			var impostor: Dictionary = Assets.impostor_for(_sim, kind, variant)
+			if impostor.is_empty():
+				continue
+			used_impostors = true
+			_add_batch(holder, indices, positions, normals, yaws, scales, tints,
+					   kind, impostor["mesh"], false, variant, impostor_variants,
+					   -1, far_start, tier, impostor["material"])
+		if used_impostors:
+			continue
+
+		var variants: int = Assets.variant_count(kind)
 		for variant in variants:
 			for level in 2:
 				var mesh: Mesh = Assets.mesh_for(_sim, kind, level, variant)
@@ -232,7 +247,7 @@ func _build_next() -> void:
 					mesh = _meshes[kind]
 				_add_batch(holder, indices, positions, normals, yaws, scales, tints,
 						   kind, mesh, generated, variant, variants, level,
-						   far_start, tier)
+						   far_start, tier, null)
 
 	_tier_roots[tier].add_child(holder)
 	_cells[entry[3]] = holder
@@ -245,7 +260,7 @@ func _add_batch(holder: Node3D, indices: PackedInt32Array,
 				yaws: PackedFloat32Array, scales: PackedFloat32Array,
 				tints: PackedFloat32Array, kind: int, mesh: Mesh,
 				generated: bool, variant: int, variants: int, level: int,
-				far_start: float, tier: int) -> void:
+				far_start: float, tier: int, override: Material) -> void:
 	# Which instances belong to this species. Chosen by index rather than at
 	# random so the split is stable when the cell is rebuilt.
 	var mine := PackedInt32Array()
@@ -261,6 +276,8 @@ func _add_batch(holder: Node3D, indices: PackedInt32Array,
 	multi.mesh = mesh
 	multi.instance_count = mine.size()
 
+	# An impostor is sized in metres by its own bake metrics, so the scatter's
+	# scale only varies it; a generated mesh is nominal and gets the full range.
 	var asset_scale: float = Assets.scale_for(kind) if not generated else 1.0
 
 	for slot in mine.size():
@@ -277,9 +294,11 @@ func _add_batch(holder: Node3D, indices: PackedInt32Array,
 		basis = basis.scaled(Vector3(scale, scale, scale))
 		multi.set_instance_transform(slot, Transform3D(basis, positions[i]))
 		var tint: float = tints[i]
-		multi.set_instance_color(slot, Color(0.84 + tint * 0.32,
-											 0.88 + tint * 0.24,
-											 0.84 + tint * 0.30))
+		# A narrow spread. Wide per-instance tinting was fine over flat colours
+		# and blows the highlights out of a photograph.
+		multi.set_instance_color(slot, Color(0.90 + tint * 0.16,
+											 0.93 + tint * 0.12,
+											 0.90 + tint * 0.15))
 
 	var instance := MultiMeshInstance3D.new()
 	instance.name = "K%d_v%d_l%d" % [kind, variant, level]
@@ -287,13 +306,19 @@ func _add_batch(holder: Node3D, indices: PackedInt32Array,
 	# A scanned model brings its own PBR materials - albedo, normal, roughness,
 	# all from the scan. Overriding them would throw away the entire reason for
 	# using it. Only the generated fallbacks get a shader.
-	if generated:
+	if override != null:
+		instance.material_override = override
+	elif generated:
 		instance.material_override = _materials[kind]
 
 	# Near level draws up to the split, far level from there to the kind's
 	# limit. A hard cutoff, not a fade: FADE_SELF needs a material that supports
 	# dithered transparency, and with an opaque one it simply does not draw.
-	if level == 0:
+	if level < 0:
+		# An impostor covers the whole range for its kind: there is no nearer
+		# form of it to hand over to.
+		instance.visibility_range_end = Meshes.view_distance(kind)
+	elif level == 0:
 		instance.visibility_range_end = far_start
 	else:
 		instance.visibility_range_begin = far_start

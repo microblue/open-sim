@@ -50,6 +50,35 @@ Bounding it by error instead makes it refuse those collapses. The trunk and
 branches then decimate freely around the leaves, and each model lands at
 whatever count preserves it.
 
+## Impostors
+
+```bash
+godot --path Godot --script res://tools/BakeImpostors.gd
+```
+
+Renders each tree from eight angles into one atlas, and writes the metrics the
+renderer needs beside it. The scatter then draws a two-triangle quad that turns
+to face the camera about the vertical and picks the view nearest to how the
+camera is looking at it — a photograph of a real scanned tree, from any
+direction, for the cost of a quad.
+
+Two things had to be got right:
+
+**Bake from a canopy, not from a LOD.** The first run baked from
+`<name>_lod0.glb`, whose leaves the decimation had already removed, and produced
+eight beautiful photographs of a bare trunk. `build-assets.sh` now emits a third
+output, `<name>_bake.glb`, at an error tight enough to keep the canopy whole. It
+is never instanced — it is rendered exactly eight times in its life.
+
+**The corner comes from UV, not from VERTEX.** Under `world_vertex_coords` the
+incoming vertex has already been through the model matrix, so it is a world
+position rather than the unit quad the billboard needs. Reading it as local put
+every card somewhere else entirely and the whole forest vanished.
+
+Ground cover is deliberately not impostored. A card is convincing exactly as
+long as its lack of parallax does not show, and grass is under the aircraft on
+every landing.
+
 ## What foliage still needs
 
 There is no error bound that makes a scanned tree instanceable:
@@ -64,11 +93,10 @@ problem — a boulder at 1,200 triangles is indistinguishable from the scan at
 98,000 — so those are used as they are, and `DetailAssets.SPECIES` lists exactly
 the kinds whose geometry survives.
 
-The answer for foliage is **impostors**: render each tree offline from a ring of
-angles and instance a billboard that picks the nearest view. That is how flight
-simulators draw a forest, it is a separate piece of work, and until it exists
-foliage uses the generated meshes — honest low-poly shapes rather than broken
-high-poly ones.
+This is why trees are drawn as impostors rather than geometry — see above.
+`DetailAssets.SPECIES` lists the kinds instanced as real meshes;
+`DetailAssets.IMPOSTORS` lists the kinds drawn as billboards. Anything in
+neither uses the generated shapes.
 
 ## The sky
 
