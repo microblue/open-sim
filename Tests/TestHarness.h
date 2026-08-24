@@ -46,6 +46,21 @@ public:
         }
     }
 
+    /** Like Check, but prints the value that failed - so a tolerance miss says
+     *  by how much rather than only that it happened. */
+    void CheckValue(bool condition, double value,
+                    const char* expression, const char* file, int line)
+    {
+        ++CheckCount;
+        if (!condition)
+        {
+            ++FailureCount;
+            std::printf("      FAIL %s:%d  %s\n"
+                        "           value = %.12g\n",
+                        file, line, expression, value);
+        }
+    }
+
     /** Explicit failure with a formatted reason. */
     void Fail(const std::string& reason, const char* file, int line)
     {
@@ -98,6 +113,11 @@ int RunAll(const char* filter);
 
 #define RC_CHECK_NEAR(Actual, Expected, Tolerance) \
     ctx.CheckNear((Actual), (Expected), (Tolerance), #Actual " ~= " #Expected, __FILE__, __LINE__)
+
+/** Like RC_CHECK, but reports the value that failed - so a tolerance miss says
+ *  by how much rather than only that it happened. */
+#define RC_CHECK_MSG_VALUE(Condition, Value) \
+    ctx.CheckValue((Condition), (Value), #Condition, __FILE__, __LINE__)
 
 #define RC_FAIL(Reason) \
     ctx.Fail((Reason), __FILE__, __LINE__)

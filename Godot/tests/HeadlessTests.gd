@@ -26,6 +26,8 @@ var _input: RCInputNode
 var _started: bool = false
 var _surface_model: Node3D
 var _surface_start_s: float = -1.0
+var _dive_start_s: float = -1.0
+var _deepest_below_ground: float = -1e9
 var _start_altitude: float = 0.0
 var _min_airspeed: float = 1e30
 var _max_airspeed: float = 0.0
@@ -220,13 +222,23 @@ func _process(_delta: float) -> bool:
 		_min_airspeed = minf(_min_airspeed, airspeed)
 		_max_airspeed = maxf(_max_airspeed, airspeed)
 
+	if _dive_start_s >= 0.0:
+		_deepest_below_ground = maxf(_deepest_below_ground, _deepest_point_below_ground())
+		# Long enough to dive from 40 m, hit, and settle.
+		if _sim.get_simulated_time_s() - _dive_start_s < 12.0:
+			return false
+		_finish_dive()
+		return true
+
 	if _surface_start_s >= 0.0:
 		# Half a second of held aileron: long enough for the roll to establish,
 		# short enough that the aircraft has not rolled past ninety degrees.
 		if _sim.get_simulated_time_s() - _surface_start_s < 0.5:
 			return false
 		_finish_control_surfaces()
-		return true
+		# Not `true`: returning true quits the tree, and the dive phase that
+		# _finish_control_surfaces starts needs frames to run in.
+		return false
 
 	if _sim.get_simulated_time_s() < RUN_SECONDS:
 		return false
@@ -364,6 +376,60 @@ func _finish_control_surfaces() -> void:
 	# Four aileron panels (the ailerons span the outer two sections of each
 	# wing), two elevator halves and the rudder.
 	_check(hinges == 7, "seven hinged surfaces are built from the definition")
+
+	_sim.clear_manual_channels()
+	_surface_model.queue_free()
+	_surface_model = null
+	_begin_dive_phase()
+
+
+## Fly it into the ground and make sure it stays on top of it.
+##
+## The landing gear holds the aircraft up while it is the right way up and
+## rolling, and CrashModel noticed when something else touched - but nothing
+## acted on that, so the body carried on integrating and sank out of sight. A
+## check that only looks at altitude would not catch it either: the CG can be
+## above ground while a wing is metres under.
+func _begin_dive_phase() -> void:
+	print("\n  flying it into the ground")
+	_sim.reset_state()
+	_sim.spawn_mode = RCSimulationNode.SPAWN_AIR
+	_sim.spawn_altitude_m = 40.0
+	_sim.reset_state()
+	# Full down elevator and power: the steepest arrival the model can make.
+	_sim.set_manual_channel(RCInputNode.CHANNEL_ELEVATOR, -1.0)
+	_sim.set_manual_channel(RCInputNode.CHANNEL_THROTTLE, 1.0)
+	_dive_start_s = _sim.get_simulated_time_s()
+	_deepest_below_ground = -1e9
+
+
+## Lowest point of the airframe, relative to the ground, in metres. Positive
+## means buried.
+func _deepest_point_below_ground() -> float:
+	var deepest: float = -1e9
+	for i in _sim.get_section_count():
+		var world: Vector3 = _sim.to_global(_sim.get_section_position(i))
+		deepest = maxf(deepest, -world.y)
+	return deepest
+
+
+func _finish_dive() -> void:
+	print("       deepest any part of the airframe went below ground: %+.3f m"
+		% _deepest_below_ground)
+	print("       resting altitude %.3f m, speed %.2f m/s, crashed=%s"
+		% [_sim.get_altitude_m(), _sim.get_airspeed_mps(), _sim.has_crashed()])
+
+	_check(_sim.has_crashed(), "flying it into the ground counts as a crash")
+
+	# The number that matters. A section centre a few centimetres under is the
+	# solver leaving its deliberate sliver plus half a wing thickness; metres
+	# under is the aircraft falling through the world.
+	_check(_deepest_below_ground < 0.25,
+		"no part of the airframe ends up buried (%.3f m)" % _deepest_below_ground)
+
+	# And it comes to rest rather than sliding away or sinking slowly.
+	_check(_sim.get_airspeed_mps() < 3.0, "the wreck comes to rest")
+	_check(_sim.get_altitude_m() > -1.0, "the wreck is not underground")
 
 	_sim.clear_manual_channels()
 

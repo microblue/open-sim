@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include <godot_cpp/classes/array_mesh.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
@@ -14,6 +15,7 @@
 #include "RCPhysics/Core/Log.h"
 #include "RCPhysics/Core/Units/Units.h"
 #include "RCPhysics/Physics/Dynamics/RigidBodyIntegrator.h"
+#include "RCPhysics/Physics/Ground/GroundContact.h"
 
 using namespace godot;
 
@@ -96,6 +98,18 @@ void RCSimulationNode::_process(double deltaSeconds)
             // The integrator already logged and restored the last good state.
             break;
         }
+
+        // Stop the airframe at the surface. The landing gear holds it up while
+        // it is the right way up and rolling; this catches everything else -
+        // the wing tip that digs in, the wreck that would otherwise keep
+        // integrating straight down through the field.
+        if (AircraftLoaded)
+        {
+            rc::ResolveGroundContact(State, Plane.GetMassProperties(),
+                                     Plane.Crash().CollisionPoints(), Ground,
+                                     ContactTuning, dt);
+        }
+
         Wind.Advance(dt);
     }
 
@@ -142,6 +156,185 @@ String RCSimulationNode::ResolveAircraftPath() const
 String RCSimulationNode::resolve_data_path(const String& relative) const
 {
     return openrc::ResolveDataPath(relative);
+}
+
+// ------------------------------------------------------------------ terrain --
+//
+// Godot axes from world NED: godot.x = east, godot.y = up, godot.z = -north.
+// So going the other way, north = -godot.z and east = godot.x.
+
+namespace
+{
+    inline double NorthFromGodot(double z) { return -z; }
+    inline double EastFromGodot(double x)  { return  x; }
+
+    /** Surface colour for a sample. Computed here rather than in the shader so
+     *  that a triangle spanning two biomes blends between their colours instead
+     *  of interpolating a biome index and landing on a third one.
+     *
+     *  Linear values: everything in this project is authored linear, because
+     *  `: source_color` only converts in the editor. */
+    godot::Color Mix(const godot::Color& a, const godot::Color& b, float t)
+    {
+        return godot::Color(a.r + (b.r - a.r) * t,
+                            a.g + (b.g - a.g) * t,
+                            a.b + (b.b - a.b) * t);
+    }
+
+    godot::Color BiomeAlbedo(const rc::TerrainSample& sample)
+    {
+        // Moisture, remapped so each biome uses the whole range of it rather
+        // than the narrow slice that put it in that biome. A landscape painted
+        // one colour per biome reads as plaster however good the silhouette is;
+        // what makes real ground look like ground at this distance is that no
+        // two square kilometres of it are quite the same green.
+        const auto wet = static_cast<float>(std::min(std::max(sample.Moisture, 0.0), 1.0));
+
+        switch (sample.Type)
+        {
+            case rc::Biome::Ocean:
+                // Rarely seen - the water surface covers it - but it has to be
+                // dark rather than black where it shows through shallows.
+                return godot::Color(0.012f, 0.032f, 0.048f);
+            case rc::Biome::Beach:
+                // Wet sand rather than a beach towel. The first values were
+                // bright enough that every shoreline read as a white rim.
+                return godot::Color(0.240f, 0.196f, 0.130f);
+            case rc::Biome::Desert:
+                // Bare sand through to scrub at the wetter edge.
+                return Mix(godot::Color(0.300f, 0.196f, 0.098f),
+                           godot::Color(0.190f, 0.150f, 0.072f),
+                           std::min(std::max(wet / 0.34f, 0.0f), 1.0f));
+            case rc::Biome::Grassland:
+                // Dry olive through to pasture.
+                return Mix(godot::Color(0.088f, 0.082f, 0.030f),
+                           godot::Color(0.040f, 0.098f, 0.024f),
+                           std::min(std::max((wet - 0.30f) / 0.32f, 0.0f), 1.0f));
+            case rc::Biome::Forest:
+                // Mixed woodland through to dense conifer.
+                return Mix(godot::Color(0.026f, 0.052f, 0.018f),
+                           godot::Color(0.013f, 0.031f, 0.014f),
+                           std::min(std::max((wet - 0.56f) / 0.36f, 0.0f), 1.0f));
+            case rc::Biome::Rock:
+                return godot::Color(0.068f, 0.064f, 0.058f);
+            case rc::Biome::Snow:
+                return godot::Color(0.640f, 0.680f, 0.760f);
+            default:
+                return godot::Color(0.1f, 0.1f, 0.1f);
+        }
+    }
+}
+
+double RCSimulationNode::get_terrain_height(double x, double z) const
+{
+    return Terrain.HeightAt(NorthFromGodot(z), EastFromGodot(x));
+}
+
+double RCSimulationNode::get_sea_level_y() const { return Terrain.Settings().SeaLevel; }
+
+double RCSimulationNode::get_field_elevation_y() const
+{
+    return Terrain.Settings().FieldElevation;
+}
+
+void RCSimulationNode::set_terrain_seed(int seed)
+{
+    rc::TerrainSettings settings = Terrain.Settings();
+    settings.Seed = static_cast<std::uint32_t>(seed);
+    Terrain.SetSettings(settings);
+}
+
+int RCSimulationNode::get_terrain_seed() const
+{
+    return static_cast<int>(Terrain.Settings().Seed);
+}
+
+Ref<ArrayMesh> RCSimulationNode::build_terrain_chunk(double centreX, double centreZ,
+                                                     double size, int resolution) const
+{
+    Ref<ArrayMesh> mesh;
+    mesh.instantiate();
+
+    resolution = std::max(2, std::min(resolution, 512));
+    const int side = resolution + 1;
+    const double step = size / static_cast<double>(resolution);
+    const double half = size * 0.5;
+
+    PackedVector3Array vertices;
+    PackedVector3Array normals;
+    PackedColorArray   colours;
+    PackedVector2Array uvs;
+    PackedInt32Array   indices;
+
+    vertices.resize(side * side);
+    normals.resize(side * side);
+    colours.resize(side * side);
+    uvs.resize(side * side);
+
+    for (int row = 0; row < side; ++row)
+    {
+        for (int column = 0; column < side; ++column)
+        {
+            const double localX = -half + column * step;
+            const double localZ = -half + row * step;
+            const double worldX = centreX + localX;
+            const double worldZ = centreZ + localZ;
+
+            const rc::TerrainSample sample =
+                Terrain.SampleAt(NorthFromGodot(worldZ), EastFromGodot(worldX));
+
+            const int index = row * side + column;
+            // Local coordinates: the caller places the chunk, which keeps the
+            // vertex values small and the mesh reusable.
+            vertices[index] = Vector3(static_cast<real_t>(localX),
+                                      static_cast<real_t>(sample.Height),
+                                      static_cast<real_t>(localZ));
+
+            // NED normal to Godot: (n.y, -n.z, -n.x).
+            normals[index] = Vector3(static_cast<real_t>(sample.Normal.y),
+                                     static_cast<real_t>(-sample.Normal.z),
+                                     static_cast<real_t>(-sample.Normal.x));
+
+            godot::Color albedo = BiomeAlbedo(sample);
+            // Alpha carries steepness, which the shader uses to blend rock onto
+            // anything too steep to hold soil and to keep snow off cliffs.
+            albedo.a = static_cast<float>(std::min(sample.Slope, 1.0));
+            colours[index] = albedo;
+
+            // World-space UV so detail does not swim between chunks or LODs.
+            uvs[index] = Vector2(static_cast<real_t>(worldX),
+                                 static_cast<real_t>(worldZ));
+        }
+    }
+
+    indices.resize(resolution * resolution * 6);
+    int cursor = 0;
+    for (int row = 0; row < resolution; ++row)
+    {
+        for (int column = 0; column < resolution; ++column)
+        {
+            const int a = row * side + column;
+            const int b = a + 1;
+            const int c = a + side;
+            const int d = c + 1;
+            // Clockwise: Godot's front face. The obvious order leaves the whole
+            // surface back-facing, which is how the field went invisible once
+            // already.
+            indices[cursor++] = a; indices[cursor++] = b; indices[cursor++] = c;
+            indices[cursor++] = b; indices[cursor++] = d; indices[cursor++] = c;
+        }
+    }
+
+    Array arrays;
+    arrays.resize(Mesh::ARRAY_MAX);
+    arrays[Mesh::ARRAY_VERTEX] = vertices;
+    arrays[Mesh::ARRAY_NORMAL] = normals;
+    arrays[Mesh::ARRAY_COLOR]  = colours;
+    arrays[Mesh::ARRAY_TEX_UV] = uvs;
+    arrays[Mesh::ARRAY_INDEX]  = indices;
+
+    mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
+    return mesh;
 }
 
 bool RCSimulationNode::reload_aircraft()
@@ -217,21 +410,34 @@ void RCSimulationNode::ResetPhysicsState()
             {
                 standingHeight = rc::Max(standingHeight, wheel.PositionBody.z + wheel.Radius);
             }
-            State.PositionWorld = rc::Vec3(SpawnOffset.x, SpawnOffset.y, -standingHeight);
+            // Relative to the ground under the spawn point, not to sea level.
+            // The flying field sits on a plateau above the water line, and
+            // spawning at z = -standingHeight put the aircraft a hundred metres
+            // underground - which compressed the gear to nothing and produced a
+            // non-finite state on the first step.
+            State.PositionWorld = rc::Vec3(
+                SpawnOffset.x, SpawnOffset.y,
+                Ground.Sample(SpawnOffset.x, SpawnOffset.y).SurfaceHeight - standingHeight);
             State.VelocityWorld = rc::Vec3::Zero();
             break;
         }
 
         case SPAWN_APPROACH:
+        {
             // On final: low, slow, descending gently towards the strip.
-            State.PositionWorld = rc::Vec3(SpawnOffset.x - 120.0, SpawnOffset.y, -18.0);
+            const rc::Real x = SpawnOffset.x - 120.0;
+            State.PositionWorld = rc::Vec3(
+                x, SpawnOffset.y, Ground.Sample(x, SpawnOffset.y).SurfaceHeight - 18.0);
             State.SetVelocityBody(rc::Vec3(
                 AircraftLoaded ? Definition.ApproachSpeed : 11.0, 0.0, 0.9));
             break;
+        }
 
         case SPAWN_AIR:
         default:
-            State.PositionWorld = rc::Vec3(SpawnOffset.x, SpawnOffset.y, -SpawnAltitude);
+            State.PositionWorld = rc::Vec3(
+                SpawnOffset.x, SpawnOffset.y,
+                Ground.Sample(SpawnOffset.x, SpawnOffset.y).SurfaceHeight - SpawnAltitude);
             State.SetVelocityBody(rc::Vec3(
                 AircraftLoaded ? Definition.CruiseSpeed : 16.0, 0.0, 0.0));
             break;
@@ -604,6 +810,16 @@ void RCSimulationNode::_bind_methods()
     ADD_PROPERTY(PropertyInfo(Variant::STRING, "aircraft_definition"),
                  "set_aircraft_definition", "get_aircraft_definition");
     OPENRC_BIND1(resolve_data_path, "relative");
+
+    ClassDB::bind_method(D_METHOD("get_terrain_height", "x", "z"),
+                         &RCSimulationNode::get_terrain_height);
+    OPENRC_BIND(get_sea_level_y);
+    OPENRC_BIND(get_field_elevation_y);
+    ClassDB::bind_method(D_METHOD("build_terrain_chunk", "centre_x", "centre_z",
+                                  "size", "resolution"),
+                         &RCSimulationNode::build_terrain_chunk);
+    OPENRC_BIND1(set_terrain_seed, "seed");
+    OPENRC_BIND(get_terrain_seed);
     OPENRC_BIND(reload_aircraft);
     OPENRC_BIND(is_aircraft_loaded);
     OPENRC_BIND(get_aircraft_name);

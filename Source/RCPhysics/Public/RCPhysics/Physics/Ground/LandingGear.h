@@ -122,6 +122,17 @@ public:
     /** Build hard points from the airframe: wing tips, nose, tail and fin top. */
     void Configure(const AircraftDefinition& definition);
 
+    /** Points whose contact ENDS the flight. A wing tip, the fin, the
+     *  propeller - things that mean the model is no longer flyable. */
+    const std::vector<HardPoint>& CrashPoints() const { return Points; }
+
+    /** The airframe as a set of points that must not pass through the ground.
+     *  A superset of the crash points: it also carries the fuselage belly and
+     *  spine, which a wreck comes to rest on but whose contact is not by itself
+     *  a crash - the aircraft sits on its wheels with the belly just clear, and
+     *  treating that as an impact would call it wrecked before it had moved. */
+    const std::vector<HardPoint>& CollisionPoints() const { return Hull; }
+
     void SetImpactLimit(Real metresPerSecond) { ImpactLimit = metresPerSecond; }
     Real GetImpactLimit() const { return ImpactLimit; }
 
@@ -135,6 +146,7 @@ private:
     std::vector<HardPoint> Points;
     /** Descent rate a wheel can absorb. Beyond this the gear folds. */
     Real ImpactLimit = 4.0;
+    std::vector<HardPoint> Hull;
 };
 
 } // namespace rc

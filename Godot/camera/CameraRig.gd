@@ -22,7 +22,16 @@ const TRACKING_DEADZONE_DEGREES: float = 7.0
 ## How quickly it catches up once it does. Deliberately unhurried.
 const TRACKING_RATE: float = 2.2
 
+## No camera may go below this height above the ground. The chase camera sits
+## behind and below the aircraft's own up axis, so an inverted pass or a low
+## rolling turn used to put it under the field - and from under a single-sided
+## ground plane you see the sky through the world, which reads as the terrain
+## having vanished. Enough clearance that the near plane stays clear of the
+## grass as well.
+const MINIMUM_GROUND_CLEARANCE: float = 0.55
+
 @export var simulation_path: NodePath
+@export var field_path: NodePath
 @export var pilot_eye_height: float = 1.65
 
 var mode: Mode = Mode.PILOT
@@ -32,10 +41,12 @@ var _camera: Camera3D
 var _look_offset: Vector2 = Vector2.ZERO
 var _mouse_look: bool = false
 var _tracked_direction: Vector3 = Vector3(0.0, 0.0, -1.0)
+var _field: Node3D
 
 
 func _ready() -> void:
 	_sim = get_node_or_null(simulation_path) as Node3D
+	_field = get_node_or_null(field_path) as Node3D
 
 	_camera = Camera3D.new()
 	_camera.name = "Camera"
@@ -145,9 +156,26 @@ func _update_chase(delta: float) -> void:
 	var desired: Vector3 = _sim.global_position + behind * 5.5 + up * 1.4 + Vector3.UP * 0.6
 
 	global_position = global_position.lerp(desired, clampf(6.0 * delta, 0.0, 1.0))
+	_keep_above_ground()
 	look_at(_sim.global_position, Vector3.UP)
 	rotate_object_local(Vector3.UP, _look_offset.x)
 	rotate_object_local(Vector3.RIGHT, _look_offset.y)
+
+
+## Lift the camera to the surface if it has gone under.
+##
+## Done on the camera rather than by shrinking the chase distance: pulling the
+## camera in changes the framing every time the aircraft flies low, whereas
+## sliding it up keeps the aircraft the same size and just refuses to go
+## underground. The ground is a single-sided plane, so from below you see
+## straight through the world.
+func _keep_above_ground() -> void:
+	var floor_height: float = 0.0
+	if _field != null and _field.has_method("height_at"):
+		floor_height = _field.height_at(global_position.x, global_position.z)
+	var lowest: float = floor_height + MINIMUM_GROUND_CLEARANCE
+	if global_position.y < lowest:
+		global_position.y = lowest
 
 
 func _update_fpv() -> void:
@@ -155,5 +183,6 @@ func _update_fpv() -> void:
 	# is bolted to the airframe and shakes with it, and that is information.
 	global_transform = _sim.global_transform
 	translate_object_local(Vector3(0.0, 0.10, -0.28))
+	_keep_above_ground()
 	rotate_object_local(Vector3.UP, _look_offset.x)
 	rotate_object_local(Vector3.RIGHT, _look_offset.y)

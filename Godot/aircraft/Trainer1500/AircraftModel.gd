@@ -18,6 +18,7 @@ const DARK_COLOUR := Color(0.20, 0.22, 0.26)
 ## Control surfaces are a shade darker than the panel they hinge from, and sit a
 ## few millimetres clear of it, so they read as separate surfaces from the
 ## pilot's position rather than as a painted line.
+const AirframeScript := preload("res://aircraft/Trainer1500/AirframeGeometry.gd")
 const SURFACE_COLOUR := Color(0.30, 0.31, 0.34)
 const SURFACE_GAP: float = 0.006
 const PLATE_THICKNESS: float = 0.008
@@ -65,11 +66,47 @@ func _process(delta: float) -> void:
 func _material(colour: Color, unshaded: bool = false) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
 	material.albedo_color = colour
-	material.roughness = 0.55
+	# Painted film over foam: not a mirror, but not the flat matte everything
+	# used to be either. A surface with no specular response at all is most of
+	# why the aircraft read as paper.
+	material.roughness = 0.42
 	material.metallic = 0.0
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	material.metallic_specular = 0.45
 	if unshaded:
 		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		material.roughness = 1.0
+	return material
+
+
+## Clear canopy: dark, smooth and slightly reflective. The one part of a model
+## that catches the sun, and the thing that most makes it read as a real object.
+func _canopy_material() -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(0.06, 0.09, 0.13, 0.62)
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.roughness = 0.06
+	material.metallic = 0.0
+	material.metallic_specular = 0.9
+	material.rim_enabled = true
+	material.rim = 0.6
+	return material
+
+
+## Rubber. Dark, rough, no specular to speak of.
+func _tyre_material() -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(0.022, 0.024, 0.028)
+	material.roughness = 0.92
+	material.metallic_specular = 0.2
+	return material
+
+
+## Bare aluminium and the spinner: the only genuinely metallic parts.
+func _metal_material(colour: Color) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = colour
+	material.roughness = 0.22
+	material.metallic = 0.85
 	return material
 
 
@@ -83,7 +120,8 @@ func _material(colour: Color, unshaded: bool = false) -> StandardMaterial3D:
 ## model integrated, so what the pilot watches move is the same number the
 ## aerodynamics used, not a separate animation off the stick.
 func _panel(index: int, centre: Vector3, span_axis: Vector3, span: float,
-			chord: float, pitch: float, colour: Color, name_hint: String) -> void:
+			chord: float, pitch: float, colour: Color, name_hint: String,
+			is_tip: bool = false) -> void:
 	# Build a basis whose X runs along the span and whose Z runs along the chord.
 	var x_axis: Vector3 = span_axis.normalized()
 	var z_axis: Vector3 = Vector3(0, 0, 1)
@@ -95,8 +133,15 @@ func _panel(index: int, centre: Vector3, span_axis: Vector3, span: float,
 
 	var leading_edge: Vector3 = centre - basis.z * (chord * 0.25)
 
+	# A fin is thinner and uncambered; a wing carries the flat-bottomed trainer
+	# section it actually flies.
+	var is_fin: bool = name_hint.begins_with("vtail")
+	var thickness: float = 0.09 if name_hint.find("tail") >= 0 else 0.13
+	var camber: float = 0.0 if name_hint.find("tail") >= 0 else 0.025
+
 	if not _sim.get_section_has_control(index):
-		_plate(basis, leading_edge, span, chord, colour, "sec_" + name_hint)
+		_plate(basis, leading_edge, span, chord, colour, "sec_" + name_hint,
+			   is_tip, thickness, camber)
 		return
 
 	# Hinge line as a fraction of chord back from the leading edge.
@@ -104,7 +149,8 @@ func _panel(index: int, centre: Vector3, span_axis: Vector3, span: float,
 	var fixed_chord: float = chord - moving_chord
 	var moving_span: float = span * _sim.get_section_control_span_fraction(index)
 
-	_plate(basis, leading_edge, span, fixed_chord, colour, "sec_" + name_hint)
+	_plate(basis, leading_edge, span, fixed_chord, colour, "sec_" + name_hint,
+		   is_tip, thickness, camber)
 
 	var pivot := Node3D.new()
 	pivot.name = "hinge_" + name_hint
@@ -115,9 +161,16 @@ func _panel(index: int, centre: Vector3, span_axis: Vector3, span: float,
 	# rotating the pivot about its X axis swings the trailing edge.
 	var surface := MeshInstance3D.new()
 	surface.name = "surface_" + name_hint
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3(moving_span - SURFACE_GAP, PLATE_THICKNESS, moving_chord)
-	surface.mesh = mesh
+	# A tapering wedge, thick at the hinge and thin at the trailing edge, which
+	# is what a control surface is. A slab of constant thickness is visible as
+	# a step every time it deflects.
+	var moving_span_clear: float = moving_span - SURFACE_GAP
+	surface.mesh = AirframeScript.loft_wing([
+		{"offset": -moving_span_clear * 0.5, "chord": moving_chord,
+		 "thickness": thickness * 0.8, "camber": 0.0},
+		{"offset":  moving_span_clear * 0.5, "chord": moving_chord,
+		 "thickness": thickness * 0.8, "camber": 0.0},
+	], 10, is_tip)
 	surface.material_override = _material(SURFACE_COLOUR)
 	surface.position = Vector3(0.0, 0.0, moving_chord * 0.5)
 	pivot.add_child(surface)
@@ -125,18 +178,28 @@ func _panel(index: int, centre: Vector3, span_axis: Vector3, span: float,
 	_surfaces.append({"pivot": pivot, "index": index})
 
 
-## One flat plate, positioned from its leading edge rather than its centre so
-## that a split section's two halves meet exactly at the hinge.
+## One aerodynamic surface, lofted from its actual airfoil rather than drawn as
+## a plate, and positioned from its leading edge so a split section's two halves
+## meet exactly at the hinge.
+##
+## `outboard` closes the far end with a rounded tip instead of a flat cap; only
+## the outermost panel of a wing or tailplane wants that.
 func _plate(basis: Basis, leading_edge: Vector3, span: float, chord: float,
-			colour: Color, name_hint: String) -> void:
-	var mesh := BoxMesh.new()
-	# Thin in the lift direction: a model wing is essentially a plate.
-	mesh.size = Vector3(span, PLATE_THICKNESS, chord)
+			colour: Color, name_hint: String, outboard: bool = false,
+			thickness: float = 0.12, camber: float = 0.02) -> void:
+	# Two stations is enough for a constant-chord panel; the rounded tip adds
+	# its own. Taper would go here if the definition carried it.
+	var stations: Array = [
+		{"offset": -span * 0.5, "chord": chord, "thickness": thickness, "camber": camber},
+		{"offset":  span * 0.5, "chord": chord, "thickness": thickness, "camber": camber},
+	]
 
 	var instance := MeshInstance3D.new()
 	instance.name = name_hint
-	instance.mesh = mesh
+	instance.mesh = AirframeScript.loft_wing(stations, 14, outboard)
 	instance.material_override = _material(colour)
+	# The loft is built about its own mid-span with the chord running along +Z
+	# from the leading edge, so it lands at the panel centre.
 	instance.transform = Transform3D(basis, leading_edge + basis.z * (chord * 0.5))
 	add_child(instance)
 
@@ -181,7 +244,10 @@ func _build() -> void:
 		var outer: bool = name_hint.find("_3") >= 0 or name_hint.find("_4") >= 0
 		var colour: Color = TRIM_COLOUR if (name_hint.find("tail") >= 0 or outer) \
 			else TRUNK_COLOUR
-		_panel(i, centre, span_axis, span, chord, incidence, colour, name_hint)
+		# Only the outermost panel of a surface gets a rounded tip; the inboard
+		# ones butt against their neighbour.
+		var is_tip: bool = name_hint.find("_4") >= 0 or name_hint.find("tail") >= 0
+		_panel(i, centre, span_axis, span, chord, incidence, colour, name_hint, is_tip)
 
 		span_total = maxf(span_total, absf(centre.x) + span * 0.5)
 		nose_z = minf(nose_z, centre.z)

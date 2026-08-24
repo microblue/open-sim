@@ -56,10 +56,17 @@ func _ready() -> void:
 	_sim = get_node_or_null(simulation_path) as RCSimulationNode
 
 	_build_environment()
-	_build_terrain()
+	# The ground itself and the hills beyond it are no longer built here. They
+	# were a 520 m tile and a ring of mounds, and they occluded the streamed
+	# terrain that now runs to the horizon - a pale band on the skyline was the
+	# real world showing past the edge of the fake one.
+	#
+	# What stays is everything that belongs to the FIELD rather than to the
+	# world: the grass the pilot reads the wind from, the treeline that gives
+	# the circuit its edges, the pits and the windsock. All of it sits at zero,
+	# which is where the terrain function puts the plateau.
 	_build_grass()
 	_build_trees()
-	_build_hills()
 	_build_structures()
 	_windsock = _build_windsock()
 
@@ -118,7 +125,11 @@ func _build_environment() -> void:
 	environment.ambient_light_sky_contribution = 0.55
 	# Roughly a fifth of the sun, which is about right for a clear day. Any more
 	# and the sky's near-white light desaturates the grass into grey-green.
-	environment.ambient_light_energy = 1.0
+	# Pulled down from 1.0. That was set when the world was a flat field the eye
+	# never looked far across; over a landscape it lifted every slope facing
+	# away from the sun to nearly the same brightness as the ones facing it, and
+	# a landscape with no shading gradient reads as painted.
+	environment.ambient_light_energy = 0.55
 
 	# Physically plausible outdoor exposure. ACES rather than a filmic curve so
 	# a white cloud and a shaded treeline keep their relationship.
@@ -126,7 +137,10 @@ func _build_environment() -> void:
 	# A white point of 6 compresses the whole scene into the bottom of the
 	# curve and flattens the contrast. Sunlit grass and a bright sky are only
 	# about two stops apart; 2.6 puts them where the eye expects them.
-	environment.tonemap_white = 3.0
+	# More highlight headroom. At 3.0 a sunlit hillside sat near the top of the
+	# curve and everything above it - snow, sand, the water glitter - flattened
+	# into the same white.
+	environment.tonemap_white = 4.5
 	environment.tonemap_exposure = 1.0
 
 	# SDFGI is deliberately OFF.
@@ -154,9 +168,12 @@ func _build_environment() -> void:
 	# doing, and takes away the pilot's main range cue in the process.
 	environment.fog_enabled = true
 	environment.fog_light_color = Color(0.70, 0.78, 0.90)
-	environment.fog_density = 0.00035
+	# Thinner than before. At 0.00035 the haze was total by three kilometres,
+	# which was fine when the world ended at 260 m and hides an entire mountain
+	# range now.
+	environment.fog_density = 0.00008
 	environment.fog_sky_affect = 0.0
-	environment.fog_aerial_perspective = 0.3
+	environment.fog_aerial_perspective = 0.55
 
 	# Restrained. No lens flare, no motion blur: motion blur in particular hides
 	# exactly the fast attitude changes the pilot needs to read.
@@ -211,6 +228,12 @@ func _build_environment() -> void:
 ## Height of the ground at a point. Dead flat over the whole flying area - the
 ## physics uses a flat ground plane, and the two must agree - then rolling
 ## beyond it so the horizon is not a knife edge.
+## Public form of _terrain_height, for anything that needs to stay above the
+## ground - the camera rig, principally.
+func height_at(x: float, z: float) -> float:
+	return _terrain_height(x, z)
+
+
 func _terrain_height(x: float, z: float) -> float:
 	var distance: float = Vector2(x - STRIP_CENTRE_X * 0.5, z - STRIP_CENTRE_Z).length()
 	if distance < 110.0:

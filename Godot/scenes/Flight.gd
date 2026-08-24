@@ -25,6 +25,7 @@ const BUILTIN_PROFILES: Array[Dictionary] = [
 # up and falling back to the menu.
 const AUTOBIND_TIMEOUT: float = 1.5
 const FieldScript := preload("res://fields/GrassField01/GrassField01.gd")
+const WorldScript := preload("res://world/TerrainStreamer.gd")
 const WizardScript := preload("res://ui/ControllerWizard.gd")
 const MenuScript := preload("res://ui/MainMenu.gd")
 const TuningScript := preload("res://ui/TuningPanel.gd")
@@ -57,6 +58,17 @@ func _ready() -> void:
 	field.name = "GrassField01"
 	field.simulation_path = NodePath("../../Aircraft")
 	$Field.add_child(field)
+
+	# The world beyond the flying field: streamed terrain, generated from the
+	# same height function the aircraft collides with, out to the horizon.
+	var world := WorldScript.new()
+	world.name = "World"
+	world.simulation_path = NodePath("../../Aircraft")
+	world.camera_path = NodePath("../../CameraRig")
+	$Field.add_child(world)
+	# The camera rig asks the field how high the ground is, so it can refuse to
+	# go under it.
+	camera_rig.field_path = camera_rig.get_path_to(field)
 
 	# The visible aircraft is generated from the flight model's own geometry, so
 	# what the pilot sees is what is flying.

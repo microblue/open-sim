@@ -190,6 +190,37 @@ void CrashModel::Configure(const AircraftDefinition& definition)
     Points.push_back({"propeller", mount + Vec3(0.0, 0.0,
                       0.5 * definition.Propulsion.Propeller.Diameter)});
     Points.push_back({"nose", mount});
+
+    // --------------------------------------------------------- the hull --
+    // Everything above, plus the fuselage itself. The crash points alone are a
+    // sparse frame: a body resting on them would have the fuselage through the
+    // ground between the nose and the tail. These fill it in.
+    //
+    // They are NOT crash points. The aircraft stands on its wheels with the
+    // belly a few centimetres clear, and a belly that counted as an impact
+    // would have it wrecked before it had moved - which is exactly the bug the
+    // spawn code hit once already.
+    Hull = Points;
+
+    const FuselageSpec& body = definition.Fuselage;
+    // Circular-equivalent radius from the frontal area. Close enough for a
+    // fuselage that is roughly as tall as it is wide, which a trainer is.
+    const Real radius = std::sqrt(std::max(body.FrontalArea, Real(1e-6)) / Real(3.14159265358979));
+
+    // Three stations: nose, centre and tail, top and bottom at each, so the
+    // hull holds the aircraft up whichever way it comes to rest.
+    const Real stations[3] = { Real(0.42), Real(0.0), Real(-0.42) };
+    for (int i = 0; i < 3; ++i)
+    {
+        const Vec3 station = body.PositionBody + Vec3(stations[i] * body.Length, 0.0, 0.0);
+        Hull.push_back({"belly", station + Vec3(0.0, 0.0, radius)});
+        Hull.push_back({"spine", station - Vec3(0.0, 0.0, radius)});
+    }
+
+    // Wing tips top and bottom, so an inverted wreck rests on its wing rather
+    // than sinking to the fin.
+    if (rightMost > 0.0) { Hull.push_back({"wing_tip_right_upper", rightTip - Vec3(0, 0, radius)}); }
+    if (leftMost  < 0.0) { Hull.push_back({"wing_tip_left_upper",  leftTip  - Vec3(0, 0, radius)}); }
 }
 
 CrashResult CrashModel::Check(const RigidBodyState& state,

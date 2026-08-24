@@ -11,6 +11,7 @@
 // Nothing here may convert a frame by hand either - see Bridge/RCGodotConversion.h.
 #pragma once
 
+#include <godot_cpp/classes/array_mesh.hpp>
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/variant/node_path.hpp>
 #include <godot_cpp/variant/packed_float64_array.hpp>
@@ -19,7 +20,9 @@
 #include "RCPhysics/Aircraft/Aircraft.h"
 #include "RCPhysics/Core/Clock/SimulationClock.h"
 #include "RCPhysics/Input/ChannelTypes.h"
+#include "RCPhysics/Physics/Ground/GroundContact.h"
 #include "RCPhysics/Physics/Ground/LandingGear.h"
+#include "RCPhysics/Physics/Ground/TerrainField.h"
 #include "RCPhysics/Physics/Propulsion/PowerSystem.h"
 
 namespace openrc
@@ -58,6 +61,27 @@ public:
     /** Locate a file under Data/, whether running from the repository or from
      *  an installed build. See the implementation for the two layouts. */
     godot::String resolve_data_path(const godot::String& relative) const;
+
+    // ------------------------------------------------------------ terrain --
+
+    /** Surface height in Godot axes (metres up) at a Godot XZ position. */
+    double get_terrain_height(double x, double z) const;
+
+    /** Sea level and the flying field's elevation, both in Godot metres up. */
+    double get_sea_level_y() const;
+    double get_field_elevation_y() const;
+
+    /** Build one square of terrain as a mesh, in C++ because a chunk is tens of
+     *  thousands of vertices and a per-vertex call across the binding would
+     *  dominate the frame. Returns geometry centred on the origin, to be placed
+     *  by the caller; vertex colour carries the surface albedo so biomes blend
+     *  across a triangle instead of stepping. */
+    godot::Ref<godot::ArrayMesh> build_terrain_chunk(double centre_x, double centre_z,
+                                                     double size, int resolution) const;
+
+    /** Terrain seed, so a session can be reproduced. */
+    void set_terrain_seed(int seed);
+    int  get_terrain_seed() const;
 
     bool reload_aircraft();
 
@@ -235,8 +259,12 @@ private:
     rc::Atmosphere      Air;
     rc::WindField       Wind;
     rc::PowerSystem     Power;
-    rc::FlatGround      Ground{0.0};
+    // The world's shape, and the collision surface derived from it. One
+    // function, so what the pilot flies into is what was drawn.
+    rc::TerrainField    Terrain;
+    rc::TerrainGround   Ground{Terrain};
     rc::CrashResult     Crash;
+    rc::ContactSettings ContactTuning;
     rc::ChannelValues   Channels;
     rc::ChannelValues   ManualChannels;
     rc::AircraftForces  LastForces;
