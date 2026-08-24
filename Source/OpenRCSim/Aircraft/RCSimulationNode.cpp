@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include <godot_cpp/classes/array_mesh.hpp>
+#include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
@@ -151,6 +152,99 @@ rc::PropulsionOutput RCSimulationNode::StepPropulsion(rc::Real dt)
 String RCSimulationNode::ResolveAircraftPath() const
 {
     return openrc::ResolveDataPath(AircraftPath);
+}
+
+String RCSimulationNode::get_aircraft_description() const
+{
+    return AircraftLoaded ? String(Definition.Description.c_str()) : String();
+}
+
+double RCSimulationNode::get_mass_kg() const
+{
+    return AircraftLoaded ? Definition.Mass : 0.0;
+}
+
+double RCSimulationNode::get_wing_area_m2() const
+{
+    return AircraftLoaded ? Definition.WingArea : 0.0;
+}
+
+double RCSimulationNode::get_wing_loading_pa() const
+{
+    if (!AircraftLoaded || Definition.WingArea <= 0.0) { return 0.0; }
+    return Definition.Mass * rc::units::kGravity / Definition.WingArea;
+}
+
+double RCSimulationNode::get_aspect_ratio() const
+{
+    if (!AircraftLoaded || Definition.WingArea <= 0.0) { return 0.0; }
+    return Definition.WingSpan * Definition.WingSpan / Definition.WingArea;
+}
+
+double RCSimulationNode::get_battery_cells() const
+{
+    return AircraftLoaded ? Definition.Propulsion.Battery.CellCount : 0.0;
+}
+
+double RCSimulationNode::get_battery_capacity_mah() const
+{
+    // Stored in coulombs; the label on the pack is in milliamp hours.
+    return AircraftLoaded
+         ? Definition.Propulsion.Battery.CapacityCoulombs / 3.6 : 0.0;
+}
+
+double RCSimulationNode::get_motor_kv() const
+{
+    // Stored as rad/s per volt, which is what the electrical model wants;
+    // the number on the motor is rpm per volt.
+    return AircraftLoaded
+         ? Definition.Propulsion.Motor.KvRadPerSecondPerVolt * 60.0 / (2.0 * 3.14159265358979)
+         : 0.0;
+}
+
+double RCSimulationNode::get_peak_power_w() const
+{
+    if (!AircraftLoaded) { return 0.0; }
+    const double volts = Definition.Propulsion.Battery.CellCount
+                       * Definition.Propulsion.Battery.NominalCellVoltage;
+    return volts * Definition.Propulsion.Motor.MaxCurrent;
+}
+
+double RCSimulationNode::get_power_to_weight_w_per_kg() const
+{
+    if (!AircraftLoaded || Definition.Mass <= 0.0) { return 0.0; }
+    return get_peak_power_w() / Definition.Mass;
+}
+
+double RCSimulationNode::get_cruise_speed_mps() const
+{
+    return AircraftLoaded ? Definition.CruiseSpeed : 0.0;
+}
+
+double RCSimulationNode::get_approach_speed_mps() const
+{
+    return AircraftLoaded ? Definition.ApproachSpeed : 0.0;
+}
+
+PackedStringArray RCSimulationNode::list_aircraft() const
+{
+    // Discovered rather than listed. A new aeroplane appears in the menu the
+    // moment its file exists, which is the only way the two stay in step.
+    PackedStringArray found;
+    const String directory = openrc::ResolveDataPath("Data/Aircraft");
+
+    Ref<DirAccess> handle = DirAccess::open(directory);
+    if (handle.is_null()) { return found; }
+
+    handle->list_dir_begin();
+    for (String entry = handle->get_next(); !entry.is_empty(); entry = handle->get_next())
+    {
+        if (handle->current_is_dir() || !entry.ends_with(".json")) { continue; }
+        found.push_back(entry.get_basename());
+    }
+    handle->list_dir_end();
+    found.sort();
+    return found;
 }
 
 String RCSimulationNode::resolve_data_path(const String& relative) const
@@ -882,6 +976,20 @@ void RCSimulationNode::_bind_methods()
     OPENRC_BIND(reload_aircraft);
     OPENRC_BIND(is_aircraft_loaded);
     OPENRC_BIND(get_aircraft_name);
+    OPENRC_BIND(get_aircraft_description);
+    OPENRC_BIND(get_mass_kg);
+    OPENRC_BIND(get_wingspan_m);
+    OPENRC_BIND(get_wing_area_m2);
+    OPENRC_BIND(get_wing_loading_pa);
+    OPENRC_BIND(get_aspect_ratio);
+    OPENRC_BIND(get_battery_cells);
+    OPENRC_BIND(get_battery_capacity_mah);
+    OPENRC_BIND(get_motor_kv);
+    OPENRC_BIND(get_peak_power_w);
+    OPENRC_BIND(get_power_to_weight_w_per_kg);
+    OPENRC_BIND(get_cruise_speed_mps);
+    OPENRC_BIND(get_approach_speed_mps);
+    OPENRC_BIND(list_aircraft);
 
     OPENRC_BIND1(set_physics_rate_hz, "rate_hz");
     OPENRC_BIND(get_physics_rate_hz);
@@ -1010,7 +1118,6 @@ void RCSimulationNode::_bind_methods()
     OPENRC_BIND1(get_wheel_radius_m, "index");
     OPENRC_BIND(get_motor_position);
     OPENRC_BIND(get_propeller_diameter_m);
-    OPENRC_BIND(get_wingspan_m);
 
     OPENRC_BIND(reset_state);
 

@@ -1,7 +1,17 @@
 #include "RCDataPaths.h"
 
+#include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
+
+namespace
+{
+    bool Exists(const godot::String& path)
+    {
+        return godot::FileAccess::file_exists(path)
+            || godot::DirAccess::dir_exists_absolute(path);
+    }
+}
 
 namespace openrc
 {
@@ -21,14 +31,17 @@ namespace openrc
                                  ? settings->globalize_path("res://")
                                  : godot::String("./");
 
+        // Files AND directories. Checking only for a file meant asking for
+        // "Data/Aircraft" - a directory - always fell through to the installed
+        // candidate, so the hangar listed no aeroplanes at all.
         const godot::String beside = root + relative;
-        if (godot::FileAccess::file_exists(beside))
+        if (Exists(beside))
         {
             return beside;
         }
 
         const godot::String above = root + godot::String("../") + relative;
-        if (godot::FileAccess::file_exists(above))
+        if (Exists(above))
         {
             return above;
         }

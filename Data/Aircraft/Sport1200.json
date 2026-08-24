@@ -1,0 +1,443 @@
+// OpenRC Simulator - Sport 1200
+//
+// Aerobatic sport model.
+// Symmetric section, no dihedral, mid wing and very large control throws: it has almost no self-righting tendency, which is the point - it holds knife edge and inverted as readily as upright, and it will drop into a spin if you ask it to.
+// Not a first aeroplane.
+//
+// Units are SI throughout, body axes are FRD (x nose, y right wing, z down),
+// and the layout mirrors Trainer1500.json - four wing panels a side, so the
+// spanwise resolution of the aerodynamics is the same across the roster.
+//
+// validation_targets are MEASURED, not asserted: scripts/measure-aircraft.sh
+// flies the aeroplane and fills them in. Until then this block is empty and
+// the regression suite checks only that the airframe is physically coherent.
+{
+  "format_version": 1,
+  "name": "Sport 1200",
+  "description": "Aerobatic sport model. Symmetric section, no dihedral, mid wing and very large control throws: it has almost no self-righting tendency, which is the point - it holds knife edge and inverted as readily as upright, and it will drop into a spin if you ask it to. Not a first aeroplane.",
+  "mass": {
+    "mass_kg": 1.15,
+    "cg_offset_from_mesh_origin_m": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "inertia": {
+      "ixx_kg_m2": 0.03927,
+      "iyy_kg_m2": 0.06285,
+      "izz_kg_m2": 0.09191,
+      "ixz_kg_m2": 0.00341
+    }
+  },
+  "reference": {
+    "wing_area_m2": 0.3,
+    "wingspan_m": 1.2,
+    "mean_aerodynamic_chord_m": 0.25
+  },
+  "airfoils": {
+    "symmetric_tail": {
+      "cl_zero_alpha": 0.0,
+      "cl_alpha_per_rad": 5.5,
+      "cl_max": 1.0,
+      "alpha_stall_deg": 12.0,
+      "stall_blend_deg": 3.5,
+      "reattach_hysteresis_deg": 2.0,
+      "cd_min": 0.012,
+      "cd_alpha_quadratic": 0.014,
+      "cd_separated_max": 1.25,
+      "cm_quarter_chord": 0.0,
+      "oswald_efficiency": 0.8,
+      "reference_reynolds": 120000
+    }
+  },
+  "aero_surfaces": [
+    {
+      "name": "wing_right_1_root",
+      "role": "wing",
+      "position_m": [
+        0.0,
+        0.075,
+        0.0
+      ],
+      "span_m": 0.15,
+      "chord_m": 0.25,
+      "area_m2": 0.0375,
+      "airfoil": "symmetric_tail",
+      "incidence_deg": 0.0,
+      "dihedral_deg": 0.0,
+      "twist_deg": 0.0,
+      "effective_aspect_ratio": 4.8,
+      "in_propwash": true
+    },
+    {
+      "name": "wing_right_2",
+      "role": "wing",
+      "position_m": [
+        0.0,
+        0.225,
+        0.0
+      ],
+      "span_m": 0.15,
+      "chord_m": 0.25,
+      "area_m2": 0.0375,
+      "airfoil": "symmetric_tail",
+      "incidence_deg": 0.0,
+      "dihedral_deg": 0.0,
+      "twist_deg": 0.0,
+      "effective_aspect_ratio": 4.8,
+      "in_propwash": false,
+      "control_surface": {
+        "channel": "aileron",
+        "chord_fraction": 0.32,
+        "span_fraction": 1.0,
+        "direction": -1.0
+      }
+    },
+    {
+      "name": "wing_right_3",
+      "role": "wing",
+      "position_m": [
+        0.0,
+        0.375,
+        0.0
+      ],
+      "span_m": 0.15,
+      "chord_m": 0.25,
+      "area_m2": 0.0375,
+      "airfoil": "symmetric_tail",
+      "incidence_deg": 0.0,
+      "dihedral_deg": 0.0,
+      "twist_deg": 0.0,
+      "effective_aspect_ratio": 4.8,
+      "in_propwash": false,
+      "control_surface": {
+        "channel": "aileron",
+        "chord_fraction": 0.32,
+        "span_fraction": 1.0,
+        "direction": -1.0
+      }
+    },
+    {
+      "name": "wing_right_4_tip",
+      "role": "wing",
+      "position_m": [
+        0.0,
+        0.525,
+        0.0
+      ],
+      "span_m": 0.15,
+      "chord_m": 0.25,
+      "area_m2": 0.0375,
+      "airfoil": "symmetric_tail",
+      "incidence_deg": 0.0,
+      "dihedral_deg": 0.0,
+      "twist_deg": 0.0,
+      "effective_aspect_ratio": 4.8,
+      "in_propwash": false,
+      "control_surface": {
+        "channel": "aileron",
+        "chord_fraction": 0.32,
+        "span_fraction": 1.0,
+        "direction": -1.0
+      }
+    },
+    {
+      "name": "wing_left_1_root",
+      "role": "wing",
+      "position_m": [
+        0.0,
+        -0.075,
+        0.0
+      ],
+      "span_m": 0.15,
+      "chord_m": 0.25,
+      "area_m2": 0.0375,
+      "airfoil": "symmetric_tail",
+      "incidence_deg": 0.0,
+      "dihedral_deg": 0.0,
+      "twist_deg": 0.0,
+      "effective_aspect_ratio": 4.8,
+      "in_propwash": true
+    },
+    {
+      "name": "wing_left_2",
+      "role": "wing",
+      "position_m": [
+        0.0,
+        -0.225,
+        0.0
+      ],
+      "span_m": 0.15,
+      "chord_m": 0.25,
+      "area_m2": 0.0375,
+      "airfoil": "symmetric_tail",
+      "incidence_deg": 0.0,
+      "dihedral_deg": 0.0,
+      "twist_deg": 0.0,
+      "effective_aspect_ratio": 4.8,
+      "in_propwash": false,
+      "control_surface": {
+        "channel": "aileron",
+        "chord_fraction": 0.32,
+        "span_fraction": 1.0,
+        "direction": 1.0
+      }
+    },
+    {
+      "name": "wing_left_3",
+      "role": "wing",
+      "position_m": [
+        0.0,
+        -0.375,
+        0.0
+      ],
+      "span_m": 0.15,
+      "chord_m": 0.25,
+      "area_m2": 0.0375,
+      "airfoil": "symmetric_tail",
+      "incidence_deg": 0.0,
+      "dihedral_deg": 0.0,
+      "twist_deg": 0.0,
+      "effective_aspect_ratio": 4.8,
+      "in_propwash": false,
+      "control_surface": {
+        "channel": "aileron",
+        "chord_fraction": 0.32,
+        "span_fraction": 1.0,
+        "direction": 1.0
+      }
+    },
+    {
+      "name": "wing_left_4_tip",
+      "role": "wing",
+      "position_m": [
+        0.0,
+        -0.525,
+        0.0
+      ],
+      "span_m": 0.15,
+      "chord_m": 0.25,
+      "area_m2": 0.0375,
+      "airfoil": "symmetric_tail",
+      "incidence_deg": 0.0,
+      "dihedral_deg": 0.0,
+      "twist_deg": 0.0,
+      "effective_aspect_ratio": 4.8,
+      "in_propwash": false,
+      "control_surface": {
+        "channel": "aileron",
+        "chord_fraction": 0.32,
+        "span_fraction": 1.0,
+        "direction": 1.0
+      }
+    },
+    {
+      "name": "htail_right",
+      "role": "horizontal_tail",
+      "position_m": [
+        -0.5704,
+        0.115,
+        0.0
+      ],
+      "span_m": 0.23,
+      "chord_m": 0.15,
+      "area_m2": 0.0345,
+      "airfoil": "symmetric_tail",
+      "incidence_deg": 0.0,
+      "dihedral_deg": 0.0,
+      "twist_deg": 0.0,
+      "effective_aspect_ratio": 3.07,
+      "control_surface": {
+        "channel": "elevator",
+        "chord_fraction": 0.45,
+        "span_fraction": 1.0,
+        "direction": -1.0
+      },
+      "in_propwash": true
+    },
+    {
+      "name": "htail_left",
+      "role": "horizontal_tail",
+      "position_m": [
+        -0.5704,
+        -0.115,
+        0.0
+      ],
+      "span_m": 0.23,
+      "chord_m": 0.15,
+      "area_m2": 0.0345,
+      "airfoil": "symmetric_tail",
+      "incidence_deg": 0.0,
+      "dihedral_deg": 0.0,
+      "twist_deg": 0.0,
+      "effective_aspect_ratio": 3.07,
+      "control_surface": {
+        "channel": "elevator",
+        "chord_fraction": 0.45,
+        "span_fraction": 1.0,
+        "direction": -1.0
+      },
+      "in_propwash": true
+    },
+    {
+      "name": "vtail",
+      "role": "vertical_tail",
+      "position_m": [
+        -0.5704,
+        0.0,
+        -0.13
+      ],
+      "span_m": 0.26,
+      "chord_m": 0.16,
+      "area_m2": 0.0416,
+      "airfoil": "symmetric_tail",
+      "incidence_deg": 0.0,
+      "dihedral_deg": 0.0,
+      "twist_deg": 0.0,
+      "effective_aspect_ratio": 1.62,
+      "control_surface": {
+        "channel": "rudder",
+        "chord_fraction": 0.5,
+        "span_fraction": 1.0,
+        "direction": 1.0
+      },
+      "in_propwash": true
+    }
+  ],
+  "fuselage": {
+    "position_m": [
+      -0.092,
+      0.0,
+      0.0
+    ],
+    "length_m": 0.966,
+    "frontal_area_m2": 0.011,
+    "side_area_m2": 0.055,
+    "cd_frontal": 0.35,
+    "cd_side": 0.6,
+    "cn_beta_per_rad": -0.06,
+    "parasite_area_m2": 0.026
+  },
+  "propulsion": {
+    "battery": {
+      "cell_count": 4,
+      "nominal_cell_voltage_v": 3.7,
+      "full_cell_voltage_v": 4.15,
+      "empty_cell_voltage_v": 3.3,
+      "capacity_mah": 2200,
+      "internal_resistance_ohm": 0.015
+    },
+    "esc": {
+      "max_current_a": 40.0,
+      "efficiency": 0.96
+    },
+    "motor": {
+      "kv_rpm_per_volt": 1400,
+      "resistance_ohm": 0.085,
+      "no_load_current_a": 0.9,
+      "max_current_a": 45.0
+    },
+    "propeller": {
+      "diameter_in": 9.0,
+      "pitch_in": 6.0,
+      "blade_count": 2,
+      "moment_of_inertia_kg_m2": 1.1e-05,
+      "rotation": "clockwise"
+    },
+    "mount": {
+      "position_m": [
+        0.35,
+        0.0,
+        -0.01
+      ],
+      "down_thrust_deg": 2.0,
+      "right_thrust_deg": 2.0
+    },
+    "propwash": {
+      "enabled": true,
+      "cone_half_angle_deg": 6.0,
+      "swirl_factor": 0.35,
+      "strength": 1.0
+    }
+  },
+  "landing_gear": [
+    {
+      "name": "nose",
+      "position_m": [
+        0.288,
+        0.0,
+        0.1305
+      ],
+      "radius_m": 0.0225,
+      "spring_n_per_m": 1500.0,
+      "damper_ns_per_m": 40.0,
+      "max_travel_m": 0.02,
+      "friction_static": 0.7,
+      "friction_dynamic": 0.55,
+      "rolling_resistance": 0.12,
+      "steerable": true,
+      "steering_channel": "rudder",
+      "max_steering_deg": 25.0
+    },
+    {
+      "name": "main_left",
+      "position_m": [
+        -0.054,
+        -0.144,
+        0.1332
+      ],
+      "radius_m": 0.0252,
+      "spring_n_per_m": 2000.0,
+      "damper_ns_per_m": 50.0,
+      "max_travel_m": 0.02,
+      "friction_static": 0.7,
+      "friction_dynamic": 0.55,
+      "rolling_resistance": 0.12,
+      "steerable": false
+    },
+    {
+      "name": "main_right",
+      "position_m": [
+        -0.054,
+        0.144,
+        0.1332
+      ],
+      "radius_m": 0.0252,
+      "spring_n_per_m": 2000.0,
+      "damper_ns_per_m": 50.0,
+      "max_travel_m": 0.02,
+      "friction_static": 0.7,
+      "friction_dynamic": 0.55,
+      "rolling_resistance": 0.12,
+      "steerable": false
+    }
+  ],
+  "control_channels": {
+    "aileron": {
+      "max_deflection_deg": 30.0,
+      "expo": 0.35,
+      "dual_rate": 1.0,
+      "differential": 0.0
+    },
+    "elevator": {
+      "max_deflection_deg": 32.0,
+      "expo": 0.35,
+      "dual_rate": 1.0
+    },
+    "rudder": {
+      "max_deflection_deg": 38.0,
+      "expo": 0.35,
+      "dual_rate": 1.0
+    },
+    "throttle": {
+      "idle_fraction": 0.0,
+      "expo": 0.0
+    }
+  },
+  "spawn": {
+    "cruise_speed_mps": 20.0,
+    "approach_speed_mps": 13.0,
+    "air_start_altitude_m": 60.0
+  },
+  "validation_targets": {}
+}

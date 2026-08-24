@@ -97,6 +97,30 @@ public:
 
     bool is_aircraft_loaded() const { return AircraftLoaded; }
     godot::String get_aircraft_name() const;
+    godot::String get_aircraft_description() const;
+
+    // ------------------------------------------------- the aircraft's card --
+    //
+    // What a pilot wants to know before choosing one. Derived here rather than
+    // in the UI so the numbers on the card are the numbers the flight model
+    // uses - a specification sheet that disagrees with the aeroplane is worse
+    // than none.
+
+    double get_mass_kg() const;
+    double get_wingspan_m() const;
+    double get_wing_area_m2() const;
+    double get_wing_loading_pa() const;
+    double get_aspect_ratio() const;
+    double get_battery_cells() const;
+    double get_battery_capacity_mah() const;
+    double get_motor_kv() const;
+    double get_peak_power_w() const;
+    double get_power_to_weight_w_per_kg() const;
+    double get_cruise_speed_mps() const;
+    double get_approach_speed_mps() const;
+
+    /** File stems of every aircraft in Data/Aircraft/, sorted. */
+    godot::PackedStringArray list_aircraft() const;
 
     // -------------------------------------------------------- configuration --
 
@@ -245,7 +269,6 @@ public:
 
     godot::Vector3 get_motor_position() const;
     double get_propeller_diameter_m() const;
-    double get_wingspan_m() const;
 
     // --------------------------------------------------------------- reset ---
 

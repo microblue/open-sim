@@ -30,6 +30,7 @@ const DetailScript := preload("res://world/DetailScatter.gd")
 const WizardScript := preload("res://ui/ControllerWizard.gd")
 const MenuScript := preload("res://ui/MainMenu.gd")
 const TuningScript := preload("res://ui/TuningPanel.gd")
+const HangarScript := preload("res://ui/HangarScreen.gd")
 const ModelScript := preload("res://aircraft/Trainer1500/AircraftModel.gd")
 const AudioScript := preload("res://aircraft/Trainer1500/AircraftAudio.gd")
 
@@ -123,7 +124,8 @@ OpenRC Simulator
   R           reset
   F1          hide the telemetry overlay      F2  per-section detail
   F4          tuning panel (wind, weather, physics rate)
-  M           menu       F3  transmitter setup wizard
+  M           menu       H   hangar (choose aircraft)
+  F3          transmitter setup wizard
   F5          reload the aircraft definition  F6  cycle spawn mode
   Esc         quit
 """)
@@ -152,8 +154,42 @@ func _unhandled_input(event: InputEvent) -> void:
 			_open_wizard()
 		KEY_M:
 			_open_menu()
+		KEY_H:
+			_open_hangar()
 		KEY_ESCAPE:
 			get_tree().quit()
+
+
+## The hangar: pick an aeroplane, and see what it is before you do.
+func _open_hangar() -> void:
+	if has_node("Hangar"):
+		return
+	var hangar := HangarScript.new()
+	hangar.name = "Hangar"
+	hangar.simulation_path = NodePath("../Aircraft")
+	hangar.chosen.connect(_fly_aircraft)
+	hangar.cancelled.connect(func() -> void: hangar.queue_free())
+	add_child(hangar)
+
+
+func _fly_aircraft(stem: String) -> void:
+	aircraft.aircraft_definition = "Data/Aircraft/%s.json" % stem
+	if not aircraft.reload_aircraft():
+		push_warning("Could not load %s" % stem)
+		return
+	aircraft.reset_state()
+	# The visible model is generated from the flight model's own geometry, so a
+	# different aeroplane needs it rebuilt rather than re-posed.
+	var model: Node = aircraft.get_node_or_null("Model")
+	if model != null:
+		model.queue_free()
+	var replacement := ModelScript.new()
+	replacement.name = "Model"
+	replacement.simulation_path = NodePath("..")
+	aircraft.add_child(replacement)
+	if has_node("Hangar"):
+		get_node("Hangar").queue_free()
+	print("Flying %s" % aircraft.get_aircraft_name())
 
 
 func _open_menu() -> void:

@@ -39,9 +39,14 @@ struct FlightTestRig
     rc::Real Weight() const { return Definition.Mass * rc::units::kGravity; }
 
     /** Load the shipped Trainer 1500. Returns an empty string on success. */
-    std::string LoadTrainer()
+    std::string LoadTrainer() { return Load("Trainer1500"); }
+
+    /** Any aircraft in the roster, by file stem. The trainer keeps its own
+     *  named helper because most of the suite is about that one aeroplane. */
+    std::string Load(const std::string& stem)
     {
-        const std::string path = std::string(RC_REPO_ROOT) + "/Data/Aircraft/Trainer1500.json";
+        const std::string path =
+            std::string(RC_REPO_ROOT) + "/Data/Aircraft/" + stem + ".json";
         const rc::AircraftLoadResult result = rc::AircraftLoader::LoadFromFile(path, Definition);
         if (!result.Success)
         {
