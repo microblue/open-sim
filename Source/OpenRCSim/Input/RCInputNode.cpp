@@ -62,7 +62,20 @@ void RCInputNode::PollDevice()
     if (Device.Open())
     {
         rc::RawAxisState fresh;
-        if (Device.Poll(fresh))
+        const bool reporting = Device.Poll(fresh);
+
+        if (!reporting && Device.IsOpen())
+        {
+            // Open, but the kernel has not delivered its initial burst yet.
+            // Falling through to Godot's layer here would hand on ITS zeros -
+            // the exact failure this path exists to avoid, and one that reads
+            // as a centred throttle rather than a closed one. There is no
+            // transmitter state this frame, so say so.
+            RawAxes.Connected = false;
+            return;
+        }
+
+        if (reporting)
         {
             if (!UsingDirectDevice)
             {

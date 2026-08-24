@@ -641,3 +641,28 @@ RC_TEST(ProfileCheck, TheShippedEdgeTxProfileMatchesAnEdgeTxRadio)
     RC_CHECK(mapper.FromJson(buffer.str()));
     RC_CHECK(rc::DescribeProfileMismatch(mapper, RestingRadio()).empty());
 }
+
+RC_TEST(ProfileCheck, CatchesATransmitterThatSendsNothing)
+{
+    // A radio that enumerates but is not driving its channels - switched off
+    // and charging, out of USB Joystick mode, or on a model with no mixes. It
+    // has to be told apart from a bad binding, because the advice differs: the
+    // wizard cannot calibrate a radio that is not sending anything.
+    rc::RawAxisState silent;
+    silent.Connected = true;
+    silent.AxisCount = 7;   // every axis defaults to exactly zero
+
+    const rc::ChannelMapper mapper = MapperBinding(0, 1, 2, 3);
+    const std::string problem = rc::DescribeProfileMismatch(mapper, silent);
+    RC_CHECK(!problem.empty());
+    RC_CHECK(problem.find("not sending anything") != std::string::npos);
+    // And it must not send them to the wizard.
+    RC_CHECK(problem.find("recalibrate") == std::string::npos);
+}
+
+RC_TEST(ProfileCheck, ARealRadioIsNotMistakenForASilentOne)
+{
+    // A live radio always has something off centre - the throttle at least.
+    const rc::ChannelMapper mapper = MapperBinding(0, 1, 2, 3);
+    RC_CHECK(rc::DescribeProfileMismatch(mapper, RestingRadio()).empty());
+}

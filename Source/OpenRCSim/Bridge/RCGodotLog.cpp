@@ -33,10 +33,21 @@ namespace
 void InstallGodotLogSink()
 {
     rc::SetLogSink(&ForwardToGodot);
+
+    // Info in release too, not just in debug.
+    //
+    // A packaged build is exactly where these lines matter: it is the one a
+    // pilot runs, and "which device did it open, which profile did it load" is
+    // the first thing anyone needs when a transmitter misbehaves. Dropping them
+    // in release made the log file we enable for that purpose useless for it -
+    // and cost an afternoon chasing a device that was in fact opening fine and
+    // simply not saying so.
+    //
+    // Verbose stays a debug-only level; it is per-step and would swamp the log.
 #ifdef DEBUG_ENABLED
-    rc::SetLogVerbosity(rc::LogLevel::Info);
+    rc::SetLogVerbosity(rc::LogLevel::Verbose);
 #else
-    rc::SetLogVerbosity(rc::LogLevel::Warning);
+    rc::SetLogVerbosity(rc::LogLevel::Info);
 #endif
 }
 

@@ -322,9 +322,15 @@ func _draw_alerts(centre: Vector2) -> void:
 		colour = UITheme.WARN
 	elif _input != null and _input.is_connected() \
 			and not _input.get_profile_problem().is_empty():
+		var problem: String = _input.get_profile_problem()
 		# A mis-bound throttle outranks the arming prompt: the prompt would tell
 		# the pilot to close a stick that is not the throttle.
-		text = "TRANSMITTER BINDING LOOKS WRONG   -   PRESS F3"
+		# The silent-radio case gets its own words: sending the pilot to the
+		# wizard would be sending them somewhere that cannot help.
+		if problem.find("not sending anything") >= 0:
+			text = "TRANSMITTER SENDING NOTHING   -   IS THE RADIO ON?"
+		else:
+			text = "TRANSMITTER BINDING LOOKS WRONG   -   PRESS F3"
 		colour = UITheme.DANGER
 	elif _input != null and _input.is_connected() and not _input.is_throttle_armed():
 		# The interlock holds the motor stopped until the stick has been seen

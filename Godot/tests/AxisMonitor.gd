@@ -91,11 +91,10 @@ func _describe() -> void:
 		print("    ax%-2d %+6.3f   %s" % [axis, value, verdict])
 
 	var problem: String = _transmitter.get_profile_problem()
+	print("")
 	if problem.is_empty():
-		print("")
 		print("  the binding is consistent with this radio.")
 	else:
-		print("")
 		print("  PROBLEM: %s" % problem)
 	print("")
 

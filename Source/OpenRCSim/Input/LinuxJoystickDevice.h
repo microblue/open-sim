@@ -54,7 +54,10 @@ namespace openrc
         bool IsOpen() const { return Descriptor >= 0; }
 
         /** Drain everything the kernel has queued and update `out`. Returns
-         *  false if the device went away, having closed it. */
+         *  false if the device went away (having closed it), or if no axis has
+         *  reported yet - an all-zero state must never be handed on as though
+         *  it were the sticks, because zero is the middle of a throttle's
+         *  travel and would read as half power. */
         bool Poll(rc::RawAxisState& out);
 
         const std::string& Name() const { return DeviceName; }
@@ -67,6 +70,17 @@ namespace openrc
         std::string DeviceName;
         size_t      AxisCount = 0;
         double      NextRetryAt = 0.0;
+
+        /** One bit per axis the kernel has reported since the device was
+         *  opened. The initial burst is one event per axis and is not
+         *  guaranteed to arrive in a single read, so "we heard from an axis"
+         *  is not the same as "we know where the sticks are" - and a partial
+         *  state is worse than none, because the axes not yet heard from read
+         *  as zero, which for a throttle is half power rather than closed. */
+        unsigned int SeenAxes = 0;
+
+        /** True once every axis the device declares has reported. */
+        bool HasFullState() const;
 
         /** Latest value per axis, kept across polls: the kernel sends changes,
          *  not a full state, after the initial burst. */

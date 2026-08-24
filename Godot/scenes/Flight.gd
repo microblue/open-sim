@@ -37,6 +37,7 @@ const AudioScript := preload("res://aircraft/Trainer1500/AircraftAudio.gd")
 
 var _autobind_remaining: float = 0.0
 var _autobind_pending: bool = false
+var _last_profile_problem: String = ""
 
 
 func _ready() -> void:
@@ -159,11 +160,12 @@ func _process(delta: float) -> void:
 	# The camera rig and the field drive themselves from the aircraft, and the
 	# aircraft drives itself from the transmitter, so the only work here is the
 	# one-shot search for a radio we already know how to bind.
+	_check_profile_problem()
+
 	if _autobind_pending:
 		_autobind_remaining -= delta
 		if _try_autobind() or _autobind_remaining <= 0.0:
 			_autobind_pending = false
-			_report_profile_problem()
 			if not transmitter.is_fully_bound():
 				if not transmitter.is_connected():
 					print("No transmitter detected. Plug one in and press F3 for the wizard.")
@@ -173,14 +175,22 @@ func _process(delta: float) -> void:
 ## A binding can be well-formed and still be wrong for the radio attached, and
 ## the dangerous case - a throttle bound to a stick - is not something the pilot
 ## should discover by watching the propeller answer the rudder.
-func _report_profile_problem() -> void:
-	if not transmitter.is_connected():
+##
+## Evaluated every frame and reported on the transition, rather than sampled
+## once at startup: a transmitter takes a moment to report its first state, and
+## a snapshot taken before then describes nothing.
+func _check_profile_problem() -> void:
+	var problem: String = ""
+	if transmitter.is_connected():
+		problem = transmitter.get_profile_problem()
+	if problem == _last_profile_problem:
 		return
-	var problem: String = transmitter.get_profile_problem()
+	_last_profile_problem = problem
+
 	if problem.is_empty():
 		return
-	push_warning("Transmitter binding looks wrong: %s" % problem)
-	print("WARNING  the transmitter binding does not match the radio:")
+	push_warning("Transmitter: %s" % problem)
+	print("WARNING  transmitter problem:")
 	print("         %s" % problem)
 
 

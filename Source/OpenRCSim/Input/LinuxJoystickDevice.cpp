@@ -77,8 +77,8 @@ namespace openrc
             DeviceName = name;
             AxisCount  = static_cast<size_t>(axes);
             Axes       = rc::RawAxisState{};
-            Axes.Connected = true;
             Axes.AxisCount = AxisCount;
+            SeenAxes   = 0;
 
             RC_LOG(Input, Info, "Opened %s: %s, %zu axes (kernel joystick interface).",
                    path, DeviceName.c_str(), AxisCount);
@@ -98,6 +98,16 @@ namespace openrc
         DeviceName.clear();
         AxisCount = 0;
         Axes = rc::RawAxisState{};
+        SeenAxes = 0;
+    }
+
+    bool LinuxJoystickDevice::HasFullState() const
+    {
+        if (AxisCount == 0) { return false; }
+        const unsigned int wanted = (AxisCount >= 32)
+                                  ? 0xFFFFFFFFu
+                                  : ((1u << AxisCount) - 1u);
+        return (SeenAxes & wanted) == wanted;
     }
 
     bool LinuxJoystickDevice::Poll(rc::RawAxisState& out)
@@ -121,6 +131,7 @@ namespace openrc
                     {
                         Axes.Axes[axis] = static_cast<rc::Real>(event.value) / 32767.0;
                         if (axis + 1 > Axes.AxisCount) { Axes.AxisCount = axis + 1; }
+                        SeenAxes |= (1u << axis);
                     }
                 }
                 continue;
@@ -136,6 +147,15 @@ namespace openrc
             RC_LOG(Input, Warning, "Transmitter disconnected (%s).",
                    DeviceName.empty() ? "unknown" : DeviceName.c_str());
             Close();
+            return false;
+        }
+
+        if (!HasFullState())
+        {
+            // Opened, but the kernel has not finished its initial burst. The
+            // axes not yet heard from would read as zero, which for a throttle
+            // is half travel rather than closed - indistinguishable from a real
+            // reading, and exactly how the Godot path went wrong.
             return false;
         }
 

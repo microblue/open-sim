@@ -90,6 +90,30 @@ current state arrives immediately and correctly, the axis order is the device's
 own, and nothing is remapped. Everywhere other than Linux, the Godot path is
 still used - it is correct for a gamepad even where it is wrong for a radio.
 
+## "The transmitter is connected but sending nothing"
+
+The radio enumerates on USB but every channel reads exactly zero. That is not a
+position a radio can physically be in - a throttle rests at one end of its
+travel, and even a centred gimbal lands a count or two off - so it means the
+device is on the bus but the radio is not driving it. In order of likelihood:
+
+- **The radio is off and merely charging.** Plugging in powers the USB interface
+  whether or not the radio itself is running.
+- **USB mode is not Joystick.** Check `SYS` -> `Hardware` -> `USB Mode`, or the
+  popup that appears when the cable goes in.
+- **The selected model has no mixes** - a freshly created model, or one whose
+  channels are all driven from switches. The radio's own channel monitor page
+  is the check: the bars should move when you move the sticks.
+
+Confirm from outside the simulator with:
+
+```bash
+godot --headless --path Godot --script res://tests/AxisMonitor.gd
+```
+
+Every axis at 0.000 there means the problem is on the radio, not in the binding,
+and no amount of recalibrating will help.
+
 ## The binding is checked against the radio
 
 A binding can be well-formed and still wrong for the device attached, and the
