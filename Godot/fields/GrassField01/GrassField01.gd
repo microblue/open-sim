@@ -42,6 +42,7 @@ const TREE_RING_RADIUS: float = 125.0
 ## the project has to open without the assets present.
 const ImpostorLib := preload("res://world/Impostors.gd")
 const GrassLib := preload("res://world/GrassCards.gd")
+const HDRI_DIR: String = "Godot/assets/hdri"
 const SKY_HDRI: String = "Godot/assets/hdri/kloofendal_48d_partly_cloudy_puresky.hdr"
 
 @export var simulation_path: NodePath
@@ -50,6 +51,10 @@ var _sim: RCSimulationNode
 var _grass_material: ShaderMaterial
 var _foliage_material: ShaderMaterial
 var _sky_material: ShaderMaterial
+var _sky_panorama: PanoramaSkyMaterial
+var _environment: Environment
+var _sun: DirectionalLight3D
+var _base_sun_energy: float = 6.5
 var _rng_unused: int = 0
 var _windsock: Node3D
 var _rng := RandomNumberGenerator.new()
@@ -103,6 +108,37 @@ func _process(_delta: float) -> void:
 
 # ---------------------------------------------------------------- environment
 
+## Swap the sky and re-aim the sun. A scene preset is a climate, a geology and
+## a sky; this is the sky half.
+func apply_sky(hdri_name: String, sun_angles: Vector3, sun_energy: float) -> void:
+	var panorama: Texture2D = _load_hdri("%s/%s.hdr" % [HDRI_DIR, hdri_name])
+	if panorama != null and _sky_panorama != null:
+		_sky_panorama.panorama = panorama
+	if _sun != null:
+		_sun.rotation_degrees = sun_angles
+		_sun.light_energy = sun_energy
+		_base_sun_energy = sun_energy
+
+
+## Apply a weather state to what can be seen: fog, light level and the sky's own
+## brightness. The air and the ground are the director's business, not the
+## field's.
+func apply_weather(state: Dictionary) -> void:
+	if _environment == null:
+		return
+	_environment.fog_density = state["fog_density"]
+	_environment.fog_aerial_perspective = state["aerial"]
+	_environment.volumetric_fog_enabled = float(state["volumetric"]) > 0.0
+	if _environment.volumetric_fog_enabled:
+		_environment.volumetric_fog_density = state["volumetric"]
+	# A grey day is a dimmer sun AND a dimmer sky, not a filter over the result.
+	_environment.ambient_light_energy = float(state["sky_scale"])
+	if _sun != null:
+		_sun.light_energy = _base_sun_energy * float(state["light_scale"])
+	if _sky_panorama != null:
+		_sky_panorama.energy_multiplier = float(state["sky_scale"])
+
+
 ## Load an HDRI from the asset directory, or null if the assets have not been
 ## fetched. Everything that uses one falls back rather than failing: a checkout
 ## without assets must still run, because that is what the test suite does.
@@ -141,6 +177,7 @@ func _build_environment() -> void:
 		# which is exactly where a low-flying model is silhouetted against it.
 		sky_material.filter = true
 	_sky_material = null
+	_sky_panorama = sky_material
 
 	var sky := Sky.new()
 	sky.sky_material = sky_material
@@ -252,6 +289,8 @@ func _build_environment() -> void:
 	environment.glow_bloom = 0.0
 	environment.glow_hdr_threshold = 1.4
 
+	_environment = environment
+
 	var holder := WorldEnvironment.new()
 	holder.name = "WorldEnvironment"
 	holder.environment = environment
@@ -305,6 +344,8 @@ func _build_environment() -> void:
 	sun.shadow_bias = 0.35
 	sun.shadow_normal_bias = 3.0
 	sun.directional_shadow_blend_splits = true
+	_sun = sun
+	_base_sun_energy = sun.light_energy
 	add_child(sun)
 
 

@@ -26,8 +26,19 @@ func _initialize() -> void:
 	root.add_child(_scene)
 
 
+## The menu opens a second or so in when no transmitter profile binds, which is
+## after a one-shot dismissal has already run. Freeing it every frame is the
+## only version of this that works whether or not a radio is plugged in.
+func _dismiss_overlays() -> void:
+	for name in ["MainMenu", "FlightHUD", "Hangar"]:
+		var node: Node = _scene.get_node_or_null(name)
+		if node != null:
+			node.queue_free()
+
+
 func _process(_delta: float) -> bool:
 	_frames += 1
+	_dismiss_overlays()
 
 	if _aircraft == null:
 		var menu: Node = _scene.get_node_or_null("MainMenu")

@@ -57,7 +57,9 @@ RC_TEST(TerrainField, TheFlyingFieldIsFlat)
     for (int i = 0; i < 400; ++i)
     {
         const rc::Real angle = 0.0157 * i;
-        const rc::Real radius = 380.0;
+        // Just inside the plateau. The strip, the pits and the whole circuit
+        // sit within this, and every one of them was measured on level ground.
+        const rc::Real radius = 400.0;
         const rc::Real height = field.HeightAt(std::cos(angle) * radius,
                                                std::sin(angle) * radius);
         worst = std::max(worst, std::fabs(height - centre));

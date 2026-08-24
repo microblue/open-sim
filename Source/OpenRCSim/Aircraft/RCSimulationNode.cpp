@@ -384,6 +384,46 @@ void RCSimulationNode::set_terrain_seed(int seed)
     Terrain.SetSettings(settings);
 }
 
+void RCSimulationNode::configure_terrain(const Dictionary& settings)
+{
+    rc::TerrainSettings config = Terrain.Settings();
+
+    if (settings.has("seed"))            { config.Seed = static_cast<std::uint32_t>(int(settings["seed"])); }
+    if (settings.has("mountain_height")) { config.MountainHeight = double(settings["mountain_height"]); }
+    if (settings.has("continent_scale")) { config.ContinentScale = double(settings["continent_scale"]); }
+    if (settings.has("sea_level"))       { config.SeaLevel = double(settings["sea_level"]); }
+    if (settings.has("snow_line"))       { config.SnowLine = double(settings["snow_line"]); }
+    if (settings.has("beach_height"))    { config.BeachHeight = double(settings["beach_height"]); }
+    if (settings.has("moisture_bias"))   { config.MoistureBias = double(settings["moisture_bias"]); }
+    if (settings.has("ruggedness"))      { config.Ruggedness = double(settings["ruggedness"]); }
+    if (settings.has("plateau_radius"))  { config.PlateauRadius = double(settings["plateau_radius"]); }
+    if (settings.has("plateau_blend"))   { config.PlateauBlend = double(settings["plateau_blend"]); }
+
+    Terrain.SetSettings(config);
+    RC_LOG(Physics, Info,
+           "Terrain reconfigured: seed %u, mountains %.0f m, scale %.0f m, "
+           "sea %.0f m, snow %.0f m, moisture %+.2f, ruggedness %.2f",
+           config.Seed, config.MountainHeight, config.ContinentScale,
+           config.SeaLevel, config.SnowLine, config.MoistureBias, config.Ruggedness);
+}
+
+Dictionary RCSimulationNode::get_terrain_settings() const
+{
+    const rc::TerrainSettings& config = Terrain.Settings();
+    Dictionary out;
+    out["seed"]            = static_cast<int>(config.Seed);
+    out["mountain_height"] = config.MountainHeight;
+    out["continent_scale"] = config.ContinentScale;
+    out["sea_level"]       = config.SeaLevel;
+    out["snow_line"]       = config.SnowLine;
+    out["beach_height"]    = config.BeachHeight;
+    out["moisture_bias"]   = config.MoistureBias;
+    out["ruggedness"]      = config.Ruggedness;
+    out["plateau_radius"]  = config.PlateauRadius;
+    out["plateau_blend"]   = config.PlateauBlend;
+    return out;
+}
+
 int RCSimulationNode::get_terrain_seed() const
 {
     return static_cast<int>(Terrain.Settings().Seed);
@@ -973,6 +1013,8 @@ void RCSimulationNode::_bind_methods()
                          &RCSimulationNode::scatter_detail);
     OPENRC_BIND1(set_terrain_seed, "seed");
     OPENRC_BIND(get_terrain_seed);
+    OPENRC_BIND1(configure_terrain, "settings");
+    OPENRC_BIND(get_terrain_settings);
     OPENRC_BIND(reload_aircraft);
     OPENRC_BIND(is_aircraft_loaded);
     OPENRC_BIND(get_aircraft_name);

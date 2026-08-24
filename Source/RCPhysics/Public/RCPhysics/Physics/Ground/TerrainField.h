@@ -56,8 +56,12 @@ namespace rc
          *  over which it blends into the surrounding terrain. Generous: a
          *  trainer circuit is a couple of hundred metres across, and terrain
          *  rising inside that would change what the validation suite measured. */
-        Real PlateauRadius = 400.0;
-        Real PlateauBlend  = 520.0;
+        Real PlateauRadius = 430.0;
+        /** Long. At 520 m the flat disc met rising ground over a distance the
+         *  eye reads as an edge, and from any height the field was a circle
+         *  stamped into the landscape. A kilometre and a half of blend puts the
+         *  strip in a valley floor instead of on a plate. */
+        Real PlateauBlend  = 1500.0;
 
         /** Vertical scale of the mountains [m]. */
         Real MountainHeight = 2100.0;
@@ -77,6 +81,15 @@ namespace rc
 
         /** Snow line [m]. */
         Real SnowLine = 1250.0;
+
+        /** Shifts the whole world wetter or drier, -1 to 1. This is what makes
+         *  one preset a forested valley and another a desert: the biome rules
+         *  are unchanged, the climate they read is not. */
+        Real MoistureBias = 0.0;
+
+        /** Multiplies the ridged term only, leaving the continents alone. Above
+         *  one the mountains become spires rather than hills. */
+        Real Ruggedness = 1.0;
 
         /** Where sand gives way to grass above the water line [m]. */
         /** Narrow: a fourteen-metre band over gentle ground put a white rim

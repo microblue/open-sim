@@ -67,12 +67,24 @@ namespace rc
             // --- what cannot be here ------------------------------------
             const Real fieldDistance = std::sqrt(point.North * point.North
                                                + point.East * point.East);
-            if (fieldDistance < Config.FieldClearance)
+            // The flying field is mown, and its own grass and treeline are
+            // placed by hand where the pilot can learn them. Beyond the mown
+            // area the scatter thins back in rather than switching on, so the
+            // field has an edge like a real one instead of a stamped circle.
+            if (fieldDistance < Config.FieldClearance + Config.FieldFeather)
             {
-                // The flying field is mown, and its own grass and treeline are
-                // placed by hand where the pilot can learn them.
-                out.push_back(point);
-                continue;
+                const Real reach = (fieldDistance - Config.FieldClearance)
+                                 / std::max(Config.FieldFeather, Real(1));
+                const Real chance = std::min(std::max(reach, Real(0)), Real(1));
+                // Linear. Squaring it held the density down for most of the
+                // feather and produced a BIGGER bare circle than the hard cut
+                // it replaced - the edge has to recover quickly or it is not an
+                // edge, it is a bigger clearing.
+                if (Random01(cellHash, index + 7u) > chance)
+                {
+                    out.push_back(point);
+                    continue;
+                }
             }
             if (sample.Type == Biome::Ocean || sample.Slope > Config.MaxSlope)
             {

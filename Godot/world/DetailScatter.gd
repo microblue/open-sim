@@ -128,6 +128,22 @@ func _ready() -> void:
 		% [_cells.size(), built])
 
 
+## Throw away every scattered cell and regenerate the circuit. Called when a
+## scene preset changes the world underneath them - vegetation placed by the old
+## climate is standing in the wrong place, or in the sea.
+func rebuild() -> void:
+	for key in _cells:
+		var holder = _cells[key]
+		if holder != null and is_instance_valid(holder):
+			holder.queue_free()
+	_cells.clear()
+	_pending.clear()
+	_last_survey = Vector2(1e12, 1e12)
+	_queue_cells(_focus(), PREBUILT_RADIUS)
+	while not _pending.is_empty():
+		_build_next()
+
+
 func _process(_delta: float) -> void:
 	if _sim == null:
 		return

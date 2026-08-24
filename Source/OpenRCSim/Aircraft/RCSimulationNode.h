@@ -93,6 +93,12 @@ public:
     void set_terrain_seed(int seed);
     int  get_terrain_seed() const;
 
+    /** Reshape the world. A scene preset is these numbers and a sky; the biome
+     *  rules never change, only the climate and the geology they read. Applying
+     *  any of them invalidates every terrain chunk, so the renderer rebuilds. */
+    void configure_terrain(const godot::Dictionary& settings);
+    godot::Dictionary get_terrain_settings() const;
+
     bool reload_aircraft();
 
     bool is_aircraft_loaded() const { return AircraftLoaded; }

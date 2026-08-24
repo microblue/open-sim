@@ -100,24 +100,74 @@ RC_TEST(TerrainScatter, NothingGrowsInTheSea)
 RC_TEST(TerrainScatter, TheFlyingFieldStaysClear)
 {
     // The strip is mown and its treeline is placed by hand, where the pilot can
-    // learn it. A tree appearing in the circuit would be a hazard the pilot had
-    // no way to anticipate.
+    // learn it. A tree appearing in the circuit would be a hazard they had no
+    // way to anticipate, so the mown radius is absolute.
     const rc::TerrainScatter scatter(World());
     std::vector<rc::ScatterPoint> points;
 
     for (int cell = -3; cell <= 3; ++cell)
     {
-        scatter.Fill(cell * 100.0, cell * 80.0, 100.0, 200, 5u, rc::ScatterLayer::Canopy, points);
+        for (const rc::ScatterLayer layer : {rc::ScatterLayer::GroundCover,
+                                             rc::ScatterLayer::Canopy})
+        {
+            scatter.Fill(cell * 70.0, cell * 55.0, 70.0, 200, 5u, layer, points);
+            for (const rc::ScatterPoint& point : points)
+            {
+                const rc::Real distance = std::sqrt(point.North * point.North
+                                                  + point.East * point.East);
+                if (distance < rc::ScatterSettings{}.FieldClearance)
+                {
+                    RC_CHECK(point.Kind == rc::ScatterKind::None);
+                }
+            }
+        }
+    }
+}
+
+RC_TEST(TerrainScatter, TheFieldEdgeIsFeatheredRatherThanCut)
+{
+    // A hard cut left a bare circle stamped into the landscape, visible from
+    // anywhere above a hundred metres. Density has to rise with distance from
+    // the strip instead of switching on, so the field has an edge like a real
+    // one - which means counting what is placed in bands and insisting the
+    // count goes up.
+    const rc::TerrainScatter scatter(World());
+    const rc::ScatterSettings config;
+    std::vector<rc::ScatterPoint> points;
+
+    // Three bands across the feather, near / middle / far.
+    int placed[3] = {0, 0, 0};
+    int sampled[3] = {0, 0, 0};
+
+    for (int ring = 0; ring < 900; ++ring)
+    {
+        const rc::Real angle = 0.07 * ring;
+        const rc::Real radius = config.FieldClearance + 30.0
+                              + (ring % 3) * config.FieldFeather * 0.32;
+        scatter.Fill(std::cos(angle) * radius, std::sin(angle) * radius, 60.0, 24, 41u,
+                     rc::ScatterLayer::Canopy, points);
+
         for (const rc::ScatterPoint& point : points)
         {
             const rc::Real distance = std::sqrt(point.North * point.North
                                               + point.East * point.East);
-            if (distance < 420.0)
-            {
-                RC_CHECK(point.Kind == rc::ScatterKind::None);
-            }
+            const rc::Real reach = (distance - config.FieldClearance) / config.FieldFeather;
+            if (reach < 0.0 || reach > 1.0) { continue; }
+            const int band = std::min(2, static_cast<int>(reach * 3.0));
+            sampled[band] += 1;
+            if (point.Kind != rc::ScatterKind::None) { placed[band] += 1; }
         }
     }
+
+    RC_CHECK(sampled[0] > 0 && sampled[1] > 0 && sampled[2] > 0);
+    const double near = double(placed[0]) / std::max(sampled[0], 1);
+    const double middle = double(placed[1]) / std::max(sampled[1], 1);
+    const double far = double(placed[2]) / std::max(sampled[2], 1);
+
+    std::printf("       field edge density  near %.3f  middle %.3f  far %.3f\n",
+                near, middle, far);
+    RC_CHECK_MSG_VALUE(middle > near, middle - near);
+    RC_CHECK_MSG_VALUE(far > middle, far - middle);
 }
 
 RC_TEST(TerrainScatter, NothingStandsOnACliff)

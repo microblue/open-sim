@@ -31,12 +31,15 @@ const WizardScript := preload("res://ui/ControllerWizard.gd")
 const MenuScript := preload("res://ui/MainMenu.gd")
 const TuningScript := preload("res://ui/TuningPanel.gd")
 const HangarScript := preload("res://ui/HangarScreen.gd")
+const DirectorScript := preload("res://world/WorldDirector.gd")
+const WorldScreenScript := preload("res://ui/WorldScreen.gd")
 const ModelScript := preload("res://aircraft/Trainer1500/AircraftModel.gd")
 const AudioScript := preload("res://aircraft/Trainer1500/AircraftAudio.gd")
 
 @onready var aircraft: RCSimulationNode = $Aircraft
 @onready var transmitter: RCInputNode = $Transmitter
 @onready var camera_rig: Node3D = $CameraRig
+var director: Node
 
 var _autobind_remaining: float = 0.0
 var _autobind_pending: bool = false
@@ -80,6 +83,15 @@ func _ready() -> void:
 	detail.camera_path = NodePath("../../CameraRig")
 	if not OS.has_environment("RC_NO_DETAIL"):
 		$Field.add_child(detail)
+
+	# One place that knows how a scene preset and a weather state reach the
+	# terrain, the sky, the light, the air and the ground.
+	director = DirectorScript.new()
+	director.name = "WorldDirector"
+	director.simulation_path = NodePath("../Aircraft")
+	director.field_path = NodePath("../Field")
+	director.camera_path = NodePath("../CameraRig")
+	add_child(director)
 	# The camera rig asks the field how high the ground is, so it can refuse to
 	# go under it.
 	camera_rig.field_path = camera_rig.get_path_to(field)
@@ -124,7 +136,7 @@ OpenRC Simulator
   R           reset
   F1          hide the telemetry overlay      F2  per-section detail
   F4          tuning panel (wind, weather, physics rate)
-  M           menu       H   hangar (choose aircraft)
+  M           menu       H   hangar (aircraft)   W  world (place, weather)
   F3          transmitter setup wizard
   F5          reload the aircraft definition  F6  cycle spawn mode
   Esc         quit
@@ -156,8 +168,26 @@ func _unhandled_input(event: InputEvent) -> void:
 			_open_menu()
 		KEY_H:
 			_open_hangar()
+		KEY_W:
+			_open_world_screen()
 		KEY_ESCAPE:
 			get_tree().quit()
+
+
+## Where and when: the place and the weather, chosen independently.
+func _open_world_screen() -> void:
+	if has_node("WorldScreen") or director == null:
+		return
+	var screen := WorldScreenScript.new()
+	screen.name = "WorldScreen"
+	add_child(screen)
+	screen.select(director.scene_id, director.weather_id)
+	screen.chosen.connect(func(scene_id: String, weather_id: String) -> void:
+		director.apply_scene(scene_id)
+		director.apply_weather(weather_id)
+		aircraft.reset_state()
+		screen.queue_free())
+	screen.cancelled.connect(func() -> void: screen.queue_free())
 
 
 ## The hangar: pick an aeroplane, and see what it is before you do.

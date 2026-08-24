@@ -62,8 +62,8 @@ func _ready() -> void:
 	_terrain_material = ShaderMaterial.new()
 	_terrain_material.shader = WorldShaders.terrain_shader()
 	_terrain_material.set_shader_parameter("snow_line", 1250.0)
-	_terrain_material.set_shader_parameter("field_radius", 400.0)
-	_terrain_material.set_shader_parameter("field_blend", 260.0)
+	_terrain_material.set_shader_parameter("field_radius", 300.0)
+	_terrain_material.set_shader_parameter("field_blend", 420.0)
 	_terrain_material.set_shader_parameter("sea_level", _sim.get_sea_level_y())
 
 	# Real scanned surfaces where they have been fetched, procedural colouring
@@ -92,6 +92,19 @@ func _ready() -> void:
 
 	if not OS.has_environment("RC_NO_WATER"):
 		_build_water()
+	for level in _levels:
+		_rebuild_level(level, _anchor_for(level, _focus()))
+
+
+## Throw away every chunk and let them build again from the current terrain
+## settings. Called when a scene preset changes the world's shape.
+func rebuild() -> void:
+	for level in _levels:
+		for child in (level["holder"] as Node3D).get_children():
+			child.queue_free()
+		level["anchor"] = Vector2(1e12, 1e12)
+	if _water != null and _sim != null:
+		_water.position.y = _sim.get_sea_level_y()
 	for level in _levels:
 		_rebuild_level(level, _anchor_for(level, _focus()))
 

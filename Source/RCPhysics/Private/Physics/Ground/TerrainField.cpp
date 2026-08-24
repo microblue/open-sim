@@ -171,7 +171,12 @@ namespace rc
         const Real detail = Fbm(wx * Real(31.0), wy * Real(31.0), 3, Config.Seed + 2777u);
 
         Real height = continent * Config.MountainHeight * Real(0.42);
-        height += ridges * orography * Config.MountainHeight;
+        // Ruggedness sharpens the ridges without touching the continents, so a
+        // preset can ask for spires over the same coastline.
+        const Real sharpened = (Config.Ruggedness > Real(1.0))
+                             ? std::pow(ridges, Real(1.0) / Config.Ruggedness)
+                             : ridges;
+        height += sharpened * orography * Config.MountainHeight * Config.Ruggedness;
         height += hills * Real(52);
         height += detail * Real(9);
 
@@ -192,7 +197,8 @@ namespace rc
         const Real scale = Real(1) / (Config.ContinentScale * Real(0.55));
         const Real raw = Fbm(north * scale + Real(31.7), east * scale - Real(11.9),
                              4, Config.Seed + 3313u);
-        return std::min(std::max(raw * Real(0.5) + Real(0.5), Real(0)), Real(1));
+        return std::min(std::max(raw * Real(0.5) + Real(0.5) + Config.MoistureBias,
+                                 Real(0)), Real(1));
     }
 
     bool TerrainField::IsWater(Real north, Real east) const

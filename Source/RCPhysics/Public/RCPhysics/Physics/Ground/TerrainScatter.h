@@ -69,8 +69,16 @@ namespace rc
         /** Nothing grows on ground steeper than this. */
         Real MaxSlope = 0.72;
 
-        /** Nor within this of the flying field, which is mown [m]. */
-        Real FieldClearance = 420.0;
+        /** Nothing grows within this of the flying field, which is mown [m]. */
+        Real FieldClearance = 300.0;
+
+        /** And it thins in over this distance beyond it.
+         *
+         *  A hard cut left a bare circle stamped into the landscape, visible
+         *  from anywhere above a hundred metres - the one thing that most made
+         *  the field look placed rather than found. Real ground does not stop
+         *  at a radius; it gets patchier as the mowing gets less regular. */
+        Real FieldFeather = 420.0;
 
         /** Height above sea level below which only reeds and driftwood
          *  appear [m], measured from the water line. */

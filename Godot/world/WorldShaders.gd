@@ -49,8 +49,8 @@ uniform float beach_height = 5.0;
  *  climate happens to be. Without this the strip took whatever moisture the
  *  noise gave it and came out as dry steppe - which is a fine landscape and the
  *  wrong one to land a trainer on. */
-uniform float field_radius = 400.0;
-uniform float field_blend = 260.0;
+uniform float field_radius = 300.0;
+uniform float field_blend = 420.0;
 
 /** Metres per tile of the detail sample, and of the macro sample that breaks
  *  its repeat. */
@@ -222,7 +222,9 @@ void fragment() {
 		// grass through it - which is right for open country and wrong for a
 		// strip that is cut every week. There is no aerial lawn texture in the
 		// library, so the ground under the grass geometry is tinted instead.
-		albedo = mix(albedo, albedo * vec3(0.62, 1.35, 0.45), mown * 0.75);
+		// Softened, and over a long distance. A hard-edged green disc is worse
+		// than no mown strip at all - it reads as a decal on the landscape.
+		albedo = mix(albedo, albedo * vec3(0.70, 1.28, 0.55), mown * 0.62);
 		ALBEDO = albedo;
 		ROUGHNESS = clamp(rough.r * 1.15, 0.25, 1.0);
 		SPECULAR = 0.30;
