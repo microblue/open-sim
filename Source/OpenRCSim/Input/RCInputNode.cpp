@@ -55,6 +55,36 @@ void RCInputNode::_process(double /*deltaSeconds*/)
 
 void RCInputNode::PollDevice()
 {
+    // The kernel device first. It reports the real axis order, gives the full
+    // current state the moment it is opened, and is not remapped by anything -
+    // none of which is true of the path below. Open() is also the hot-plug
+    // check: it rate-limits itself while no device is present.
+    if (Device.Open())
+    {
+        rc::RawAxisState fresh;
+        if (Device.Poll(fresh))
+        {
+            if (!UsingDirectDevice)
+            {
+                UsingDirectDevice = true;
+                WarnedNoDevice    = false;
+                ThrottleArming_.Reset();
+                RC_LOG(Input, Info, "Transmitter: %s", Device.Name().c_str());
+            }
+            RawAxes = fresh;
+            return;
+        }
+    }
+
+    if (UsingDirectDevice)
+    {
+        // The device we were reading went away. Fall through to Godot's layer,
+        // which will report no device unless a gamepad is attached.
+        UsingDirectDevice = false;
+        ActiveDeviceId    = -1;
+        ThrottleArming_.Reset();
+    }
+
     Input* input = Input::get_singleton();
     if (input == nullptr)
     {
@@ -139,6 +169,9 @@ bool RCInputNode::is_connected() const { return RawAxes.Connected; }
 
 String RCInputNode::get_device_name() const
 {
+    // The kernel device knows its own name; Godot's device id means nothing
+    // while we are reading it directly.
+    if (UsingDirectDevice) { return String(Device.Name().c_str()); }
     if (ActiveDeviceId < 0) { return String("<none>"); }
     Input* input = Input::get_singleton();
     return (input != nullptr) ? input->get_joy_name(ActiveDeviceId) : String("<none>");
@@ -147,6 +180,11 @@ String RCInputNode::get_device_name() const
 int RCInputNode::get_device_id() const { return ActiveDeviceId; }
 
 bool RCInputNode::is_throttle_armed() const { return ThrottleArming_.IsArmed(); }
+
+String RCInputNode::get_profile_problem() const
+{
+    return String(rc::DescribeProfileMismatch(Mapper_, RawAxes).c_str());
+}
 
 String RCInputNode::resolve_data_path(const String& relative) const
 {
@@ -360,6 +398,7 @@ void RCInputNode::_bind_methods()
 {
     ClassDB::bind_method(D_METHOD("is_connected"), &RCInputNode::is_connected);
     ClassDB::bind_method(D_METHOD("is_throttle_armed"), &RCInputNode::is_throttle_armed);
+    ClassDB::bind_method(D_METHOD("get_profile_problem"), &RCInputNode::get_profile_problem);
     ClassDB::bind_method(D_METHOD("resolve_data_path", "relative"), &RCInputNode::resolve_data_path);
     ClassDB::bind_method(D_METHOD("get_device_name"), &RCInputNode::get_device_name);
     ClassDB::bind_method(D_METHOD("get_device_id"), &RCInputNode::get_device_id);

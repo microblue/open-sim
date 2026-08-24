@@ -1,7 +1,11 @@
 #include "TestHarness.h"
 
 #include "RCPhysics/Input/ChannelMapper.h"
+#include "RCPhysics/Input/ProfileCheck.h"
 #include "RCPhysics/Input/ThrottleArming.h"
+#include <string>
+#include <sstream>
+#include <fstream>
 #include "RCPhysics/Core/Units/Units.h"
 
 using namespace rc;
@@ -534,4 +538,106 @@ RC_TEST(ProfileFormat, WhatWeWriteIsWhatWeAccept)
     std::string error;
     RC_CHECK(loaded.FromJson(saved.ToJson(), &error));
     RC_CHECK(loaded.Binding(rc::RCChannel::Aileron).AxisIndex == 0);
+}
+
+// ------------------------------------------- profile against a real device --
+
+namespace
+{
+    /** A radio at rest, laid out the way EdgeTX presents it: three centred
+     *  sticks, a throttle at the bottom, three switches at one end. */
+    rc::RawAxisState RestingRadio()
+    {
+        rc::RawAxisState raw;
+        raw.Connected = true;
+        raw.AxisCount = 7;
+        raw.Axes[0] =  0.00;   // aileron
+        raw.Axes[1] =  0.00;   // elevator
+        raw.Axes[2] = -1.00;   // throttle, closed
+        raw.Axes[3] =  0.00;   // rudder
+        raw.Axes[4] = -1.00;
+        raw.Axes[5] = -1.00;
+        raw.Axes[6] = -1.00;
+        return raw;
+    }
+
+    rc::ChannelMapper MapperBinding(int aileron, int elevator, int throttle, int rudder)
+    {
+        rc::AxisCalibration calibration;
+        calibration.RawMin = -1.0;
+        calibration.RawCenter = 0.0;
+        calibration.RawMax = 1.0;
+
+        rc::ChannelMapper mapper;
+        mapper.Bind(rc::RCChannel::Aileron, aileron, calibration);
+        mapper.Bind(rc::RCChannel::Elevator, elevator, calibration);
+        mapper.Bind(rc::RCChannel::Throttle, throttle, calibration);
+        mapper.Bind(rc::RCChannel::Rudder, rudder, calibration);
+        return mapper;
+    }
+}
+
+RC_TEST(ProfileCheck, AcceptsABindingThatMatchesTheRadio)
+{
+    const rc::ChannelMapper mapper = MapperBinding(0, 1, 2, 3);
+    RC_CHECK(rc::DescribeProfileMismatch(mapper, RestingRadio()).empty());
+}
+
+RC_TEST(ProfileCheck, CatchesAThrottleBoundToASelfCentringStick)
+{
+    // Throttle on axis 3, which is a rudder. This is the dangerous one: the
+    // motor would answer the stick the pilot steers with.
+    const rc::ChannelMapper mapper = MapperBinding(0, 1, 3, 2);
+    const std::string problem = rc::DescribeProfileMismatch(mapper, RestingRadio());
+    RC_CHECK(!problem.empty());
+    RC_CHECK(problem.find("throttle") != std::string::npos);
+}
+
+RC_TEST(ProfileCheck, CatchesAStickBoundToTheThrottle)
+{
+    // Rudder on axis 2, which is the throttle - the other half of the same
+    // mix-up, and the reason the aircraft would steer itself on the runway.
+    const rc::ChannelMapper mapper = MapperBinding(0, 1, 3, 2);
+    rc::RawAxisState resting = RestingRadio();
+    // Put a real throttle on axis 3 so the throttle check passes and the stick
+    // check is the one that has to catch it.
+    resting.Axes[3] = -1.0;
+    resting.Axes[2] = -1.0;
+    const std::string problem = rc::DescribeProfileMismatch(mapper, resting);
+    RC_CHECK(!problem.empty());
+    RC_CHECK(problem.find("rudder") != std::string::npos);
+}
+
+RC_TEST(ProfileCheck, SaysNothingWithNoDeviceAttached)
+{
+    const rc::ChannelMapper mapper = MapperBinding(0, 1, 2, 3);
+    rc::RawAxisState absent;
+    absent.Connected = false;
+    RC_CHECK(rc::DescribeProfileMismatch(mapper, absent).empty());
+}
+
+RC_TEST(ProfileCheck, ToleratesSwitchesRestingAtAnEnd)
+{
+    // Flap and aux1 sit on switches, which legitimately rest at one end. They
+    // must not be reported as mis-bound sticks.
+    rc::AxisCalibration calibration;
+    calibration.RawMin = -1.0;
+    calibration.RawMax = 1.0;
+    rc::ChannelMapper mapper = MapperBinding(0, 1, 2, 3);
+    mapper.Bind(rc::RCChannel::Flap, 4, calibration);
+    mapper.Bind(rc::RCChannel::Aux1, 5, calibration);
+    RC_CHECK(rc::DescribeProfileMismatch(mapper, RestingRadio()).empty());
+}
+
+RC_TEST(ProfileCheck, TheShippedEdgeTxProfileMatchesAnEdgeTxRadio)
+{
+    // The whole point of the built-in profile is that a pilot never has to run
+    // the wizard, so it has to survive its own check.
+    std::ifstream file(std::string(RC_REPO_ROOT) + "/Data/Input/Profiles/edgetx_aetr.json");
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+
+    rc::ChannelMapper mapper;
+    RC_CHECK(mapper.FromJson(buffer.str()));
+    RC_CHECK(rc::DescribeProfileMismatch(mapper, RestingRadio()).empty());
 }

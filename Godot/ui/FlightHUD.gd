@@ -320,6 +320,12 @@ func _draw_alerts(centre: Vector2) -> void:
 	elif _input != null and not _input.is_connected():
 		text = "NO TRANSMITTER   -   PRESS F3 TO SET ONE UP"
 		colour = UITheme.WARN
+	elif _input != null and _input.is_connected() \
+			and not _input.get_profile_problem().is_empty():
+		# A mis-bound throttle outranks the arming prompt: the prompt would tell
+		# the pilot to close a stick that is not the throttle.
+		text = "TRANSMITTER BINDING LOOKS WRONG   -   PRESS F3"
+		colour = UITheme.DANGER
 	elif _input != null and _input.is_connected() and not _input.is_throttle_armed():
 		# The interlock holds the motor stopped until the stick has been seen
 		# closed. Without this line a pilot reads it as a dead throttle.

@@ -163,10 +163,25 @@ func _process(delta: float) -> void:
 		_autobind_remaining -= delta
 		if _try_autobind() or _autobind_remaining <= 0.0:
 			_autobind_pending = false
+			_report_profile_problem()
 			if not transmitter.is_fully_bound():
 				if not transmitter.is_connected():
 					print("No transmitter detected. Plug one in and press F3 for the wizard.")
 				_open_menu()
+
+
+## A binding can be well-formed and still be wrong for the radio attached, and
+## the dangerous case - a throttle bound to a stick - is not something the pilot
+## should discover by watching the propeller answer the rudder.
+func _report_profile_problem() -> void:
+	if not transmitter.is_connected():
+		return
+	var problem: String = transmitter.get_profile_problem()
+	if problem.is_empty():
+		return
+	push_warning("Transmitter binding looks wrong: %s" % problem)
+	print("WARNING  the transmitter binding does not match the radio:")
+	print("         %s" % problem)
 
 
 func _try_autobind() -> bool:

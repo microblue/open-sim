@@ -74,6 +74,29 @@ func _describe() -> void:
 		print("  profile: NONE - channels will read neutral until F3 has run")
 
 	print("  bound  : %s" % ("yes" if _transmitter.is_fully_bound() else "no"))
+
+	# What the radio's resting position says each axis is. A self-centring
+	# stick sits in the middle of its travel; a throttle or a switch sits at
+	# one end. That is enough to tell whether a binding is plausible without
+	# anyone touching anything.
+	print("")
+	print("  at rest:")
+	for axis in _transmitter.get_axis_count():
+		var value: float = _transmitter.get_raw_axis(axis)
+		var verdict: String = "centred - a self-centring stick"
+		if absf(value) > 0.6:
+			verdict = "at one end - a throttle or a switch"
+		elif absf(value) > 0.25:
+			verdict = "part way - a knob or slider"
+		print("    ax%-2d %+6.3f   %s" % [axis, value, verdict])
+
+	var problem: String = _transmitter.get_profile_problem()
+	if problem.is_empty():
+		print("")
+		print("  the binding is consistent with this radio.")
+	else:
+		print("")
+		print("  PROBLEM: %s" % problem)
 	print("")
 
 	var header: String = "     time |"

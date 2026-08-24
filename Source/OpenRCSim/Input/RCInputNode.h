@@ -17,7 +17,10 @@
 #include <godot_cpp/core/binder_common.hpp>
 
 #include "RCPhysics/Input/ChannelMapper.h"
+#include "RCPhysics/Input/ProfileCheck.h"
 #include "RCPhysics/Input/ThrottleArming.h"
+
+#include "LinuxJoystickDevice.h"
 
 namespace openrc
 {
@@ -67,6 +70,11 @@ public:
 
     bool is_fully_bound() const;
     bool is_throttle_armed() const;
+
+    /** Empty when the loaded binding is consistent with the transmitter that is
+     *  actually attached; otherwise a sentence saying what is wrong. See
+     *  RCPhysics/Input/ProfileCheck.h. */
+    godot::String get_profile_problem() const;
 
     /** Locate a file under Data/. See Bridge/RCDataPaths.h. */
     godot::String resolve_data_path(const godot::String& relative) const;
@@ -128,6 +136,11 @@ private:
 
     rc::ChannelMapper   Mapper_;
     rc::ThrottleArming  ThrottleArming_;
+
+    /** Preferred path: the kernel device, read directly. Godot's Input layer is
+     *  only used where this cannot open one. See LinuxJoystickDevice.h. */
+    LinuxJoystickDevice Device;
+    bool                UsingDirectDevice = false;
     rc::ChannelValues CurrentChannels;
     rc::RawAxisState  RawAxes;
 

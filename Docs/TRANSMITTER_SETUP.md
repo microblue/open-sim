@@ -68,6 +68,39 @@ column follows it. It is the fastest way to tell a radio that is not reaching
 the simulator from a binding that is wrong, and it prints a per-axis travel
 summary when you stop it.
 
+## Why the input does not go through Godot
+
+`RCInputNode` reads `/dev/input/js*` directly on Linux. Godot's joystick layer
+cost this project three separate defects, and the third is the one that made a
+correct binding impossible to write:
+
+1. It applies an SDL gamepad mapping to any device whose GUID it recognises,
+   including RC transmitters. That mapping folds the device into the six-axis
+   Xbox model, so a radio with more channels loses the surplus and the ones that
+   survive arrive renumbered and rescaled.
+2. It only refreshes an axis when the value changes, so an axis nobody has
+   touched since the device was opened reads zero - and zero is the *middle* of
+   a throttle's travel, not the bottom.
+3. Its axis numbering is its own, and could not be reconciled with the device's
+   real axis order from outside: with (2) in play there was no resting state to
+   compare against.
+
+Opening the kernel device replays a synthetic event for every axis, so the full
+current state arrives immediately and correctly, the axis order is the device's
+own, and nothing is remapped. Everywhere other than Linux, the Godot path is
+still used - it is correct for a gamepad even where it is wrong for a radio.
+
+## The binding is checked against the radio
+
+A binding can be well-formed and still wrong for the device attached, and the
+dangerous case is a throttle bound to a stick: the motor then answers the stick
+the pilot is steering with. A transmitter at rest already says which axis is
+which - a self-centring stick rests in the middle of its travel, a throttle
+rests at one end - so the check needs no calibration and no pilot action. A
+mismatch is reported at startup and shown on the HUD before the aircraft moves.
+
+See `Source/RCPhysics/Public/RCPhysics/Input/ProfileCheck.h`.
+
 ## Two Godot behaviours worth knowing
 
 **Godot applies an SDL gamepad mapping to radios it recognises.** That mapping
