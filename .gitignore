@@ -8,6 +8,10 @@ Godot/logs/
 # export_presets.cfg IS committed: it is how `opensim` is built reproducibly.
 # It holds no credentials - the one remote-deploy field is off.
 
+# Downloaded CC0 assets. Hundreds of megabytes of photogrammetry, reproducible
+# from Data/Assets/manifest.json with scripts/fetch-assets.sh.
+Godot/assets/
+
 # --- Third party ------------------------------------------------------------
 # godot-cpp is fetched at a pinned commit by scripts/bootstrap.sh rather than
 # vendored, so the repository stays small.

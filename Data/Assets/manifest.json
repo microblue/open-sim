@@ -1,0 +1,52 @@
+{
+  // OpenRC Simulator - the CC0 asset set the world is built from.
+  //
+  // Everything here comes from Poly Haven (polyhaven.com) and is CC0: no
+  // attribution required, no restriction on use. The assets themselves are NOT
+  // committed - they are hundreds of megabytes of photogrammetry - but this
+  // file is, so a checkout can reproduce the exact set with
+  //
+  //     scripts/fetch-assets.sh
+  //
+  // Resolutions are chosen for what each thing is actually used for. The sky is
+  // 4K because it is the light source for the entire scene and its gradients
+  // show; ground materials are 2K because they are tiled and triplanar-blended,
+  // where more resolution buys nothing; models are 2K because they are seen
+  // from a model aircraft.
+
+  "source": "https://polyhaven.com",
+  "licence": "CC0",
+
+  "hdris": [
+    { "name": "kloofendal_43d_clear_puresky", "res": "4k",
+      "use": "sky and image-based lighting - clear afternoon, sun high" },
+    { "name": "belfast_open_field", "res": "4k",
+      "use": "alternative: overcast open field" }
+  ],
+
+  "textures": [
+    { "name": "aerial_grass_rock",  "res": "2k", "use": "grassland" },
+    { "name": "forest_ground_04",   "res": "2k", "use": "forest floor" },
+    { "name": "aerial_rocks_02",    "res": "2k", "use": "rock and scree" },
+    { "name": "coast_sand_05",      "res": "2k", "use": "beach" },
+    { "name": "aerial_sand",        "res": "2k", "use": "desert" },
+    { "name": "snow_02",            "res": "2k", "use": "snow" },
+    { "name": "brown_mud_leaves_01","res": "2k", "use": "dirt and worn ground" },
+    { "name": "aerial_ground_rock", "res": "2k", "use": "transition, high ground" }
+  ],
+
+  "models": [
+    { "name": "fir_tree_01",              "res": "2k", "use": "conifer" },
+    { "name": "pine_tree_01",             "res": "2k", "use": "conifer, second species" },
+    { "name": "island_tree_02",           "res": "2k", "use": "broadleaf" },
+    { "name": "jacaranda_tree",           "res": "2k", "use": "broadleaf, second species" },
+    { "name": "dead_tree_trunk",          "res": "2k", "use": "dead tree" },
+    { "name": "tree_stump_01",            "res": "2k", "use": "ground clutter" },
+    { "name": "namaqualand_boulder_02",   "res": "2k", "use": "boulder" },
+    { "name": "namaqualand_boulder_04",   "res": "2k", "use": "boulder, second form" },
+    { "name": "grass_medium_01",          "res": "2k", "use": "ground cover" },
+    { "name": "grass_medium_02",          "res": "2k", "use": "ground cover, second form" },
+    { "name": "wild_rooibos_bush",        "res": "2k", "use": "shrub" },
+    { "name": "fern_02",                  "res": "2k", "use": "understorey" }
+  ]
+}

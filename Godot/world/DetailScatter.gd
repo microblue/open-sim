@@ -25,6 +25,7 @@ extends Node3D
 
 const Meshes := preload("res://world/DetailMeshes.gd")
 const DetailShaders := preload("res://world/DetailShaders.gd")
+const Assets := preload("res://world/DetailAssets.gd")
 
 ## Tiers: cell size, how far out to keep cells, candidate points per cell, and
 ## which kinds this tier is allowed to place.
@@ -69,6 +70,9 @@ const PREBUILT_RADIUS: float = 900.0
 ## cruise, few enough that a rebuild is never a visible hitch - and a hitch at
 ## 240 Hz physics is dropped steps.
 const CELLS_PER_FRAME: int = 6
+
+## Fraction of a kind's view distance at which it drops to its far model.
+const LOD_SPLIT: float = 0.22
 
 @export var simulation_path: NodePath
 @export var camera_path: NodePath
@@ -204,7 +208,10 @@ func _build_next() -> void:
 
 	var allowed: Array = config["kinds"]
 	for kind in allowed:
-		# Gather this kind's instances, then build one MultiMesh for them.
+		# Gather this kind's instances once, then split them across the scanned
+		# species so a wood is not one tree repeated, and across two levels of
+		# detail so a tree passed at fifty metres and one on a ridgeline two
+		# kilometres away are not the same object.
 		var indices := PackedInt32Array()
 		for i in positions.size():
 			if kinds[i] == kind:
@@ -212,50 +219,90 @@ func _build_next() -> void:
 		if indices.is_empty():
 			continue
 
-		var multi := MultiMesh.new()
-		multi.transform_format = MultiMesh.TRANSFORM_3D
-		multi.use_colors = true
-		multi.mesh = _meshes[kind]
-		multi.instance_count = indices.size()
+		var variants: int = Assets.variant_count(kind)
+		var far_start: float = Meshes.view_distance(kind) * LOD_SPLIT
 
-		for slot in indices.size():
-			var i: int = indices[slot]
-			var scale: float = scales[i]
-			# Leaned into the slope rather than standing vertical on it. A tree
-			# at right angles to a hillside is one of the immediate tells that
-			# scenery was dropped on rather than grown.
-			var up: Vector3 = normals[i].normalized().lerp(Vector3.UP, 0.55).normalized()
-			var basis := Basis(Vector3.UP, yaws[i])
-			var tilt := Basis(Vector3.UP.cross(up).normalized() if up.dot(Vector3.UP) < 0.999
-							  else Vector3.RIGHT, acos(clampf(up.dot(Vector3.UP), -1.0, 1.0)))
-			basis = tilt * basis
-			basis = basis.scaled(Vector3(scale, scale, scale))
-			multi.set_instance_transform(slot, Transform3D(basis, positions[i]))
-
-			var tint: float = tints[i]
-			multi.set_instance_color(slot, Color(0.80 + tint * 0.42,
-												 0.86 + tint * 0.30,
-												 0.80 + tint * 0.38))
-
-		var instance := MultiMeshInstance3D.new()
-		instance.name = "Kind%d" % kind
-		instance.multimesh = multi
-		instance.material_override = _materials[kind]
-		# Beyond its own useful range a kind is not worth the draw. Grass at
-		# four hundred metres is a shimmer; a tree at that range is a landmark.
-		instance.visibility_range_end = Meshes.view_distance(kind)
-		# A hard cutoff, not a fade. FADE_SELF needs the material to support
-		# dithered transparency; with an opaque shader it simply does not draw,
-		# which is a silent way to lose every instance in the world.
-		instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
-		# Only the near tier casts: shadow maps at this range have nothing left
-		# for the aircraft, which is what the pilot is actually looking at.
-		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if tier <= 1 \
-			else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		holder.add_child(instance)
+		for variant in variants:
+			for level in 2:
+				var mesh: Mesh = Assets.mesh_for(_sim, kind, level, variant)
+				var generated: bool = mesh == null
+				if generated:
+					if variant > 0 or level > 0:
+						continue          # only one generated shape per kind
+					mesh = _meshes[kind]
+				_add_batch(holder, indices, positions, normals, yaws, scales, tints,
+						   kind, mesh, generated, variant, variants, level,
+						   far_start, tier)
 
 	_tier_roots[tier].add_child(holder)
 	_cells[entry[3]] = holder
+
+
+## One MultiMesh: the instances of `kind` that belong to this species and this
+## level of detail.
+func _add_batch(holder: Node3D, indices: PackedInt32Array,
+				positions: PackedVector3Array, normals: PackedVector3Array,
+				yaws: PackedFloat32Array, scales: PackedFloat32Array,
+				tints: PackedFloat32Array, kind: int, mesh: Mesh,
+				generated: bool, variant: int, variants: int, level: int,
+				far_start: float, tier: int) -> void:
+	# Which instances belong to this species. Chosen by index rather than at
+	# random so the split is stable when the cell is rebuilt.
+	var mine := PackedInt32Array()
+	for slot in indices.size():
+		if variants <= 1 or slot % variants == variant:
+			mine.push_back(indices[slot])
+	if mine.is_empty():
+		return
+
+	var multi := MultiMesh.new()
+	multi.transform_format = MultiMesh.TRANSFORM_3D
+	multi.use_colors = true
+	multi.mesh = mesh
+	multi.instance_count = mine.size()
+
+	var asset_scale: float = Assets.scale_for(kind) if not generated else 1.0
+
+	for slot in mine.size():
+		var i: int = mine[slot]
+		var scale: float = scales[i] * asset_scale
+		# Leaned into the slope rather than standing vertical on it. A tree at
+		# right angles to a hillside is one of the immediate tells that scenery
+		# was dropped on rather than grown.
+		var up: Vector3 = normals[i].normalized().lerp(Vector3.UP, 0.55).normalized()
+		var basis := Basis(Vector3.UP, yaws[i])
+		if up.dot(Vector3.UP) < 0.999:
+			basis = Basis(Vector3.UP.cross(up).normalized(),
+						  acos(clampf(up.dot(Vector3.UP), -1.0, 1.0))) * basis
+		basis = basis.scaled(Vector3(scale, scale, scale))
+		multi.set_instance_transform(slot, Transform3D(basis, positions[i]))
+		var tint: float = tints[i]
+		multi.set_instance_color(slot, Color(0.84 + tint * 0.32,
+											 0.88 + tint * 0.24,
+											 0.84 + tint * 0.30))
+
+	var instance := MultiMeshInstance3D.new()
+	instance.name = "K%d_v%d_l%d" % [kind, variant, level]
+	instance.multimesh = multi
+	# A scanned model brings its own PBR materials - albedo, normal, roughness,
+	# all from the scan. Overriding them would throw away the entire reason for
+	# using it. Only the generated fallbacks get a shader.
+	if generated:
+		instance.material_override = _materials[kind]
+
+	# Near level draws up to the split, far level from there to the kind's
+	# limit. A hard cutoff, not a fade: FADE_SELF needs a material that supports
+	# dithered transparency, and with an opaque one it simply does not draw.
+	if level == 0:
+		instance.visibility_range_end = far_start
+	else:
+		instance.visibility_range_begin = far_start
+		instance.visibility_range_end = Meshes.view_distance(kind)
+	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if tier <= 1 \
+		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	holder.add_child(instance)
 
 
 ## Drop cells the camera has left behind, with hysteresis so a cell on the

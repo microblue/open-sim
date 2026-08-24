@@ -37,6 +37,11 @@ const GRASS_RADIUS: float = 55.0
 const TREE_COUNT: int = 130
 const TREE_RING_RADIUS: float = 125.0
 
+## The sky, and therefore the light. CC0 from Poly Haven; fetched by
+## scripts/fetch-assets.sh, which is why this is a path rather than a preload -
+## the project has to open without the assets present.
+const SKY_HDRI: String = "Godot/assets/hdri/kloofendal_43d_clear_puresky.hdr"
+
 @export var simulation_path: NodePath
 
 var _sim: RCSimulationNode
@@ -94,42 +99,62 @@ func _process(_delta: float) -> void:
 
 # ---------------------------------------------------------------- environment
 
+## Load an HDRI from the asset directory, or null if the assets have not been
+## fetched. Everything that uses one falls back rather than failing: a checkout
+## without assets must still run, because that is what the test suite does.
+func _load_hdri(relative: String) -> Texture2D:
+	var path: String = RCSimulationNode.new().resolve_data_path(relative) \
+		if _sim == null else _sim.resolve_data_path(relative)
+	if not FileAccess.file_exists(path):
+		push_warning("HDRI not found at %s - run scripts/fetch-assets.sh. "
+				% path + "Falling back to a procedural sky.")
+		return null
+	var image := Image.new()
+	if image.load(path) != OK:
+		push_warning("HDRI at %s could not be read." % path)
+		return null
+	return ImageTexture.create_from_image(image)
+
+
 func _build_environment() -> void:
-	# A custom sky rather than PhysicalSkyMaterial: the physical model gives a
-	# convincing clear-day gradient and no clouds at all, and an empty sky is
-	# most of what made the field read as a diagram rather than a place. See
-	# FieldShaders.sky_shader().
-	var sky_material := ShaderMaterial.new()
-	sky_material.shader = FieldShaders.sky_shader()
-	sky_material.set_shader_parameter("zenith_colour", Color(0.14, 0.30, 0.62))
-	sky_material.set_shader_parameter("horizon_colour", Color(0.60, 0.71, 0.86))
-	sky_material.set_shader_parameter("ground_colour", Color(0.26, 0.29, 0.22))
-	# Scattered fair-weather cumulus: enough to give the sky depth and a wind
-	# cue, not so much that the field goes into shadow.
-	sky_material.set_shader_parameter("cloud_cover", 0.44)
-	sky_material.set_shader_parameter("cloud_sharpness", 2.4)
+	# A captured sky, not a computed one.
+	#
+	# The procedural sky was a good gradient with procedural clouds on it, and it
+	# was still obviously a gradient with clouds on it. A real HDRI is a
+	# photograph of an actual sky, and - more importantly - it is the light
+	# source for everything below it. Image-based lighting from a real sky is
+	# most of what separates a rendered scene from a lit one: the shadow side of
+	# an object picks up the blue of the sky above and the green of the ground
+	# beneath it, which no ambient colour reproduces.
+	#
+	# CC0, from Poly Haven. See Data/Assets/manifest.json.
+	var sky_material := PanoramaSkyMaterial.new()
+	var panorama: Texture2D = _load_hdri(SKY_HDRI)
+	if panorama != null:
+		sky_material.panorama = panorama
+		sky_material.energy_multiplier = 1.0
+		# Filtered: an unfiltered 4K panorama aliases badly along the horizon,
+		# which is exactly where a low-flying model is silhouetted against it.
+		sky_material.filter = true
+	_sky_material = null
 
 	var sky := Sky.new()
 	sky.sky_material = sky_material
-	_sky_material = sky_material
+	# The radiance map is what lights the scene, so it is worth the quality: it
+	# is computed once and decides the colour of every shaded surface below it.
+	sky.radiance_size = Sky.RADIANCE_SIZE_256
+	sky.process_mode = Sky.PROCESS_MODE_QUALITY
 
 	var environment := Environment.new()
 	environment.background_mode = Environment.BG_SKY
 	environment.sky = sky
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	# Sky ambient at full strength washes the colour out of everything: grass
-	# came out at RGB 65,71,59 - a dark, desaturated green that reads as an
-	# overcast evening rather than a Californian afternoon. The sun has to
-	# dominate for the scene to look sunlit.
-	environment.ambient_light_sky_contribution = 0.55
-	# Roughly a fifth of the sun, which is about right for a clear day. Any more
-	# and the sky's near-white light desaturates the grass into grey-green.
-	# Pulled down from 1.0. That was set when the world was a flat field the eye
-	# never looked far across; over a landscape it lifted every slope facing
-	# away from the sun to nearly the same brightness as the ones facing it, and
-	# a landscape with no shading gradient reads as painted.
-	environment.ambient_light_energy = 0.34
+	# Entirely from the sky now. With a real HDRI there is nothing an ambient
+	# colour can add that the capture does not already have, and mixing one in
+	# only flattens it.
+	environment.ambient_light_sky_contribution = 1.0
+	environment.ambient_light_energy = 1.0
 
 	# Physically plausible outdoor exposure. ACES rather than a filmic curve so
 	# a white cloud and a shaded treeline keep their relationship.
@@ -193,7 +218,10 @@ func _build_environment() -> void:
 	sun.name = "Sun"
 	# Mid afternoon, sun in the south-west and behind the pilot's shoulder -
 	# the orientation a club sets its strip up for.
-	sun.rotation_degrees = Vector3(-48.0, 128.0, 0.0)
+	# Matched to where the sun actually is in the HDRI. A directional light that
+	# disagrees with the sky it is lit under is immediately readable: the
+	# shadows fall one way and every specular highlight points another.
+	sun.rotation_degrees = Vector3(-43.0, 155.0, 0.0)
 	# Godot's Burley diffuse carries the 1/pi, so light_energy is roughly pi
 	# times smaller than a naive irradiance calculation suggests. Sunlit grass
 	# wants a value around ten here, not around three; at three the scene
@@ -204,7 +232,7 @@ func _build_environment() -> void:
 	# it had to light was the grass shader. Now every surface carries a real
 	# reflectance, and at 12 a whole landscape of correctly-dark albedos came out
 	# a pale mint green - the light was doing the work the albedo should have.
-	sun.light_energy = 5.2
+	sun.light_energy = 3.4
 	sun.light_color = Color(1.0, 0.97, 0.91)
 	sun.shadow_enabled = true
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
