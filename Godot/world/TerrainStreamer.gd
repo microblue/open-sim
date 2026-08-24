@@ -94,9 +94,14 @@ func _process(_delta: float) -> void:
 
 
 func _focus() -> Vector2:
-	# Follow the camera, not the aircraft. In the pilot view the camera stands
-	# still while the model flies out, and it is what the camera can see that
-	# has to exist.
+	# The active camera, not the rig that holds it. The rig stands still in the
+	# pilot view while the camera inside it turns, and in the other views it is
+	# the camera that has been moved - so following the rig generated the world
+	# around a point nobody was looking from.
+	var camera: Camera3D = get_viewport().get_camera_3d()
+	if camera != null:
+		return Vector2(camera.global_position.x, camera.global_position.z)
+
 	if _camera == null:
 		_camera = get_node_or_null(camera_path) as Node3D
 	var here: Vector3 = _camera.global_position if _camera != null else _sim.global_position

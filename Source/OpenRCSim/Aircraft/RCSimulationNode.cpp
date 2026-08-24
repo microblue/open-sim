@@ -237,6 +237,52 @@ double RCSimulationNode::get_field_elevation_y() const
     return Terrain.Settings().FieldElevation;
 }
 
+Dictionary RCSimulationNode::scatter_detail(double centreX, double centreZ,
+                                            double size, int count, int seed,
+                                            int layer) const
+{
+    std::vector<rc::ScatterPoint> points;
+    Scatter.Fill(NorthFromGodot(centreZ), EastFromGodot(centreX), size,
+                 std::max(0, std::min(count, 20000)),
+                 static_cast<std::uint32_t>(seed),
+                 (layer == 0) ? rc::ScatterLayer::GroundCover
+                              : rc::ScatterLayer::Canopy,
+                 points);
+
+    PackedVector3Array positions;
+    PackedVector3Array normals;
+    PackedInt32Array   kinds;
+    PackedFloat32Array yaws;
+    PackedFloat32Array scales;
+    PackedFloat32Array tints;
+
+    for (const rc::ScatterPoint& point : points)
+    {
+        if (point.Kind == rc::ScatterKind::None) { continue; }
+
+        // North/East back to Godot: x = east, z = -north.
+        positions.push_back(Vector3(static_cast<real_t>(point.East),
+                                    static_cast<real_t>(point.Height),
+                                    static_cast<real_t>(-point.North)));
+        normals.push_back(Vector3(static_cast<real_t>(point.Normal.y),
+                                  static_cast<real_t>(-point.Normal.z),
+                                  static_cast<real_t>(-point.Normal.x)));
+        kinds.push_back(static_cast<int32_t>(point.Kind));
+        yaws.push_back(static_cast<float>(point.Yaw));
+        scales.push_back(static_cast<float>(point.Scale));
+        tints.push_back(static_cast<float>(point.Tint));
+    }
+
+    Dictionary result;
+    result["positions"] = positions;
+    result["normals"]   = normals;
+    result["kinds"]     = kinds;
+    result["yaws"]      = yaws;
+    result["scales"]    = scales;
+    result["tints"]     = tints;
+    return result;
+}
+
 void RCSimulationNode::set_terrain_seed(int seed)
 {
     rc::TerrainSettings settings = Terrain.Settings();
@@ -818,6 +864,9 @@ void RCSimulationNode::_bind_methods()
     ClassDB::bind_method(D_METHOD("build_terrain_chunk", "centre_x", "centre_z",
                                   "size", "resolution"),
                          &RCSimulationNode::build_terrain_chunk);
+    ClassDB::bind_method(D_METHOD("scatter_detail", "centre_x", "centre_z",
+                                  "size", "count", "seed", "layer"),
+                         &RCSimulationNode::scatter_detail);
     OPENRC_BIND1(set_terrain_seed, "seed");
     OPENRC_BIND(get_terrain_seed);
     OPENRC_BIND(reload_aircraft);

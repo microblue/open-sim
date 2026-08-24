@@ -129,7 +129,7 @@ func _build_environment() -> void:
 	# never looked far across; over a landscape it lifted every slope facing
 	# away from the sun to nearly the same brightness as the ones facing it, and
 	# a landscape with no shading gradient reads as painted.
-	environment.ambient_light_energy = 0.55
+	environment.ambient_light_energy = 0.34
 
 	# Physically plausible outdoor exposure. ACES rather than a filmic curve so
 	# a white cloud and a shaded treeline keep their relationship.
@@ -140,7 +140,7 @@ func _build_environment() -> void:
 	# More highlight headroom. At 3.0 a sunlit hillside sat near the top of the
 	# curve and everything above it - snow, sand, the water glitter - flattened
 	# into the same white.
-	environment.tonemap_white = 4.5
+	environment.tonemap_white = 3.2
 	environment.tonemap_exposure = 1.0
 
 	# SDFGI is deliberately OFF.
@@ -198,7 +198,13 @@ func _build_environment() -> void:
 	# times smaller than a naive irradiance calculation suggests. Sunlit grass
 	# wants a value around ten here, not around three; at three the scene
 	# renders correctly but reads as late afternoon under cloud.
-	sun.light_energy = 12.0
+	# Re-balanced from 12.0.
+	#
+	# That value was chosen when the world was one mown field and the only thing
+	# it had to light was the grass shader. Now every surface carries a real
+	# reflectance, and at 12 a whole landscape of correctly-dark albedos came out
+	# a pale mint green - the light was doing the work the albedo should have.
+	sun.light_energy = 5.2
 	sun.light_color = Color(1.0, 0.97, 0.91)
 	sun.shadow_enabled = true
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS

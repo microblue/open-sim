@@ -26,6 +26,7 @@ const BUILTIN_PROFILES: Array[Dictionary] = [
 const AUTOBIND_TIMEOUT: float = 1.5
 const FieldScript := preload("res://fields/GrassField01/GrassField01.gd")
 const WorldScript := preload("res://world/TerrainStreamer.gd")
+const DetailScript := preload("res://world/DetailScatter.gd")
 const WizardScript := preload("res://ui/ControllerWizard.gd")
 const MenuScript := preload("res://ui/MainMenu.gd")
 const TuningScript := preload("res://ui/TuningPanel.gd")
@@ -66,6 +67,14 @@ func _ready() -> void:
 	world.simulation_path = NodePath("../../Aircraft")
 	world.camera_path = NodePath("../../CameraRig")
 	$Field.add_child(world)
+
+	# What stands on that terrain: grass, scrub, trees, boulders. The circuit is
+	# generated in full before the first frame; beyond it, cells stream.
+	var detail := DetailScript.new()
+	detail.name = "Detail"
+	detail.simulation_path = NodePath("../../Aircraft")
+	detail.camera_path = NodePath("../../CameraRig")
+	$Field.add_child(detail)
 	# The camera rig asks the field how high the ground is, so it can refuse to
 	# go under it.
 	camera_rig.field_path = camera_rig.get_path_to(field)

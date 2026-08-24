@@ -257,10 +257,10 @@ namespace rc
             sample.Type = Biome::Desert;
             sample.Blend = Real(1) - Smoothstep(Real(0.24), Real(0.34), moisture);
         }
-        else if (moisture > Real(0.50))
+        else if (moisture > Real(0.60))
         {
             sample.Type = Biome::Forest;
-            sample.Blend = Smoothstep(Real(0.50), Real(0.64), moisture);
+            sample.Blend = Smoothstep(Real(0.60), Real(0.74), moisture);
         }
         else
         {

@@ -23,6 +23,7 @@
 #include "RCPhysics/Physics/Ground/GroundContact.h"
 #include "RCPhysics/Physics/Ground/LandingGear.h"
 #include "RCPhysics/Physics/Ground/TerrainField.h"
+#include "RCPhysics/Physics/Ground/TerrainScatter.h"
 #include "RCPhysics/Physics/Propulsion/PowerSystem.h"
 
 namespace openrc
@@ -78,6 +79,15 @@ public:
      *  across a triangle instead of stepping. */
     godot::Ref<godot::ArrayMesh> build_terrain_chunk(double centre_x, double centre_z,
                                                      double size, int resolution) const;
+
+    /** Everything standing on one square of ground: what it is, where, which
+     *  way round and how big. Returned as parallel arrays rather than objects
+     *  so the renderer can drop them straight into MultiMesh buffers, and
+     *  computed here because a cell is hundreds of points and each one needs
+     *  the terrain sampled. Godot axes throughout. */
+    godot::Dictionary scatter_detail(double centre_x, double centre_z,
+                                     double size, int count, int seed,
+                                     int layer) const;
 
     /** Terrain seed, so a session can be reproduced. */
     void set_terrain_seed(int seed);
@@ -263,6 +273,7 @@ private:
     // function, so what the pilot flies into is what was drawn.
     rc::TerrainField    Terrain;
     rc::TerrainGround   Ground{Terrain};
+    rc::TerrainScatter  Scatter{Terrain};
     rc::CrashResult     Crash;
     rc::ContactSettings ContactTuning;
     rc::ChannelValues   Channels;
