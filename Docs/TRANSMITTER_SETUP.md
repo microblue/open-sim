@@ -105,14 +105,21 @@ device is on the bus but the radio is not driving it. In order of likelihood:
   channels are all driven from switches. The radio's own channel monitor page
   is the check: the bars should move when you move the sticks.
 
-Confirm from outside the simulator with:
+The most commonly missed one is the first: **EdgeTX 2.9 and later configure USB
+Joystick per model**, on `MDL` -> `USB Joystick`. Set `Mode` to `Classic`. On
+`Advanced` the channels have to be assigned individually and default to nothing,
+so the device enumerates and reports exactly zero on everything - which looks
+identical to a radio that is switched off.
+
+Confirm from outside the simulator, with nothing of ours in the way:
 
 ```bash
-godot --headless --path Godot --script res://tests/AxisMonitor.gd
+scripts/check-transmitter.sh          # reads /dev/input/js* directly
 ```
 
-Every axis at 0.000 there means the problem is on the radio, not in the binding,
-and no amount of recalibrating will help.
+It reports each axis, how far it travelled while watching, and what it looks
+like. Every axis at 0.000 there means the problem is on the radio and no amount
+of recalibrating will help.
 
 ## The binding is checked against the radio
 
