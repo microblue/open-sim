@@ -118,13 +118,13 @@ func _ready() -> void:
 	aircraft.reset_state()
 	_print_help()
 
-	# Straight to the menu on a cold start, and straight past it once a
-	# controller profile exists: the brief's requirement is to be flying within
-	# seconds, every time after the first. When a known radio is plugged in that
-	# holds on the very first start too, so the menu decision waits for the
-	# auto-bind attempt to resolve.
-	if not _autobind_pending and not transmitter.is_fully_bound():
-		_open_menu()
+	# The main menu is the briefing room: the aeroplane, the place, the weather
+	# and the radio are all chosen there before the first flight. It opens on
+	# every cold start once the auto-bind attempt has resolved, bound or not -
+	# one Enter flies, which keeps the "flying within seconds" promise while
+	# making sure the choices are never invisible.
+	if not _autobind_pending:
+		_open_menu(true)
 
 
 func _print_help() -> void:
@@ -165,7 +165,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_F3:
 			_open_wizard()
 		KEY_M:
-			_open_menu()
+			_open_menu(false)
 		KEY_H:
 			_open_hangar()
 		KEY_W:
@@ -222,15 +222,35 @@ func _fly_aircraft(stem: String) -> void:
 	print("Flying %s" % aircraft.get_aircraft_name())
 
 
-func _open_menu() -> void:
+func _open_menu(start: bool = false) -> void:
 	if has_node("MainMenu"):
 		return
 	var menu := MenuScript.new()
 	menu.name = "MainMenu"
 	menu.input_path = NodePath("../Transmitter")
 	menu.simulation_path = NodePath("../Aircraft")
+	menu.director_path = NodePath("../WorldDirector")
+	menu.start_screen = start
 	menu.wizard_requested.connect(_open_wizard)
+	menu.tuning_requested.connect(_open_tuning)
+	menu.fly_requested.connect(_fly_from_menu)
 	add_child(menu)
+
+
+## The menu's Fly button: one action, the whole sortie. The aircraft, the place
+## and the weather are applied together, then the state is reset so the model
+## starts on the ground in the world that was just chosen.
+func _fly_from_menu(stem: String, scene_id: String, weather_id: String) -> void:
+	if director != null:
+		director.apply_scene(scene_id)
+		director.apply_weather(weather_id)
+	_fly_aircraft(stem)
+
+
+func _open_tuning() -> void:
+	var tuning: Node = get_node_or_null("TuningPanel")
+	if tuning != null:
+		tuning.visible = true
 
 
 func _open_wizard() -> void:
@@ -257,10 +277,11 @@ func _process(delta: float) -> void:
 		_autobind_remaining -= delta
 		if _try_autobind() or _autobind_remaining <= 0.0:
 			_autobind_pending = false
-			if not transmitter.is_fully_bound():
-				if not transmitter.is_connected():
-					print("No transmitter detected. Plug one in and press F3 for the wizard.")
-				_open_menu()
+			if not transmitter.is_connected():
+				print("No transmitter detected. Plug one in and press F3 for the wizard.")
+			# The briefing room opens whatever the radio situation is: the
+			# choice of aeroplane, place and weather is never skipped.
+			_open_menu(true)
 
 
 ## A binding can be well-formed and still be wrong for the radio attached, and

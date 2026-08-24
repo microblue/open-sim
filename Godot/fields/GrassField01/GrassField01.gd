@@ -225,9 +225,9 @@ func _build_environment() -> void:
 	# grass are worth having; the full-resolution pass was not, on a scene where
 	# almost every pixel is foliage.
 	environment.ssao_enabled = not OS.has_environment("RC_NO_POST")
-	environment.ssao_radius = 0.8
-	environment.ssao_intensity = 1.1
-	environment.ssao_power = 1.5
+	environment.ssao_radius = 1.1
+	environment.ssao_intensity = 1.35
+	environment.ssao_power = 1.8
 
 	# Distance haze. RC flying is done at ranges where this is most of what
 	# tells you how far away the model is.
@@ -282,12 +282,16 @@ func _build_environment() -> void:
 
 	# Restrained. No lens flare, no motion blur: motion blur in particular hides
 	# exactly the fast attitude changes the pilot needs to read.
-	# Barely any bloom. With a bright sky filling half the frame, glow spreads
-	# across the whole image and takes the colour out of the ground with it.
+	# A modest bloom. With a bright sky filling half the frame, heavy glow
+	# spreads across the whole image and takes the colour out of the ground -
+	# but none at all leaves sunlit highlights hard-edged, which is most of what
+	# separates a rendered frame from a photographed one. Low threshold, low
+	# intensity: the sky and the sunlit grass pick up a soft halo, and the rest
+	# of the scene does not.
 	environment.glow_enabled = not OS.has_environment("RC_NO_POST")
-	environment.glow_intensity = 0.12
-	environment.glow_bloom = 0.0
-	environment.glow_hdr_threshold = 1.4
+	environment.glow_intensity = 0.32
+	environment.glow_bloom = 0.05
+	environment.glow_hdr_threshold = 1.25
 
 	_environment = environment
 
@@ -336,13 +340,16 @@ func _build_environment() -> void:
 	# Pulling the shadow distance in to 120 m and raising both biases fixes it,
 	# and costs nothing that matters: shadows past a hundred metres are not
 	# something a pilot looking at a model aircraft is going to notice.
-	# Pulled in to 55 m. The outer cascade over a large flat field is where the
-	# acne survives however much bias is applied, and shadows past fifty metres
-	# are not something a pilot watching a model aircraft is ever going to look
-	# at. Inside that radius - the pits, the near strip - they are sharp.
-	sun.directional_shadow_max_distance = 55.0
-	sun.shadow_bias = 0.35
-	sun.shadow_normal_bias = 3.0
+	# Extended to 300 m. Shadows past fifty metres were indeed not noticed by a
+	# pilot watching the model - but they ARE noticed by anyone looking at the
+	# landscape, where the ground beyond the strip was lit by an unshadowed sun
+	# and every ridge read as if it were noon with no clouds. With an 8192 map
+	# and four blended splits, 300 m of shadow costs nothing visible in the
+	# frame time (see Docs/PERFORMANCE.md) and the world stops looking like a
+	# pool of light around the strip.
+	sun.directional_shadow_max_distance = 300.0
+	sun.shadow_bias = 0.5
+	sun.shadow_normal_bias = 3.5
 	sun.directional_shadow_blend_splits = true
 	_sun = sun
 	_base_sun_energy = sun.light_energy
@@ -500,10 +507,11 @@ func _build_grass() -> void:
 		_grass_material.shader = FieldShaders.grass_shader()
 		multi.mesh = _blade_mesh()
 	else:
-		_grass_material = GrassLib.material(card["texture"])
-		# The card's grass sits in the lower part of its tile, so the quad is
-		# taller than the grass it shows.
-		multi.mesh = GrassLib.tuft_mesh(float(card["size"]) * 0.46)
+		_grass_material = GrassLib.material(card)
+		# The card is built from the bake metrics so the scanned clump stands
+		# on the ground at its real size - see the note at the top of
+		# GrassCards.gd. The buried part of the card is transparent.
+		multi.mesh = GrassLib.tuft_mesh(card)
 		# Dense enough that the ground under it barely shows. A card carries
 		# five clumps, so this is roughly six hundred thousand clumps of grass
 		# over the circuit - which is what a field looks like.

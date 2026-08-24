@@ -23,6 +23,17 @@ All eight milestones are done. The aircraft taxis, takes off, climbs, turns,
 stalls, recovers, approaches, flares and lands, driven by a real transmitter,
 in a field that looks like a field.
 
+**The briefing room.** On launch the main menu is the whole pre-flight: four
+aircraft with the numbers that tell them apart, five places and five weather
+states each with a rendered preview, and the radio's status with its setup
+button - all on one screen, mouse and keyboard, nothing behind a keypress. One
+Enter flies. In flight, `M` brings the same room back.
+
+**Grass that stands on the ground.** The scanned grass cards used to float a
+quarter of a metre in the air and translate whole in the wind - roots and all.
+The card is now built from the bake metrics, so the clump sits on the ground at
+its real size, and the sway bends from the roots up: tips travel, roots do not.
+
 ```
 223 tests, 8689 checks, 0 failed      physics core, ~2 s
  68 checks, 0 failed                  in-engine

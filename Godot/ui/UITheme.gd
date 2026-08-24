@@ -40,12 +40,18 @@ const GOOD          := Color(0.35, 0.85, 0.52)
 
 # -------------------------------------------------------------------- type --
 
-const SIZE_MICRO  := 10
-const SIZE_LABEL  := 12
-const SIZE_BODY   := 14
-const SIZE_VALUE  := 17
-const SIZE_LARGE  := 26
-const SIZE_HERO   := 44
+const SIZE_MICRO  := 11
+const SIZE_LABEL  := 13
+const SIZE_BODY   := 15
+const SIZE_VALUE  := 19
+const SIZE_LARGE  := 28
+const SIZE_HERO   := 46
+## The main menu's wordmark, and the biggest thing on any screen.
+const SIZE_DISPLAY := 60
+## Card titles on the main menu (an aircraft, a place, a weather state).
+const SIZE_TITLE := 26
+## Section headings on the main menu ("AIRCRAFT", "LOCATION", "WEATHER").
+const SIZE_SECTION := 16
 
 # ----------------------------------------------------------------- spacing --
 
@@ -307,3 +313,67 @@ static func make_frosted(darken: float = 0.72, blur: float = 3.2) -> ColorRect:
 	rect.anchor_bottom = 1.0
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return rect
+
+
+# --------------------------------------------------------- game-style bits ---
+
+## A rounded-corner thumbnail for the scene and weather previews on the main
+## menu. TextureRect has no rounded clip of its own, and drawing a translucent
+## panel over a rectangular photo leaves the corners showing through the fill.
+##
+## The corners are cut into the IMAGE rather than with a canvas_item shader.
+## A shader would be marginally cheaper per frame, but it renders nothing at
+## all on software rasterisers (llvmpipe cannot compile the GLSL), which makes
+## the menu unverifiable and fragile in exactly the places it needs to degrade
+## gracefully - and a UI thumbnail is cut once, not per frame.
+static func make_thumb(texture: Texture2D, size: Vector2, radius: float = 10.0) -> TextureRect:
+	var src: Image = texture.get_image()
+	src.resize(maxi(int(size.x), 1), maxi(int(size.y), 1), Image.INTERPOLATE_BILINEAR)
+	src.convert(Image.FORMAT_RGBA8)
+
+	# Signed distance to the rounded rectangle, per pixel. Outside the corner
+	# radius the alpha ramps down over two pixels so the edge stays clean.
+	var w: int = src.get_width()
+	var h: int = src.get_height()
+	var half := Vector2(size.x * 0.5, size.y * 0.5)
+	for y in h:
+		for x in w:
+			var dx: float = absf(float(x) + 0.5 - half.x) - (half.x - radius)
+			var dy: float = absf(float(y) + 0.5 - half.y) - (half.y - radius)
+			var dist: float = Vector2(maxf(dx, 0.0), maxf(dy, 0.0)).length() - radius
+			var alpha: float = clampf(0.5 - dist, 0.0, 1.0)
+			if alpha < 1.0:
+				var c: Color = src.get_pixel(x, y)
+				src.set_pixel(x, y, Color(c.r, c.g, c.b, c.a * alpha))
+
+	var rect := TextureRect.new()
+	rect.texture = ImageTexture.create_from_image(src)
+	rect.position = Vector2.ZERO
+	rect.size = size
+	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	rect.stretch_mode = TextureRect.STRETCH_SCALE
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return rect
+
+
+## Soft glow behind a panel: a few expanding rounded rectangles at falling
+## alpha. The main menu's Fly button and selected cards sit on this, which is
+## what makes them read as lit rather than as flat fill.
+static func draw_glow(ci: CanvasItem, rect: Rect2, colour: Color,
+					  radius: float = RADIUS, rings: int = 3) -> void:
+	for ring in rings:
+		var t: float = float(ring) / float(rings)
+		var pad: float = 4.0 + t * 10.0
+		var alpha: float = 0.16 * (1.0 - t) * (1.0 - t)
+		ci.draw_colored_polygon(rounded_rect(rect.grow(pad), radius + pad * 0.4),
+								Color(colour.r, colour.g, colour.b, alpha))
+
+
+## Text with a soft dark shadow behind it, so a label stays readable over a
+## bright thumbnail. Drawn as one extra pass a couple of pixels down and right.
+static func draw_text_shadow(ci: CanvasItem, position: Vector2, text: String,
+							 size: int = SIZE_BODY, colour: Color = TEXT,
+							 shadow: Color = Color(0, 0, 0, 0.55)) -> void:
+	ci.draw_string(font(), position + Vector2(1.5, 2.0), text,
+				   HORIZONTAL_ALIGNMENT_LEFT, -1, size, shadow)
+	ci.draw_string(font(), position, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, colour)

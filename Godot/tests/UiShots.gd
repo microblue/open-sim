@@ -25,30 +25,34 @@ func _process(_d: float) -> bool:
 		return false
 
 	var frame: int = _n - 40
+	if _stage == 0 and _flight.get_node_or_null("MainMenu") == null:
+		return false
+
 	match frame:
-		0:  _shot("menu")
-		4:
+		70: _shot("menu")
+		74:
 			var menu: Node = _flight.get_node_or_null("MainMenu")
 			if menu != null: menu.queue_free()
 			_flight._open_wizard()
-		10: _shot("wizard_detect")
-		12:
+			_stage = 1
+		80: _shot("wizard_detect")
+		82:
 			# No radio is attached here, so the later steps are staged directly.
 			# The point of the shot is the layout, and the layout is the same.
 			var wizard: Node = _flight.get_node_or_null("ControllerWizard")
 			if wizard != null:
 				wizard._step = 3          # REVIEW
 				wizard._channel_index = 4
-		18: _shot("wizard_review")
-		20:
+		88: _shot("wizard_review")
+		90:
 			var wizard: Node = _flight.get_node_or_null("ControllerWizard")
 			if wizard != null: wizard.queue_free()
 			var tuning: Node = _flight.get_node_or_null("TuningPanel")
 			if tuning != null:
 				tuning.visible = true
 				tuning._selected = 2
-		34: _shot("tuning")
-		36:
+		104: _shot("tuning")
+		106:
 			var hud: Node = _flight.get_node_or_null("FlightHUD")
 			if hud != null: hud._diagnostics = true
 			var aircraft: RCSimulationNode = _flight.get_node("Aircraft")
@@ -57,8 +61,8 @@ func _process(_d: float) -> bool:
 			aircraft.reset_state()
 			var rig: Node3D = _flight.get_node("CameraRig")
 			rig.mode = 1
-		90: _shot("hud_diagnostics")
-		94:
+		160: _shot("hud_diagnostics")
+		164:
 			quit(0)
 			return true
 	return false

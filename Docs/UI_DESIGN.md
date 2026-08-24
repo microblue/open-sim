@@ -21,8 +21,9 @@ That produces a short list of rules, and everything below follows from them.
   gimbal gates, bottom left, at the proportions of the sticks on a real radio.
   That element is the reason the screen reads as an RC simulator rather than as
   a flight game, so it gets the space.
-- **Get out of the way.** The menu has four entries and is skipped entirely once
-  a controller profile exists.
+- **Get out of the way.** The briefing room opens on every cold start, one
+  Enter flies, and in flight the overlay is a keypress away. The HUD itself
+  never has more than the three readings that change a decision.
 
 ## The system
 
@@ -76,9 +77,13 @@ transmitter gates bottom left; power bottom right; attitude, angle of attack and
 wing separation across the bottom centre. One banner slot at the top for the one
 thing that needs saying — never two at once.
 
-**Menu.** Wordmark, four entries with a key, a title and a note, and a session
-card that answers the only question worth asking before flying: is the radio
-ready?
+**Briefing room (the main menu).** Everything that decides a sortie on one
+screen, over the live field: four aircraft with the numbers that tell them
+apart, five places and five weather states each with a rendered preview, and the
+radio status with its setup button. A fly button across the bottom carries the
+current selection written above it. Mouse and keyboard both work; hovering a
+card selects it, and the fly button is one Enter away. Nothing that matters is
+behind a keypress.
 
 **Transmitter setup.** A card with a six-segment progress bar, one instruction
 at a time, and the raw axes shown live throughout — the fastest way to
