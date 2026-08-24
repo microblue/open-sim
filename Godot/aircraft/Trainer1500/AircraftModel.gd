@@ -21,6 +21,11 @@ const DARK_COLOUR := Color(0.20, 0.22, 0.26)
 const AirframeScript := preload("res://aircraft/Trainer1500/AirframeGeometry.gd")
 const SURFACE_COLOUR := Color(0.30, 0.31, 0.34)
 const SURFACE_GAP: float = 0.006
+## Render layer the propeller and spinner live on, so the FPV camera can leave
+## them out. A tractor model's disc sits directly in front of any camera mounted
+## behind it, and from inside the aircraft it fills the view - which is what a
+## real FPV pilot fits the camera above or ahead of the disc to avoid.
+const PROPELLER_LAYER: int = 2
 const PLATE_THICKNESS: float = 0.008
 ## Sign relating the flight model's deflection to a rotation about the pivot's
 ## own X axis. Pinned by the in-engine check in tests/HeadlessTests.gd, which
@@ -326,7 +331,8 @@ func _build_propeller(nose_z: float) -> void:
 	hub_mesh.radius = 0.022
 	hub_mesh.height = 0.055
 	hub.mesh = hub_mesh
-	hub.material_override = _material(TRIM_COLOUR)
+	hub.material_override = _metal_material(TRIM_COLOUR)
+	hub.layers = PROPELLER_LAYER
 	hub.position = mount
 	add_child(hub)
 
@@ -341,6 +347,7 @@ func _build_propeller(nose_z: float) -> void:
 		blade_mesh.size = Vector3(diameter * 0.48, 0.018, 0.004)
 		blade.mesh = blade_mesh
 		blade.material_override = _material(DARK_COLOUR)
+		blade.layers = PROPELLER_LAYER
 		blade.rotation_degrees = Vector3(0, 0, 180.0 * float(blade_index))
 		blade.position = Vector3(cos(PI * float(blade_index)) * diameter * 0.24,
 								 sin(PI * float(blade_index)) * diameter * 0.24, 0.0)

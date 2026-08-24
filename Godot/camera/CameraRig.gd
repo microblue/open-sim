@@ -30,6 +30,12 @@ const TRACKING_RATE: float = 2.2
 ## grass as well.
 const MINIMUM_GROUND_CLEARANCE: float = 0.55
 
+## Layers the cameras draw. The propeller is on its own so the FPV view can
+## leave it out: it is a tractor model, the disc is directly in front of any
+## camera mounted behind it, and at flying rpm it fills the frame.
+const LAYER_ALL: int = 0xFFFFF
+const LAYER_PROPELLER: int = 2
+
 @export var simulation_path: NodePath
 @export var field_path: NodePath
 @export var pilot_eye_height: float = 1.65
@@ -52,9 +58,13 @@ func _ready() -> void:
 	_camera.name = "Camera"
 	_camera.fov = BASE_FOV
 	_camera.near = 0.05
-	_camera.far = 9000.0
+	# Far enough to see the world. At 9000 m the outer terrain rings - which
+	# reach tens of kilometres - were clipped away, so the horizon ended in a
+	# hard line partway across the landscape.
+	_camera.far = 60000.0
 	_camera.current = true
 	add_child(_camera)
+	_apply_cull_mask()
 
 	position = Vector3(0.0, pilot_eye_height, 0.0)
 
@@ -79,6 +89,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		_look_offset.y = clampf(_look_offset.y - event.relative.y * 0.0016, -1.2, 1.2)
 
 
+## Everything except the propeller in FPV, everything in the other views.
+func _apply_cull_mask() -> void:
+	if _camera == null:
+		return
+	_camera.cull_mask = (LAYER_ALL & ~LAYER_PROPELLER) if mode == Mode.FPV else LAYER_ALL
+
+
 func _set_mode(new_mode: Mode) -> void:
 	mode = new_mode
 	_look_offset = Vector2.ZERO
@@ -87,6 +104,7 @@ func _set_mode(new_mode: Mode) -> void:
 		# simply having better eyes. It makes no sense from the cockpit.
 		_zoom_index = 0
 	_apply_zoom()
+	_apply_cull_mask()
 
 
 func _cycle_zoom() -> void:
