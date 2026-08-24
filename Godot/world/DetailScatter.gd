@@ -74,6 +74,9 @@ const CELLS_PER_FRAME: int = 6
 ## Fraction of a kind's view distance at which it drops to its far model.
 const LOD_SPLIT: float = 0.22
 
+## How far the camera must move before the cell list is re-examined.
+const SURVEY_STEP: float = 24.0
+
 @export var simulation_path: NodePath
 @export var camera_path: NodePath
 @export var seed_value: int = 20260823
@@ -86,6 +89,7 @@ var _tier_roots: Array[Node3D] = []
 ## One entry per live cell, keyed "tier:x:y".
 var _cells: Dictionary = {}
 var _pending: Array = []
+var _last_survey: Vector2 = Vector2(1e12, 1e12)
 
 
 func _ready() -> void:
@@ -121,8 +125,13 @@ func _process(_delta: float) -> void:
 	if _sim == null:
 		return
 
-	if _pending.is_empty():
-		_queue_cells(_focus(), 0.0)
+	# Only look for work when the camera has actually moved. Scanning every cell
+	# in a dictionary of several hundred, every frame, to discover that nothing
+	# needs building was costing milliseconds for nothing.
+	var focus: Vector2 = _focus()
+	if _pending.is_empty() and focus.distance_squared_to(_last_survey) > SURVEY_STEP * SURVEY_STEP:
+		_last_survey = focus
+		_queue_cells(focus, 0.0)
 		_drop_distant()
 
 	for i in CELLS_PER_FRAME:

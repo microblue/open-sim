@@ -66,15 +66,19 @@ func _ready() -> void:
 	world.name = "World"
 	world.simulation_path = NodePath("../../Aircraft")
 	world.camera_path = NodePath("../../CameraRig")
-	$Field.add_child(world)
+	if not OS.has_environment("RC_NO_TERRAIN"):
+		$Field.add_child(world)
 
 	# What stands on that terrain: grass, scrub, trees, boulders. The circuit is
 	# generated in full before the first frame; beyond it, cells stream.
+	if OS.has_environment("RC_NO_DETAIL"):
+		pass
 	var detail := DetailScript.new()
 	detail.name = "Detail"
 	detail.simulation_path = NodePath("../../Aircraft")
 	detail.camera_path = NodePath("../../CameraRig")
-	$Field.add_child(detail)
+	if not OS.has_environment("RC_NO_DETAIL"):
+		$Field.add_child(detail)
 	# The camera rig asks the field how high the ground is, so it can refuse to
 	# go under it.
 	camera_rig.field_path = camera_rig.get_path_to(field)

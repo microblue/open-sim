@@ -41,6 +41,7 @@ const TREE_RING_RADIUS: float = 125.0
 ## scripts/fetch-assets.sh, which is why this is a path rather than a preload -
 ## the project has to open without the assets present.
 const ImpostorLib := preload("res://world/Impostors.gd")
+const GrassLib := preload("res://world/GrassCards.gd")
 const SKY_HDRI: String = "Godot/assets/hdri/kloofendal_43d_clear_puresky.hdr"
 
 @export var simulation_path: NodePath
@@ -72,7 +73,8 @@ func _ready() -> void:
 	# world: the grass the pilot reads the wind from, the treeline that gives
 	# the circuit its edges, the pits and the windsock. All of it sits at zero,
 	# which is where the terrain function puts the plateau.
-	_build_grass()
+	if not OS.has_environment("RC_NO_GRASS"):
+		_build_grass()
 	_build_trees()
 	_build_structures()
 	_windsock = _build_windsock()
@@ -182,7 +184,10 @@ func _build_environment() -> void:
 	# ambient occlusion puts the contact shadows back where they matter - under
 	# the aircraft, the canopy and the rail.
 	environment.sdfgi_enabled = false
-	environment.ssao_enabled = true
+	# SSAO on, at half resolution. Contact shadows under the aircraft and in the
+	# grass are worth having; the full-resolution pass was not, on a scene where
+	# almost every pixel is foliage.
+	environment.ssao_enabled = not OS.has_environment("RC_NO_POST")
 	environment.ssao_radius = 0.8
 	environment.ssao_intensity = 1.1
 	environment.ssao_power = 1.5
@@ -193,7 +198,7 @@ func _build_environment() -> void:
 	# had the treeline washed out at a hundred metres and the sky grey rather
 	# than blue - which reads as an overcast day whatever the sky material is
 	# doing, and takes away the pilot's main range cue in the process.
-	environment.fog_enabled = true
+	environment.fog_enabled = not OS.has_environment("RC_NO_POST")
 	environment.fog_light_color = Color(0.70, 0.78, 0.90)
 	# Thinner than before. At 0.00035 the haze was total by three kilometres,
 	# which was fine when the world ended at 260 m and hides an entire mountain
@@ -206,7 +211,7 @@ func _build_environment() -> void:
 	# exactly the fast attitude changes the pilot needs to read.
 	# Barely any bloom. With a bright sky filling half the frame, glow spreads
 	# across the whole image and takes the colour out of the ground with it.
-	environment.glow_enabled = true
+	environment.glow_enabled = not OS.has_environment("RC_NO_POST")
 	environment.glow_intensity = 0.12
 	environment.glow_bloom = 0.0
 	environment.glow_hdr_threshold = 1.4
@@ -240,7 +245,7 @@ func _build_environment() -> void:
 	# the shading, which is why this went back up after the textures went in.
 	sun.light_energy = 6.5
 	sun.light_color = Color(1.0, 0.97, 0.91)
-	sun.shadow_enabled = true
+	sun.shadow_enabled = not OS.has_environment("RC_NO_SHADOW")
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	# Shadow bias, and why it is this large.
 	#
@@ -398,44 +403,63 @@ func _blade_mesh() -> ArrayMesh:
 
 
 func _build_grass() -> void:
-	_grass_material = ShaderMaterial.new()
-	_grass_material.shader = FieldShaders.grass_shader()
+	# Real scanned grass where the impostors have been baked, generated blades
+	# where they have not. The card carries five clumps, so three crossed quads
+	# are fifteen clumps of real grass and the instance count comes down by the
+	# same factor.
+	var card: Dictionary = GrassLib.load_card(_sim) if _sim != null else {}
 
 	var multi := MultiMesh.new()
 	multi.transform_format = MultiMesh.TRANSFORM_3D
-	multi.mesh = _blade_mesh()
-	multi.instance_count = GRASS_BLADES
+	multi.use_colors = true
 
-	for i in GRASS_BLADES:
-		# Denser near the pilot, where the eye actually resolves individual
-		# blades; sqrt of a uniform gives that for free.
+	var count: int = GRASS_BLADES
+	if card.is_empty():
+		_grass_material = ShaderMaterial.new()
+		_grass_material.shader = FieldShaders.grass_shader()
+		multi.mesh = _blade_mesh()
+	else:
+		_grass_material = GrassLib.material(card["texture"])
+		# The card's grass sits in the lower part of its tile, so the quad is
+		# taller than the grass it shows.
+		multi.mesh = GrassLib.tuft_mesh(float(card["size"]) * 0.62)
+		# Dense enough that the ground under it barely shows. A card carries
+		# five clumps, so this is roughly six hundred thousand clumps of grass
+		# over the circuit - which is what a field looks like.
+		# Fewer, larger cards. Overdraw is what a field of alpha-cut grass costs,
+		# and it goes with the number of cards a pixel is covered by rather than
+		# with how much grass is in them - so a bigger card carrying the same
+		# five clumps is strictly cheaper for the same picture.
+		count = int(GRASS_BLADES * 0.24)
+
+	multi.instance_count = count
+	for i in count:
 		var angle: float = _rng.randf() * TAU
 		var radius: float = sqrt(_rng.randf()) * GRASS_RADIUS
-		var x: float = STRIP_CENTRE_X * 0.5 + cos(angle) * radius
-		var z: float = STRIP_CENTRE_Z + sin(angle) * radius
-
-		var mown: float = _mown_fraction(x, z)
-		# Short on the strip, long on the rough. This is what makes the strip
-		# read as a strip from a distance.
-		var height: float = lerpf(1.0, 0.30, mown) * _rng.randf_range(0.65, 1.4)
-
-		var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(
-			Vector3(_rng.randf_range(0.8, 1.2), height, _rng.randf_range(0.8, 1.2)))
+		var x: float = cos(angle) * radius
+		var z: float = sin(angle) * radius
+		var scale: float = _rng.randf_range(0.72, 1.34)
+		var basis := Basis(Vector3.UP, _rng.randf() * TAU) \
+			.scaled(Vector3(scale, scale * _rng.randf_range(0.85, 1.2), scale))
 		multi.set_instance_transform(i, Transform3D(basis,
 			Vector3(x, _terrain_height(x, z), z)))
+		# Pulled towards green. The scan is a dry ornamental grass, which is
+		# lovely and is not what a mown flying field looks like.
+		var tint: float = _rng.randf()
+		multi.set_instance_color(i, Color(0.52 + tint * 0.16,
+										  0.92 + tint * 0.18,
+										  0.34 + tint * 0.14))
 
 	var instance := MultiMeshInstance3D.new()
 	instance.name = "Grass"
 	instance.multimesh = multi
 	instance.material_override = _grass_material
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# Grass past a hundred metres is a texture, not geometry.
-	instance.visibility_range_end = 75.0
-	instance.visibility_range_end_margin = 15.0
+	# Grass past this is a shimmer, not detail, and it is where the overdraw is.
+	instance.visibility_range_end = 62.0
+	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	add_child(instance)
 
-
-# ---------------------------------------------------------------------- trees
 
 func _tree_mesh() -> ArrayMesh:
 	var surface := SurfaceTool.new()

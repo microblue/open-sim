@@ -60,6 +60,8 @@ func _ready() -> void:
 	_terrain_material = ShaderMaterial.new()
 	_terrain_material.shader = WorldShaders.terrain_shader()
 	_terrain_material.set_shader_parameter("snow_line", 1250.0)
+	_terrain_material.set_shader_parameter("field_radius", 400.0)
+	_terrain_material.set_shader_parameter("field_blend", 260.0)
 	_terrain_material.set_shader_parameter("sea_level", _sim.get_sea_level_y())
 
 	# Real scanned surfaces where they have been fetched, procedural colouring
@@ -72,7 +74,7 @@ func _ready() -> void:
 		_terrain_material.set_shader_parameter("ground_albedo", ground["albedo"])
 		_terrain_material.set_shader_parameter("ground_normal", ground["normal"])
 		_terrain_material.set_shader_parameter("ground_rough", ground["roughness"])
-		_terrain_material.set_shader_parameter("textured", true)
+		_terrain_material.set_shader_parameter("textured", not OS.has_environment("RC_FLAT_TERRAIN"))
 		print("[World] ground: %d scanned PBR materials" % ground["count"])
 
 	for level in LEVELS:
@@ -86,7 +88,8 @@ func _ready() -> void:
 			"anchor": Vector2(1e12, 1e12),
 		})
 
-	_build_water()
+	if not OS.has_environment("RC_NO_WATER"):
+		_build_water()
 	for level in _levels:
 		_rebuild_level(level, _anchor_for(level, _focus()))
 

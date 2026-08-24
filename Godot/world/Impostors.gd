@@ -111,8 +111,12 @@ shader_type spatial;
 // world_vertex_coords so the billboard can be built directly in world space -
 // inverting the model matrix per vertex to get back to local would cost more
 // than the quad itself.
-render_mode world_vertex_coords, cull_disabled, depth_prepass_alpha,
-			diffuse_burley, specular_disabled;
+// No depth_prepass_alpha. It runs the whole thing through a depth pass first so
+// alpha-cut geometry sorts correctly, which doubles the cost - and with tens of
+// thousands of tree cards that is the most expensive thing in the frame. A
+// discard alone is single-pass; what it costs is that two cards at the same
+// depth can flicker against each other, which at impostor range does not show.
+render_mode world_vertex_coords, cull_disabled, diffuse_burley, specular_disabled;
 
 uniform sampler2D atlas : source_color, filter_linear_mipmap, repeat_disable;
 uniform int views = 8;

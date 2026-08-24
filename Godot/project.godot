@@ -49,6 +49,8 @@ renderer/rendering_method="forward_plus"
 ; A small, fast, high-contrast aircraft against sky is the hard case for temporal
 ; anti-aliasing. Start with MSAA plus TAA and no upscaling; the target GPU has
 ; the headroom to render 1440p natively.
+; 4x. Measured: on this scene it costs nothing that shows in a frame time, and
+; a small high-contrast aircraft against sky is the hard case for TAA alone.
 anti_aliasing/quality/msaa_3d=2
 anti_aliasing/quality/screen_space_aa=0
 anti_aliasing/quality/use_taa=true
@@ -58,6 +60,9 @@ anti_aliasing/quality/use_taa=true
 global_illumination/sdfgi/frames_to_converge=2
 global_illumination/gi/use_half_resolution=false
 
+; 8192 and the highest soft-shadow filter. Both were pulled down while chasing
+; a frame rate that turned out to be the Xvfb present path rather than anything
+; rendered - see Docs/PERFORMANCE.md - and put back once that was established.
 lights_and_shadows/directional_shadow/size=8192
 lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
 

@@ -45,6 +45,12 @@ uniform bool textured = false;
 uniform float snow_line = 1250.0;
 uniform float sea_level = -135.0;
 uniform float beach_height = 5.0;
+/** The flying field is mown, and mown grass is green whatever the surrounding
+ *  climate happens to be. Without this the strip took whatever moisture the
+ *  noise gave it and came out as dry steppe - which is a fine landscape and the
+ *  wrong one to land a trainer on. */
+uniform float field_radius = 400.0;
+uniform float field_blend = 260.0;
 
 /** Metres per tile of the detail sample, and of the macro sample that breaks
  *  its repeat. */
@@ -95,19 +101,21 @@ float fbm(vec2 p, int octaves) {
 	return total / norm;
 }
 
-/** One material, projected from all three axes and sampled at two scales. */
-vec3 triplanar(sampler2DArray tex, float layer, vec3 blend, vec3 position) {
-	vec3 detail =
-		  texture(tex, vec3(position.zy / detail_scale, layer)).rgb * blend.x
-		+ texture(tex, vec3(position.xz / detail_scale, layer)).rgb * blend.y
-		+ texture(tex, vec3(position.xy / detail_scale, layer)).rgb * blend.z;
-	vec3 macro =
-		  texture(tex, vec3(position.zy / macro_scale, layer)).rgb * blend.x
-		+ texture(tex, vec3(position.xz / macro_scale, layer)).rgb * blend.y
-		+ texture(tex, vec3(position.xy / macro_scale, layer)).rgb * blend.z;
-	// Multiplied around a mid grey, so the macro sample varies the detail
-	// rather than replacing it. This is what removes the tiling grid.
-	return detail * (macro * 1.7 + 0.15);
+/** One material at one scale.
+ *
+ *  `flat_ground` skips two of the three projections. Most of the world is
+ *  ground the aircraft can land on, and on ground the eye reads as flat the
+ *  side projections contribute almost nothing while costing two thirds of the
+ *  lookups. Only a real slope pays for all three.
+ */
+vec3 project(sampler2DArray tex, float layer, vec3 blend, vec3 position,
+			 float scale, bool flat_ground) {
+	if (flat_ground) {
+		return texture(tex, vec3(position.xz / scale, layer)).rgb;
+	}
+	return texture(tex, vec3(position.zy / scale, layer)).rgb * blend.x
+		 + texture(tex, vec3(position.xz / scale, layer)).rgb * blend.y
+		 + texture(tex, vec3(position.xy / scale, layer)).rgb * blend.z;
 }
 
 void vertex() {
@@ -144,54 +152,85 @@ void fragment() {
 	// Grass is whatever is left.
 	float w_grass = max(0.0, 1.0 - w_beach - w_snow - w_rock - w_forest - w_desert);
 
+	// On the field itself, it is all of it.
+	float mown = 1.0 - smoothstep(field_radius, field_radius + field_blend,
+								  length(world_position.xz));
+	w_grass = mix(w_grass, 1.0, mown);
+	w_desert = mix(w_desert, 0.0, mown);
+	w_forest = mix(w_forest, 0.0, mown);
+	w_rock = mix(w_rock, 0.0, mown);
+
 	if (textured) {
 		// Triplanar weights from the surface normal, sharpened so a slope is
 		// mostly one projection rather than a smear of all three.
 		vec3 blend = pow(abs(world_normal), vec3(4.0));
 		blend /= max(blend.x + blend.y + blend.z, 1e-4);
+		bool flat_ground = blend.y > 0.86;
 
-		float total = w_grass + w_forest + w_rock + w_beach + w_desert + w_snow;
+		// Six materials, three maps, two scales and three projections is a
+		// hundred and eight texture fetches a pixel, and it was costing more
+		// than everything else in the frame put together. Almost all of them
+		// were multiplied by a weight of zero: at any given point the ground is
+		// one or two materials, not six.
+		//
+		// So: skip a layer whose weight cannot show, take the macro sample
+		// only for albedo - it exists to break the tiling grid, which the eye
+		// only finds in colour - and use one projection on ground that reads as
+		// flat. Same picture, a fraction of the bandwidth.
+		float weights[6] = {w_grass, w_forest, w_rock, w_beach, w_desert, w_snow};
+		float layers[6] = {L_GRASS, L_FOREST, L_ROCK, L_BEACH, L_DESERT, L_SNOW};
+
+		vec3 albedo = vec3(0.0);
+		vec3 rough = vec3(0.0);
+		vec3 packed = vec3(0.0);
+		float total = 0.0;
+
+		for (int i = 0; i < 6; i++) {
+			float w = weights[i];
+			if (w < 0.012) {
+				continue;
+			}
+			float layer = layers[i];
+			vec3 detail = project(ground_albedo, layer, blend, world_position,
+								  detail_scale, flat_ground);
+			vec3 macro = project(ground_albedo, layer, blend, world_position,
+								 macro_scale, flat_ground);
+			// Multiplied around a mid grey, so the macro sample varies the
+			// detail rather than replacing it. This is what removes the grid.
+			albedo += detail * (macro * 1.7 + 0.15) * w;
+			rough += project(ground_rough, layer, blend, world_position,
+							 detail_scale, flat_ground) * w;
+			packed += project(ground_normal, layer, blend, world_position,
+							  detail_scale, flat_ground) * w;
+			total += w;
+		}
+
 		total = max(total, 1e-4);
-
-		vec3 albedo =
-			  triplanar(ground_albedo, L_GRASS,  blend, world_position) * w_grass
-			+ triplanar(ground_albedo, L_FOREST, blend, world_position) * w_forest
-			+ triplanar(ground_albedo, L_ROCK,   blend, world_position) * w_rock
-			+ triplanar(ground_albedo, L_BEACH,  blend, world_position) * w_beach
-			+ triplanar(ground_albedo, L_DESERT, blend, world_position) * w_desert
-			+ triplanar(ground_albedo, L_SNOW,   blend, world_position) * w_snow;
 		albedo /= total;
-
-		vec3 rough =
-			  triplanar(ground_rough, L_GRASS,  blend, world_position) * w_grass
-			+ triplanar(ground_rough, L_FOREST, blend, world_position) * w_forest
-			+ triplanar(ground_rough, L_ROCK,   blend, world_position) * w_rock
-			+ triplanar(ground_rough, L_BEACH,  blend, world_position) * w_beach
-			+ triplanar(ground_rough, L_DESERT, blend, world_position) * w_desert
-			+ triplanar(ground_rough, L_SNOW,   blend, world_position) * w_snow;
 		rough /= total;
+		packed /= total;
 
 		// A tint from the vertex colour, so the texture set and the biome
 		// colouring agree instead of arguing. Weak: the scan carries the
 		// colour, this only nudges it.
 		vec3 tint = surface.rgb / max(dot(surface.rgb, vec3(0.333)), 1e-4);
-		ALBEDO = albedo * mix(vec3(1.0), tint, 0.28);
+		albedo *= mix(vec3(1.0), tint, 0.28);
+
+		// The mown field, pulled towards green.
+		//
+		// sparse_grass is exactly what it is called - mostly bare earth with
+		// grass through it - which is right for open country and wrong for a
+		// strip that is cut every week. There is no aerial lawn texture in the
+		// library, so the ground under the grass geometry is tinted instead.
+		albedo = mix(albedo, albedo * vec3(0.62, 1.35, 0.45), mown * 0.75);
+		ALBEDO = albedo;
 		ROUGHNESS = clamp(rough.r * 1.15, 0.25, 1.0);
 		SPECULAR = 0.30;
 
-		// Normal, from the same triplanar projection. Whitening at range: relief
-		// finer than a pixel is noise, and noise in the normal makes a distant
-		// hillside sparkle under a moving camera.
+		// Whitened at range: relief finer than a pixel is noise, and noise in
+		// the normal makes a distant hillside sparkle under a moving camera.
 		float range = length(world_position - CAMERA_POSITION_WORLD);
 		float relief = 1.0 - smoothstep(90.0, 1400.0, range);
-		vec3 packed =
-			  triplanar(ground_normal, L_GRASS,  blend, world_position) * w_grass
-			+ triplanar(ground_normal, L_ROCK,   blend, world_position) * w_rock
-			+ triplanar(ground_normal, L_FOREST, blend, world_position) * w_forest
-			+ triplanar(ground_normal, L_BEACH,  blend, world_position) * w_beach
-			+ triplanar(ground_normal, L_DESERT, blend, world_position) * w_desert
-			+ triplanar(ground_normal, L_SNOW,   blend, world_position) * w_snow;
-		packed /= total;
 		vec3 tangent_normal = normalize(packed * 2.0 - 1.0);
 		NORMAL_MAP = mix(vec3(0.5, 0.5, 1.0), tangent_normal * 0.5 + 0.5, relief);
 		NORMAL_MAP_DEPTH = 1.6;
