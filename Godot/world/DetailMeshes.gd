@@ -40,13 +40,13 @@ static func build(kind: int) -> ArrayMesh:
 ## near field; a tree is a silhouette on the skyline and earns its distance.
 static func view_distance(kind: int) -> float:
 	match kind:
-		GRASS:     return 90.0
-		REED:      return 130.0
-		SHRUB:     return 260.0
-		BOULDER:   return 420.0
-		DEAD_TREE: return 900.0
-		CONIFER, BROADLEAF: return 1400.0
-		_:         return 200.0
+		GRASS:     return 150.0
+		REED:      return 200.0
+		SHRUB:     return 420.0
+		BOULDER:   return 700.0
+		DEAD_TREE: return 1500.0
+		CONIFER, BROADLEAF: return 3200.0
+		_:         return 320.0
 
 
 # ------------------------------------------------------------------ species --

@@ -18,10 +18,12 @@
   "licence": "CC0",
 
   "hdris": [
+    { "name": "kloofendal_48d_partly_cloudy_puresky", "res": "4k",
+      "use": "sky and image-based lighting - blue with cumulus, sun high" },
+    { "name": "wasteland_clouds_puresky", "res": "4k",
+      "use": "alternative: heavier cloud" },
     { "name": "kloofendal_43d_clear_puresky", "res": "4k",
-      "use": "sky and image-based lighting - clear afternoon, sun high" },
-    { "name": "belfast_open_field", "res": "4k",
-      "use": "alternative: overcast open field" }
+      "use": "alternative: cloudless" }
   ],
 
   // Chosen by looking at them, not by their names. The first set was picked

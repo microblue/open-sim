@@ -34,31 +34,31 @@ const TIERS: Array[Dictionary] = [
 		"name": "cover",
 		"layer": 0,                      # ground cover: dense, close in
 		"cell": 72.0,
-		"radius": 300.0,
+		"radius": 460.0,
 		# Pre-generated only as far as it is worth seeing. Forcing the ground
 		# cover out to the circuit radius built six hundred cells of grass that
 		# is invisible past ninety metres, and spent several seconds of the load
 		# doing it.
-		"prebuild": 300.0,
-		"count": 420,
+		"prebuild": 460.0,
+		"count": 760,
 		"kinds": [Meshes.GRASS, Meshes.SHRUB, Meshes.REED],
 	},
 	{
 		"name": "canopy_near",
 		"layer": 1,                      # trees and boulders, full detail
 		"cell": 120.0,
-		"radius": 620.0,
-		"prebuild": 900.0,
-		"count": 150,
+		"radius": 1000.0,
+		"prebuild": 1200.0,
+		"count": 240,
 		"kinds": [Meshes.CONIFER, Meshes.BROADLEAF, Meshes.DEAD_TREE, Meshes.BOULDER],
 	},
 	{
 		"name": "canopy_far",
 		"layer": 1,                      # the same trees, out to the skyline
 		"cell": 420.0,
-		"radius": 2200.0,
-		"prebuild": 1500.0,
-		"count": 900,
+		"radius": 3400.0,
+		"prebuild": 2000.0,
+		"count": 1500,
 		"kinds": [Meshes.CONIFER, Meshes.BROADLEAF, Meshes.DEAD_TREE],
 	},
 ]
@@ -98,8 +98,15 @@ func _ready() -> void:
 		return
 
 	for kind in Meshes.KIND_COUNT:
-		_meshes.append(Meshes.build(kind) if kind != Meshes.NONE else null)
-		_materials.append(DetailShaders.material_for(kind))
+		var mesh: ArrayMesh = Meshes.build(kind) if kind != Meshes.NONE else null
+		_meshes.append(mesh)
+		var material: ShaderMaterial = DetailShaders.material_for(kind)
+		# The sway needs to know how tall the thing it is bending actually is.
+		# Left at its default of one metre, an eight-metre tree clamped to full
+		# sway a metre off the ground and translated like a plank.
+		if mesh != null and material != null:
+			material.set_shader_parameter("top_height", maxf(mesh.get_aabb().size.y, 0.05))
+		_materials.append(material)
 
 	for tier in TIERS.size():
 		var root := Node3D.new()

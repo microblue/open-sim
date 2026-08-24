@@ -111,12 +111,11 @@ shader_type spatial;
 // world_vertex_coords so the billboard can be built directly in world space -
 // inverting the model matrix per vertex to get back to local would cost more
 // than the quad itself.
-// No depth_prepass_alpha. It runs the whole thing through a depth pass first so
-// alpha-cut geometry sorts correctly, which doubles the cost - and with tens of
-// thousands of tree cards that is the most expensive thing in the frame. A
-// discard alone is single-pass; what it costs is that two cards at the same
-// depth can flicker against each other, which at impostor range does not show.
-render_mode world_vertex_coords, cull_disabled, diffuse_burley, specular_disabled;
+// depth_prepass_alpha, so overlapping tree cards sort against each other
+// instead of flickering. Removed once while chasing a frame time that was the
+// Xvfb present path rather than anything rendered; see Docs/PERFORMANCE.md.
+render_mode world_vertex_coords, cull_disabled, depth_prepass_alpha,
+			diffuse_burley, specular_disabled;
 
 uniform sampler2D atlas : source_color, filter_linear_mipmap, repeat_disable;
 uniform int views = 8;
@@ -129,6 +128,9 @@ uniform float alpha_cut = 0.35;
  *  every tree came out bleached. One number, tunable without re-baking. */
 uniform float bake_gain = 0.58;
 uniform vec3 wind_vector = vec3(0.0, 0.0, 0.0);
+/** Fraction of the card that is trunk and does not move. A tree bends in its
+ *  canopy; the base of the trunk is planted. */
+uniform float rooted_fraction = 0.45;
 
 varying vec2 atlas_uv;
 varying vec3 tint;
@@ -171,8 +173,16 @@ void vertex() {
 	float speed = length(wind_vector);
 	if (speed > 0.01) {
 		float phase = TIME * (0.7 + speed * 0.12) + origin.x * 0.11 + origin.z * 0.09;
-		offset += normalize(wind_vector) * max(0.0, 0.5 - UV.y) * 2.0
-				* size * 0.012 * (0.4 + speed * 0.06) * sin(phase);
+		// UV.y is 1 at the foot of the card and 0 at the top, so this is the
+		// height up the tree. Nothing below the trunk line moves; above it the
+		// bend rises cubically, because a branch tip travels much further than
+		// the fork it grows from and anything linear reads as the whole tree
+		// sliding sideways.
+		float up_tree = 1.0 - UV.y;
+		float free = clamp((up_tree - rooted_fraction)
+						   / max(1.0 - rooted_fraction, 0.001), 0.0, 1.0);
+		offset += normalize(wind_vector) * (free * free * free)
+				* size * 0.030 * (0.4 + speed * 0.06) * sin(phase);
 	}
 
 	VERTEX = origin + vec3(0.0, centre_y * scale, 0.0) + offset;

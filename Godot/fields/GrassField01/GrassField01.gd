@@ -33,7 +33,7 @@ const STRIP_CENTRE_X: float = -16.0
 # height a field needs several tufts per square metre before it stops reading as
 # sparse weeds; 90 000 over a 60 m radius is about eight.
 const GRASS_BLADES: int = 210000
-const GRASS_RADIUS: float = 55.0
+const GRASS_RADIUS: float = 120.0
 const TREE_COUNT: int = 130
 const TREE_RING_RADIUS: float = 125.0
 
@@ -42,7 +42,7 @@ const TREE_RING_RADIUS: float = 125.0
 ## the project has to open without the assets present.
 const ImpostorLib := preload("res://world/Impostors.gd")
 const GrassLib := preload("res://world/GrassCards.gd")
-const SKY_HDRI: String = "Godot/assets/hdri/kloofendal_43d_clear_puresky.hdr"
+const SKY_HDRI: String = "Godot/assets/hdri/kloofendal_48d_partly_cloudy_puresky.hdr"
 
 @export var simulation_path: NodePath
 
@@ -199,13 +199,49 @@ func _build_environment() -> void:
 	# than blue - which reads as an overcast day whatever the sky material is
 	# doing, and takes away the pilot's main range cue in the process.
 	environment.fog_enabled = not OS.has_environment("RC_NO_POST")
-	environment.fog_light_color = Color(0.70, 0.78, 0.90)
+	environment.fog_light_color = Color(0.62, 0.74, 0.92)
 	# Thinner than before. At 0.00035 the haze was total by three kilometres,
 	# which was fine when the world ended at 260 m and hides an entire mountain
 	# range now.
-	environment.fog_density = 0.00008
+	# Thin. Three separate things were hazing the view at once - this, the
+	# aerial perspective term and the volumetric fog - and together they turned
+	# a clear afternoon into a permanent overcast. Aerial perspective on its own
+	# is enough to give distance a cue.
+	environment.fog_density = 0.0000075
 	environment.fog_sky_affect = 0.0
-	environment.fog_aerial_perspective = 0.55
+	environment.fog_aerial_perspective = 0.22
+
+	# Volumetric fog, on top of the depth fog.
+	#
+	# Depth fog tints distance; volumetric fog is actually there, so the sun
+	# lights it - haze thickens in a valley, and a low sun throws shafts through
+	# the treeline. It is the single most expensive thing in this environment
+	# and the one that most makes air look like air, and there is room for it:
+	# the scene runs at 160 fps on the target GPU. See Docs/PERFORMANCE.md.
+	# Volumetric fog OFF.
+	#
+	# It puts the sun into the air, which is lovely on a misty morning and is
+	# not what this is: a clear afternoon with cumulus. At any density where the
+	# shafts showed, the whole scene went milky - the haze is lit by the same
+	# sun and there is nothing to occlude it over an open field. Depth fog with
+	# aerial perspective gives distance its cue for none of the cost and none of
+	# the wash. Left configured, so it is one line to turn on for a weather
+	# preset that wants it.
+	environment.volumetric_fog_enabled = false
+	# Light. Volumetric fog earns its cost by putting the sun into the air -
+	# shafts through a treeline, haze thickening in a valley - not by washing
+	# the whole scene out, which is what the first value did.
+	environment.volumetric_fog_density = 0.0016
+	environment.volumetric_fog_albedo = Color(0.84, 0.89, 0.98)
+	# Forward scattering, so the haze brightens towards the sun the way real
+	# air does rather than glowing evenly.
+	environment.volumetric_fog_anisotropy = 0.35
+	environment.volumetric_fog_length = 1400.0
+	environment.volumetric_fog_detail_spread = 2.0
+	environment.volumetric_fog_gi_inject = 0.6
+	# A shallow height falloff: haze collects near the ground, which is what
+	# separates a ridgeline from the one behind it.
+	environment.volumetric_fog_ambient_inject = 0.15
 
 	# Restrained. No lens flare, no motion blur: motion blur in particular hides
 	# exactly the fast attitude changes the pilot needs to read.
@@ -246,6 +282,10 @@ func _build_environment() -> void:
 	sun.light_energy = 6.5
 	sun.light_color = Color(1.0, 0.97, 0.91)
 	sun.shadow_enabled = not OS.has_environment("RC_NO_SHADOW")
+	# The sun has to be in the volumetric fog for it to throw shafts through
+	# the trees; without this the haze is lit only by ambient and reads as a
+	# flat wash.
+	sun.light_volumetric_fog_energy = 1.35
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	# Shadow bias, and why it is this large.
 	#
@@ -422,15 +462,15 @@ func _build_grass() -> void:
 		_grass_material = GrassLib.material(card["texture"])
 		# The card's grass sits in the lower part of its tile, so the quad is
 		# taller than the grass it shows.
-		multi.mesh = GrassLib.tuft_mesh(float(card["size"]) * 0.62)
+		multi.mesh = GrassLib.tuft_mesh(float(card["size"]) * 0.46)
 		# Dense enough that the ground under it barely shows. A card carries
 		# five clumps, so this is roughly six hundred thousand clumps of grass
 		# over the circuit - which is what a field looks like.
-		# Fewer, larger cards. Overdraw is what a field of alpha-cut grass costs,
-		# and it goes with the number of cards a pixel is covered by rather than
-		# with how much grass is in them - so a bigger card carrying the same
-		# five clumps is strictly cheaper for the same picture.
-		count = int(GRASS_BLADES * 0.24)
+		# Density restored, and then some. It had been cut chasing a frame time
+		# that turned out to be the Xvfb present path; on the real display the
+		# scene runs at 160 fps, which is several times the headroom a trainer
+		# needs. See Docs/PERFORMANCE.md.
+		count = int(GRASS_BLADES * 0.70)
 
 	multi.instance_count = count
 	for i in count:
@@ -456,7 +496,7 @@ func _build_grass() -> void:
 	instance.material_override = _grass_material
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# Grass past this is a shimmer, not detail, and it is where the overdraw is.
-	instance.visibility_range_end = 62.0
+	instance.visibility_range_end = 135.0
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	add_child(instance)
 

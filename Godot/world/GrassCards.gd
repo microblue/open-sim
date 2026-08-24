@@ -87,21 +87,24 @@ static func material(texture: Texture2D) -> ShaderMaterial:
 	var shader := Shader.new()
 	shader.code = """
 shader_type spatial;
-// No depth_prepass_alpha.
-//
-// It makes alpha-cut geometry sort correctly by running the whole thing through
-// a depth pass first, which is the right default and doubles the geometry cost.
-// With a hundred thousand grass cards in front of the camera that was the most
-// expensive thing in the frame. A discard alone is single-pass; what it costs
-// is that two cards at the same depth can flicker against each other, and grass
-// is the one place that does not matter.
-render_mode cull_disabled, diffuse_burley, specular_disabled;
+// depth_prepass_alpha: alpha-cut geometry sorts correctly, at the cost of a
+// depth pass over it first. It was removed while chasing a frame time that
+// turned out to be the Xvfb present path, and is back because it was not the
+// problem and because without it cards at the same depth flicker against each
+// other as the camera moves.
+render_mode cull_disabled, diffuse_burley, specular_disabled, depth_prepass_alpha;
 
 uniform sampler2D card : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform vec3 wind_vector = vec3(0.0, 0.0, 0.0);
 uniform float gust = 0.0;
 uniform float alpha_cut = 0.4;
 uniform float bake_gain = 0.62;
+/** Where the grass in the card starts, measured up from the foot. The bake
+ *  framed the model square, so the grass occupies only the lower part of the
+ *  tile - and the sway has to be keyed to the grass rather than to the card, or
+ *  the blades barely move while the empty space above them does. */
+uniform float grass_top = 0.34;
+uniform float rooted_fraction = 0.06;
 
 varying vec3 instance_tint;
 varying vec2 card_uv;
@@ -116,9 +119,15 @@ void vertex() {
 	float speed = length(wind_vector);
 	float phase = TIME * (1.2 + speed * 0.35) + world.x * 0.55 + world.z * 0.41;
 	float lean = clamp(0.25 + speed * 0.10 + gust * 0.35, 0.0, 1.4);
-	float height = 1.0 - UV.y;
+	// UV.y is 1 at the foot of the card. Height up the grass, not up the card.
+	float up_blade = clamp((1.0 - UV.y) / max(grass_top, 0.001), 0.0, 1.0);
+	float free = clamp((up_blade - rooted_fraction)
+					   / max(1.0 - rooted_fraction, 0.001), 0.0, 1.0);
+	// Cubic: a blade's tip travels much further than its middle, and the roots
+	// do not move at all.
 	vec3 direction = speed > 0.01 ? normalize(wind_vector) : vec3(1.0, 0.0, 0.0);
-	VERTEX += direction * 0.10 * height * lean * (0.65 + 0.35 * sin(phase));
+	VERTEX += direction * 0.14 * (free * free * free) * lean
+			* (0.65 + 0.35 * sin(phase));
 }
 
 void fragment() {

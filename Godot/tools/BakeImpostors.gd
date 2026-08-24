@@ -24,10 +24,10 @@ extends SceneTree
 ## Views around the tree. Eight is the usual compromise: the seam between two
 ## adjacent views is 45 degrees, which at the range an impostor is used is below
 ## what the eye tracks.
-const ANGLES: int = 8
+const ANGLES: int = 12
 
 ## Pixels per view.
-const TILE: int = 512
+const TILE: int = 1024
 
 const MODELS: Array[String] = [
 	"fir_tree_01",

@@ -34,12 +34,14 @@ const GRID: int = 4
 ## Vertices along one edge of a chunk. The same at every level - what changes is
 ## how much ground a chunk covers, which is what makes the cost per level
 ## constant and the detail fall off with distance.
-const CHUNK_RESOLUTION: int = 40
+## Vertices along one edge of a chunk. Raised from 40 once the frame time was
+## understood: this is what decides how sharp a ridgeline is.
+const CHUNK_RESOLUTION: int = 72
 
 ## Levels beyond this do not cast shadows. A shadow map stretched over tens of
 ## kilometres has no resolution left for the aircraft, and a mountain twenty
 ## kilometres away shades nothing the pilot can see.
-const SHADOW_LEVELS: int = 2
+const SHADOW_LEVELS: int = 3
 
 @export var simulation_path: NodePath
 @export var camera_path: NodePath

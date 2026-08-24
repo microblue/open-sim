@@ -187,7 +187,9 @@ void vertex() {
 	// Bounded: an unbounded wind term laid the whole field flat at five metres
 	// a second, which looks like a storm rather than a breeze.
 	float lean = clamp(0.25 + speed * 0.10 + gust * 0.35, 0.0, 1.4);
-	float amplitude = sway_scale * height_fraction * lean;
+	// Cubic in height: the roots do not move and the tip does.
+	float amplitude = sway_scale * height_fraction * height_fraction
+					* height_fraction * lean;
 
 	vec3 direction = speed > 0.01 ? normalize(wind_vector) : vec3(1.0, 0.0, 0.0);
 	VERTEX += direction * amplitude * (0.65 + 0.35 * sin(phase));
@@ -292,7 +294,12 @@ void vertex() {
 	float speed = length(wind_vector);
 	float phase = TIME * (0.7 + speed * 0.12) + world.x * 0.21 + world.z * 0.17;
 	// Only the canopy moves; the trunk stays put.
-	float amplitude = 0.05 * max(VERTEX.y - 1.0, 0.0) * (0.3 + speed * 0.1 + gust * 0.4);
+	// Nothing below a metre moves - that is trunk - and above it the bend rises
+	// with the square of height, because a branch tip travels far further than
+	// the fork it grows from.
+	float above_trunk = max(VERTEX.y - 1.0, 0.0);
+	float amplitude = 0.016 * above_trunk * above_trunk
+					* (0.3 + speed * 0.1 + gust * 0.4);
 	vec3 direction = speed > 0.01 ? normalize(wind_vector) : vec3(1.0, 0.0, 0.0);
 	VERTEX += direction * amplitude * sin(phase);
 	canopy = smoothstep(1.6, 2.6, VERTEX.y);

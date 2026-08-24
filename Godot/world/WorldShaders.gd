@@ -54,7 +54,7 @@ uniform float field_blend = 260.0;
 
 /** Metres per tile of the detail sample, and of the macro sample that breaks
  *  its repeat. */
-uniform float detail_scale = 2.4;
+uniform float detail_scale = 1.7;
 uniform float macro_scale = 34.0;
 
 uniform vec3 wind_vector = vec3(0.0, 0.0, 0.0);
@@ -165,7 +165,7 @@ void fragment() {
 		// mostly one projection rather than a smear of all three.
 		vec3 blend = pow(abs(world_normal), vec3(4.0));
 		blend /= max(blend.x + blend.y + blend.z, 1e-4);
-		bool flat_ground = blend.y > 0.86;
+		bool flat_ground = blend.y > 0.94;
 
 		// Six materials, three maps, two scales and three projections is a
 		// hundred and eight texture fetches a pixel, and it was costing more
@@ -187,7 +187,7 @@ void fragment() {
 
 		for (int i = 0; i < 6; i++) {
 			float w = weights[i];
-			if (w < 0.012) {
+			if (w < 0.004) {
 				continue;
 			}
 			float layer = layers[i];
@@ -230,7 +230,7 @@ void fragment() {
 		// Whitened at range: relief finer than a pixel is noise, and noise in
 		// the normal makes a distant hillside sparkle under a moving camera.
 		float range = length(world_position - CAMERA_POSITION_WORLD);
-		float relief = 1.0 - smoothstep(90.0, 1400.0, range);
+		float relief = 1.0 - smoothstep(180.0, 2600.0, range);
 		vec3 tangent_normal = normalize(packed * 2.0 - 1.0);
 		NORMAL_MAP = mix(vec3(0.5, 0.5, 1.0), tangent_normal * 0.5 + 0.5, relief);
 		NORMAL_MAP_DEPTH = 1.6;

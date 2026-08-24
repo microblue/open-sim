@@ -24,26 +24,34 @@ static func material_for(kind: int) -> ShaderMaterial:
 			material.set_shader_parameter("base_colour", Color(0.062, 0.048, 0.036))
 			material.set_shader_parameter("tip_colour", Color(0.098, 0.082, 0.064))
 			material.set_shader_parameter("sway", 0.010)
+			# A bare trunk is rigid almost to the top.
+			material.set_shader_parameter("rooted_fraction", 0.70)
 		Meshes.GRASS:
 			material.shader = foliage_shader()
 			material.set_shader_parameter("base_colour", Color(0.048, 0.086, 0.024))
 			material.set_shader_parameter("tip_colour", Color(0.145, 0.235, 0.072))
 			material.set_shader_parameter("sway", 0.070)
+			# A blade of grass bends from very near the ground.
+			material.set_shader_parameter("rooted_fraction", 0.08)
 		Meshes.REED:
 			material.shader = foliage_shader()
 			material.set_shader_parameter("base_colour", Color(0.052, 0.070, 0.026))
 			material.set_shader_parameter("tip_colour", Color(0.165, 0.190, 0.080))
 			material.set_shader_parameter("sway", 0.110)
+			material.set_shader_parameter("rooted_fraction", 0.10)
 		Meshes.SHRUB:
 			material.shader = foliage_shader()
 			material.set_shader_parameter("base_colour", Color(0.026, 0.044, 0.018))
 			material.set_shader_parameter("tip_colour", Color(0.062, 0.105, 0.034))
 			material.set_shader_parameter("sway", 0.030)
+			material.set_shader_parameter("rooted_fraction", 0.22)
 		_:
 			material.shader = foliage_shader()
 			material.set_shader_parameter("base_colour", Color(0.048, 0.036, 0.026))
 			material.set_shader_parameter("tip_colour", Color(0.032, 0.068, 0.022))
 			material.set_shader_parameter("sway", 0.018)
+			# Trunk still, canopy moving.
+			material.set_shader_parameter("rooted_fraction", 0.45)
 	return material
 
 
@@ -58,14 +66,29 @@ uniform vec3 tip_colour : source_color = vec3(0.075, 0.130, 0.040);
 uniform vec3 wind_vector = vec3(0.0, 0.0, 0.0);
 uniform float gust = 0.0;
 uniform float sway = 0.03;
+/** Height of this kind's mesh, in metres. Set from the mesh's own bounds when
+ *  the material is built - it used to default to one metre for everything, so
+ *  on a tree eight metres tall every vertex above a metre clamped to full sway
+ *  and the whole thing translated like a plank, trunk base included. */
 uniform float top_height = 1.0;
+/** Fraction of the height that is rooted and does not move at all. A trunk does
+ *  not bend; the canopy above it does. */
+uniform float rooted_fraction = 0.35;
 
 varying float height_fraction;
 varying vec3 instance_tint;
 
 void vertex() {
-	height_fraction = clamp(VERTEX.y / top_height, 0.0, 1.0);
+	height_fraction = clamp(VERTEX.y / max(top_height, 0.001), 0.0, 1.0);
 	instance_tint = COLOR.rgb;
+
+	// What actually moves: nothing below the rooted fraction, then rising
+	// cubically to the top. Cubic rather than linear because a stem bends -
+	// its tip travels far further than its middle - and because anything
+	// linear reads as the whole plant sliding.
+	float free = clamp((height_fraction - rooted_fraction)
+					   / max(1.0 - rooted_fraction, 0.001), 0.0, 1.0);
+	float bend = free * free * free;
 
 	// Only the upper part moves, and it moves further in a gust. The travelling
 	// phase term is what makes a stand of trees ripple rather than lean as one
@@ -75,7 +98,7 @@ void vertex() {
 	float phase = TIME * (0.9 + speed * 0.18) + world.x * 0.23 + world.z * 0.19;
 	float lean = clamp(0.30 + speed * 0.09 + gust * 0.40, 0.0, 1.5);
 	vec3 direction = speed > 0.01 ? normalize(wind_vector) : vec3(1.0, 0.0, 0.0);
-	VERTEX += direction * sway * height_fraction * lean * (0.6 + 0.4 * sin(phase));
+	VERTEX += direction * sway * bend * lean * (0.6 + 0.4 * sin(phase));
 }
 
 void fragment() {
