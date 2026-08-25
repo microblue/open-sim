@@ -55,8 +55,25 @@ func _process(_d: float) -> bool:
 				director.call("apply_scene", "alpine")
 				camera.global_position = Vector3(0.0, 300.0, 700.0)
 				camera.global_rotation = Vector3(deg_to_rad(-11.0), deg_to_rad(5.0), 0.0)
+			"aircraft":
+				# Chase view: the model fills the frame, parked on the strip.
+				var aircraft: RCSimulationNode = scene.get_node_or_null("Aircraft") as RCSimulationNode
+				if aircraft != null:
+					aircraft.wind_speed_mps = 0.0
+					aircraft.reset_state()
+					var spot: Vector3 = aircraft.global_position
+					camera.global_position = spot + Vector3(-0.9, 1.5, 4.6)
+					camera.look_at(spot + Vector3(0.0, 0.3, 0.0), Vector3.UP)
 
 	if _frames == 120:
+		if _shot == "aircraft":
+			var ac: RCSimulationNode = scene.get_node_or_null("Aircraft") as RCSimulationNode
+			var model: Node = scene.get_node_or_null("Aircraft/Model")
+			print("aircraft pos=%s visible=%s model=%s modelvis=%s"
+				% [ac.global_position if ac else "none",
+				   ac.visible if ac else "?",
+				   model != null,
+				   model.visible if model else "?"])
 		_capture(_shot)
 		return true
 	return false

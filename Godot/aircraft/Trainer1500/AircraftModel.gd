@@ -273,25 +273,105 @@ func _build() -> void:
 
 
 func _build_fuselage(nose_z: float, tail_z: float) -> void:
-	var length: float = maxf(tail_z - nose_z, 0.5) + 0.35
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3(0.075, 0.105, length)
-
+	# A real trainer's pod: round at the nose, full through the cockpit, slab
+	# and tapering at the tail. The old fuselage was a box, and a box is the
+	# thing that read as a paper model from the pilot's seat.
+	# One continuous loft from the nose to the tail: the fuselage must not read
+	# as a bulb stuck onto a box, which is what the first loft did. More
+	# stations, a softer mid-section, and the tail tapers all the way.
+	var stations := [
+		{"z": nose_z - 0.10, "width": 0.015, "height": 0.022, "offset_y": 0.0, "corner": 0.0},
+		{"z": nose_z + 0.0, "width": 0.062, "height": 0.072, "offset_y": 0.0, "corner": 0.2},
+		{"z": nose_z + 0.12, "width": 0.092, "height": 0.100, "offset_y": 0.0, "corner": 0.3},
+		{"z": nose_z + 0.28, "width": 0.108, "height": 0.116, "offset_y": 0.0, "corner": 0.4},
+		{"z": 0.0, "width": 0.112, "height": 0.122, "offset_y": -0.006, "corner": 0.45},
+		{"z": tail_z * 0.22, "width": 0.100, "height": 0.110, "offset_y": -0.006, "corner": 0.55},
+		{"z": tail_z * 0.45, "width": 0.082, "height": 0.094, "offset_y": -0.004, "corner": 0.62},
+		{"z": tail_z * 0.68, "width": 0.060, "height": 0.072, "offset_y": 0.0, "corner": 0.72},
+		{"z": tail_z * 0.90, "width": 0.038, "height": 0.050, "offset_y": 0.006, "corner": 0.8},
+		{"z": tail_z + 0.04, "width": 0.024, "height": 0.034, "offset_y": 0.010, "corner": 0.85},
+	]
 	var instance := MeshInstance3D.new()
 	instance.name = "Fuselage"
-	instance.mesh = mesh
+	instance.mesh = AirframeScript.loft_body(stations, 18)
 	instance.material_override = _material(TRUNK_COLOUR)
-	instance.position = Vector3(0.0, -0.03, (nose_z + tail_z) * 0.5)
 	add_child(instance)
 
-	var stripe := MeshInstance3D.new()
-	stripe.name = "Stripe"
-	var stripe_mesh := BoxMesh.new()
-	stripe_mesh.size = Vector3(0.078, 0.022, length * 0.9)
-	stripe.mesh = stripe_mesh
-	stripe.material_override = _material(TRIM_COLOUR)
-	stripe.position = instance.position + Vector3(0.0, 0.015, 0.0)
-	add_child(stripe)
+	# The trim band: a second loft a few millimetres proud of the mid-fuselage,
+	# so the paint scheme is painted on rather than a box bolted to the side.
+	var band_stations: Array = []
+	for station in stations:
+		if station["z"] < nose_z + 0.15 or station["z"] > tail_z * 0.85:
+			continue
+		band_stations.append({
+			"z": station["z"],
+			"width": station["width"] + 0.009,
+			"height": station["height"] + 0.009,
+			"offset_y": station["offset_y"],
+			"corner": station["corner"],
+		})
+	if band_stations.size() >= 2:
+		var band := MeshInstance3D.new()
+		band.name = "TrimBand"
+		band.mesh = AirframeScript.loft_body(band_stations, 18)
+		band.material_override = _material(TRIM_COLOUR)
+		add_child(band)
+
+	_build_canopy(nose_z)
+
+
+## The canopy: a glassy pod over the cockpit, and the pilot inside it. A
+## model without a pilot reads as a shell; one with a head in the canopy is an
+## aeroplane with someone in it, and at the distances a trainer is flown the
+## head is what the eye finds first.
+func _build_canopy(nose_z: float) -> void:
+	var stations := [
+		{"z": nose_z + 0.34, "width": 0.02, "height": 0.018, "offset_y": 0.052, "corner": 0.2},
+		{"z": nose_z + 0.44, "width": 0.078, "height": 0.050, "offset_y": 0.062, "corner": 0.25},
+		{"z": nose_z + 0.56, "width": 0.080, "height": 0.052, "offset_y": 0.064, "corner": 0.25},
+		{"z": nose_z + 0.70, "width": 0.042, "height": 0.030, "offset_y": 0.052, "corner": 0.25},
+	]
+	var canopy := MeshInstance3D.new()
+	canopy.name = "Canopy"
+	canopy.mesh = AirframeScript.loft_body(stations, 14)
+	canopy.material_override = _canopy_material()
+	add_child(canopy)
+
+	# The pilot: head, shoulders, and a hand that might be on the stick.
+	var pilot := Node3D.new()
+	pilot.name = "Pilot"
+	var head := MeshInstance3D.new()
+	var head_mesh := SphereMesh.new()
+	head_mesh.radius = 0.021
+	head_mesh.height = 0.042
+	head.mesh = head_mesh
+	head.material_override = _material(Color(0.85, 0.72, 0.58))
+	head.position = Vector3(0.0, 0.055, nose_z + 0.56)
+	pilot.add_child(head)
+
+	var helmet := MeshInstance3D.new()
+	var helmet_mesh := SphereMesh.new()
+	helmet_mesh.radius = 0.021
+	helmet_mesh.height = 0.042
+	helmet.mesh = helmet_mesh
+	helmet.material_override = _material(DARK_COLOUR)
+	# Sits on the head; the face shows forward under the visor.
+	helmet.rotation_degrees = Vector3(35.0, 0.0, 0.0)
+	helmet.position = head.position
+	pilot.add_child(helmet)
+
+	var shoulders := MeshInstance3D.new()
+	var shoulder_mesh := SphereMesh.new()
+	shoulder_mesh.radius = 0.030
+	shoulder_mesh.height = 0.05
+	shoulder_mesh.radial_segments = 10
+	shoulder_mesh.rings = 6
+	shoulders.mesh = shoulder_mesh
+	shoulders.material_override = _material(TRIM_COLOUR)
+	shoulders.position = Vector3(0.0, 0.028, nose_z + 0.55)
+	shoulders.scale = Vector3(1.0, 0.7, 0.85)
+	pilot.add_child(shoulders)
+	add_child(pilot)
 
 
 func _build_gear() -> void:
@@ -320,6 +400,23 @@ func _build_gear() -> void:
 		wheel.position = centre
 		add_child(wheel)
 
+		# A spat over each main wheel, so the gear reads as part of the
+		# aeroplane rather than as two rods and a tyre bolted on.
+		if i < 2:
+			var spat := MeshInstance3D.new()
+			spat.name = "Spat%d" % i
+			var spat_mesh := SphereMesh.new()
+			spat_mesh.radius = radius * 1.15
+			spat_mesh.height = radius * 2.3
+			spat_mesh.radial_segments = 12
+			spat_mesh.rings = 8
+			spat.mesh = spat_mesh
+			spat.material_override = _material(TRIM_COLOUR)
+			spat.position = centre + Vector3(0.0, radius * 0.15, 0.0)
+			# Long along the axle, slim across it - a wheel pant, not a blob.
+			spat.scale = Vector3(1.35, 0.78, 0.6)
+			add_child(spat)
+
 
 func _build_propeller(nose_z: float) -> void:
 	var mount: Vector3 = _sim.get_motor_position()
@@ -327,13 +424,18 @@ func _build_propeller(nose_z: float) -> void:
 
 	var hub := MeshInstance3D.new()
 	hub.name = "Spinner"
-	var hub_mesh := SphereMesh.new()
-	hub_mesh.radius = 0.022
-	hub_mesh.height = 0.055
+	# A tapered spinner, not a ball: the cone is what reads as a nose at rest,
+	# and it is what the eye checks for a propeller in front of it.
+	var hub_mesh := CylinderMesh.new()
+	hub_mesh.top_radius = 0.007
+	hub_mesh.bottom_radius = 0.028
+	hub_mesh.height = 0.060
+	hub_mesh.radial_segments = 14
 	hub.mesh = hub_mesh
 	hub.material_override = _metal_material(TRIM_COLOUR)
 	hub.layers = PROPELLER_LAYER
-	hub.position = mount
+	hub.rotation_degrees = Vector3(90, 0, 0)
+	hub.position = mount - Vector3(0, 0, 0.045)
 	add_child(hub)
 
 	_propeller = Node3D.new()
@@ -341,14 +443,32 @@ func _build_propeller(nose_z: float) -> void:
 	_propeller.position = mount + Vector3(0, 0, -0.012)
 	add_child(_propeller)
 
+	# Blades that are blades: tapered from a wide root to a narrow tip, and
+	# twisted so the pitch goes from steep at the hub to flat at the tip - the
+	# same distribution a real prop has. The old blades were flat boxes, and a
+	# flat box spinning reads as a ruler.
+	# Blade chords are set so the prop reads at rest: a thin blade at the
+	# scales a 1.5 m trainer draws at is invisible, and an invisible propeller
+	# makes a parked model look like a sculpture with a spinner on it.
+	# Generous chords: the first attempt was airfoil-thin, and a blade that is
+	# a hairline against the sky is a propeller that does not exist at rest.
+	var blade_mesh: ArrayMesh = AirframeScript.loft_wing([
+		{"offset": 0.015, "chord": 0.082, "thickness": 0.12, "twist": 0.40},
+		{"offset": diameter * 0.28, "chord": 0.052, "thickness": 0.11, "twist": 0.20},
+		{"offset": diameter * 0.48, "chord": 0.026, "thickness": 0.10, "twist": 0.05},
+	], 6, true)
 	for blade_index in 2:
 		var blade := MeshInstance3D.new()
-		var blade_mesh := BoxMesh.new()
-		blade_mesh.size = Vector3(diameter * 0.48, 0.018, 0.004)
 		blade.mesh = blade_mesh
-		blade.material_override = _material(DARK_COLOUR)
+		# A warm dark rather than near-black: a dark blade against dark ground
+		# is invisible, and an invisible blade is an antenna with a spinner.
+		blade.material_override = _material(Color(0.30, 0.26, 0.22))
 		blade.layers = PROPELLER_LAYER
 		blade.rotation_degrees = Vector3(0, 0, 180.0 * float(blade_index))
+		blade.position = Vector3(cos(PI * float(blade_index)) * diameter * 0.24,
+								 sin(PI * float(blade_index)) * diameter * 0.24, 0.0)
+		# The loft builds along X; the blade runs radially.
+		blade.rotation_degrees = Vector3(0, 0, 90.0 + 180.0 * float(blade_index))
 		blade.position = Vector3(cos(PI * float(blade_index)) * diameter * 0.24,
 								 sin(PI * float(blade_index)) * diameter * 0.24, 0.0)
 		_propeller.add_child(blade)
