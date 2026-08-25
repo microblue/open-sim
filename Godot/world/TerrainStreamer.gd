@@ -171,7 +171,10 @@ func _rebuild_level(level: Dictionary, anchor: Vector2) -> void:
 	# covers. A small vertical bias downwards keeps a coarse chunk from fighting
 	# the finer mesh where they meet - the fine one always wins, and at these
 	# distances the offset is far below anything the eye resolves.
-	var bias: float = -(pow(2.0, float(index)) - 1.0) * 0.06
+	# Half of what it was: at the higher levels the old bias was a visible
+	# step (0.42 m at level 3) that read as a lattice of grey lines across the
+	# mountains. It only needs to tuck the coarse edge under the fine one.
+	var bias: float = -(pow(2.0, float(index)) - 1.0) * 0.03
 
 	for row in range(-GRID / 2, GRID / 2):
 		for column in range(-GRID / 2, GRID / 2):

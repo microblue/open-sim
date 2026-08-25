@@ -66,14 +66,6 @@ func _process(_d: float) -> bool:
 					camera.look_at(spot + Vector3(0.0, 0.3, 0.0), Vector3.UP)
 
 	if _frames == 120:
-		if _shot == "aircraft":
-			var ac: RCSimulationNode = scene.get_node_or_null("Aircraft") as RCSimulationNode
-			var model: Node = scene.get_node_or_null("Aircraft/Model")
-			print("aircraft pos=%s visible=%s model=%s modelvis=%s"
-				% [ac.global_position if ac else "none",
-				   ac.visible if ac else "?",
-				   model != null,
-				   model.visible if model else "?"])
 		_capture(_shot)
 		return true
 	return false

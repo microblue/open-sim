@@ -247,9 +247,9 @@ func _build_environment() -> void:
 	# aerial perspective term and the volumetric fog - and together they turned
 	# a clear afternoon into a permanent overcast. Aerial perspective on its own
 	# is enough to give distance a cue.
-	environment.fog_density = 0.00007
+	environment.fog_density = 0.00012
 	environment.fog_sky_affect = 0.0
-	environment.fog_aerial_perspective = 0.45
+	environment.fog_aerial_perspective = 0.60
 
 	# Volumetric fog, on top of the depth fog.
 	#

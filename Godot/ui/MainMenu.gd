@@ -50,6 +50,15 @@ var _focus: int = 0
 # ------------------------------------------------------------------ layout --
 var _appear: float = 0.0
 var _hover: Dictionary = {}           # {kind, index} or {}
+## Eased 0..1 per "kind:index" card, so hover and selection glow rather than
+## snap. A card that jumps instantly is a button; one that breathes is a UI.
+var _card_pulse: Dictionary = {}
+## The fly button's press animation, 1 while held down, decaying after.
+var _press: float = 0.0
+## Exit fade: 0 -> 1 before the fly action fires, so the menu leaves the way
+## it arrived instead of vanishing.
+var _fade: float = -1.0
+var _fly_pressed: bool = false
 var _hit: Array[Dictionary] = []      # rebuilt each layout
 var _thumbs: Array[TextureRect] = []  # one per scene+weather card
 var _thumb_textures: Dictionary = {}  # "scene:meadow" -> Texture2D or null
@@ -134,14 +143,26 @@ func _on_gui_input(event: InputEvent) -> void:
 		# at to be the one that flies.
 		_apply_hover_selection()
 		_canvas.queue_redraw()
-	elif event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+	elif event is InputEventMouseButton:
 		var press := event as InputEventMouseButton
-		if press.button_index == MOUSE_BUTTON_LEFT:
-			_activate(_hit_at(press.position))
-		elif press.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_nudge(-1)
-		elif press.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_nudge(1)
+		if press.button_index != MOUSE_BUTTON_LEFT:
+			if press.pressed and press.button_index == MOUSE_BUTTON_WHEEL_UP:
+				_nudge(-1)
+			elif press.pressed and press.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				_nudge(1)
+			return
+		if press.pressed:
+			var hit: Dictionary = _hit_at(press.position)
+			if hit.get("action", "") == "fly":
+				_fly_pressed = true
+				_press = 1.0
+			else:
+				_press = 0.35
+				_activate(hit)
+		elif _fly_pressed:
+			_fly_pressed = false
+			_press = 0.8
+			_fly()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -204,23 +225,50 @@ func _activate(entry: Dictionary) -> void:
 
 
 func _fly() -> void:
-	if _aircraft.is_empty():
+	if _aircraft.is_empty() or _fade >= 0.0:
 		return
-	fly_requested.emit(_aircraft[_aircraft_index]["stem"],
-					   _scenes[_scene_index]["id"],
-					   _weathers[_weather_index]["id"])
-	queue_free()
+	_fade = 0.0
 
 
 # ------------------------------------------------------------------- layout --
 
 func _process(delta: float) -> void:
 	_appear = minf(_appear + delta * 4.0, 1.0)
+	_press = maxf(_press - delta * 5.0, 0.0)
+	if _fade >= 0.0:
+		_fade = minf(_fade + delta * 3.0, 1.0)
+		if _fade >= 1.0:
+			_complete_fly()
+
+	# Ease every card's pulse toward its target: hovered or selected cards
+	# breathe up, everything else settles back down.
+	var targets: Dictionary = {}
+	for kind in ["aircraft", "scene", "weather"]:
+		var count: int = _aircraft.size() if kind == "aircraft" 				else (_scenes.size() if kind == "scene" else _weathers.size())
+		for i in count:
+			var key: String = "%s:%d" % [kind, i]
+			var wanted: float = 1.0 if (_hover.get("kind", "") == kind
+					and int(_hover.get("index", -1)) == i) else 0.0
+			if kind == "aircraft" and i == _aircraft_index: wanted = 1.0
+			elif kind == "scene" and i == _scene_index: wanted = 1.0
+			elif kind == "weather" and i == _weather_index: wanted = 1.0
+			var current: float = _card_pulse.get(key, 0.0)
+			_card_pulse[key] = move_toward(current, wanted, delta * 6.0)
+
 	var size: Vector2 = _canvas.size
 	if _canvas.get_meta("layout_size", Vector2.ZERO) != size:
 		_canvas.set_meta("layout_size", size)
 		_layout()
 	_canvas.queue_redraw()
+
+
+func _complete_fly() -> void:
+	if _aircraft.is_empty():
+		return
+	fly_requested.emit(_aircraft[_aircraft_index]["stem"],
+					   _scenes[_scene_index]["id"],
+					   _weathers[_weather_index]["id"])
+	queue_free()
 
 
 ## Compute every rect once and rebuild the hit list. Called on open and on any
@@ -386,7 +434,13 @@ func _draw_menu() -> void:
 	_draw_weather(size, shift)
 	_draw_footer(size)
 
-	if _appear < 1.0:
+	# Exit fade: the whole menu sinks into the dark before the fly action
+	# fires, so the world does not snap in.
+	if _fade > 0.0:
+		_canvas.draw_rect(Rect2(Vector2.ZERO, size),
+						  Color(0, 0, 0, _fade * 0.85), true)
+
+	if _appear < 1.0 or _fade >= 0.0:
 		_canvas.queue_redraw()
 
 
@@ -470,7 +524,8 @@ func _draw_aircraft(size: Vector2, shift: Vector2) -> void:
 		var selected: bool = i == _aircraft_index
 		var hovered: bool = _hover.get("kind", "") == "aircraft" \
 				and int(_hover.get("index", -1)) == i
-		_draw_card(rect, selected, hovered, _focus == 0)
+		_draw_card(rect, selected, hovered, _focus == 0,
+				   _card_pulse.get("aircraft:%d" % i, 0.0))
 
 		var card: Dictionary = _aircraft[i]
 		var x: float = rect.position.x + 18.0
@@ -527,7 +582,8 @@ func _draw_scenes(size: Vector2, shift: Vector2) -> void:
 
 		if _thumb_textures.get("scene:%s" % _scenes[i]["id"]) == null:
 			_draw_placeholder(rect, _scenes[i]["name"], UITheme.ACCENT)
-		_draw_card(rect, selected, hovered, _focus == 1)
+		_draw_card(rect, selected, hovered, _focus == 1,
+				   _card_pulse.get("scene:%d" % i, 0.0))
 		# One size for every name in the row, chosen for the widest - a row
 		# where one card's label silently shrinks reads as a rendering bug.
 		# The name is all the card carries: a description line truncated to fit
@@ -555,7 +611,8 @@ func _draw_weather(size: Vector2, shift: Vector2) -> void:
 
 		if _thumb_textures.get("weather:%s" % _weathers[i]["id"]) == null:
 			_draw_placeholder(rect, _weathers[i]["name"], UITheme.ACCENT_DIM)
-		_draw_card(rect, selected, hovered, _focus == 2)
+		_draw_card(rect, selected, hovered, _focus == 2,
+				   _card_pulse.get("weather:%d" % i, 0.0))
 
 		var x: float = rect.position.x
 		var name_y: float = rect.end.y + 19.0
@@ -586,19 +643,26 @@ func _clip(text: String, width: float, size: int) -> String:
 
 ## One card: a translucent panel, an accent edge when selected, a brightened
 ## edge on hover, and a left rule on the focus section's selection.
-func _draw_card(rect: Rect2, selected: bool, hovered: bool, focused: bool) -> void:
+func _draw_card(rect: Rect2, selected: bool, hovered: bool, focused: bool,
+				pulse: float = 0.0) -> void:
+	# The pulse is eased in _process, so the glow and the lift grow smoothly
+	# instead of appearing. A slight lift - the card body moves up a couple of
+	# pixels with its glow - is what reads as "this one is alive".
+	var lifted := Rect2(rect.position - Vector2(0, pulse * 2.0), rect.size)
 	var fill: Color = UITheme.PANEL
 	var stroke: Color = UITheme.STROKE
 	if selected:
-		fill = Color(UITheme.ACCENT.r, UITheme.ACCENT.g, UITheme.ACCENT.b, 0.14)
+		fill = Color(UITheme.ACCENT.r, UITheme.ACCENT.g, UITheme.ACCENT.b,
+					 0.10 + 0.10 * pulse)
 		stroke = UITheme.ACCENT
 	if hovered and not selected:
 		stroke = UITheme.STROKE_STRONG
-	if selected and hovered:
-		UITheme.draw_glow(_canvas, rect, UITheme.ACCENT, 10.0, 2)
-	UITheme.draw_panel(_canvas, rect, fill, stroke, 10.0)
+	if pulse > 0.01:
+		UITheme.draw_glow(_canvas, lifted, UITheme.ACCENT, 10.0,
+						  int(1.0 + pulse * 2.0))
+	UITheme.draw_panel(_canvas, lifted, fill, stroke, 10.0)
 	if selected and focused:
-		_canvas.draw_rect(Rect2(rect.position, Vector2(3, rect.size.y)),
+		_canvas.draw_rect(Rect2(lifted.position, Vector2(3, lifted.size.y)),
 						  UITheme.ACCENT, true)
 
 
@@ -618,17 +682,23 @@ func _draw_footer(size: Vector2) -> void:
 	var fly_rect: Rect2 = _fly_rect
 	var hovered: bool = _hover.get("action", "") == "fly"
 	var fly_w: float = fly_rect.size.x
+	# Pressed: the button sinks a couple of pixels and loses its glow, so a
+	# press is felt as well as seen.
+	var sink: float = _press * 2.0
+	var pressed_rect := Rect2(fly_rect.position + Vector2(0, sink), fly_rect.size)
+	var fill_alpha: float = 0.92 if hovered else 0.78
 
-	UITheme.draw_glow(_canvas, fly_rect, UITheme.ACCENT, 12.0, 3)
-	UITheme.draw_panel(_canvas, fly_rect,
+	UITheme.draw_glow(_canvas, pressed_rect, UITheme.ACCENT, 12.0,
+					  3 if _press < 0.1 else 1)
+	UITheme.draw_panel(_canvas, pressed_rect,
 			Color(UITheme.ACCENT.r, UITheme.ACCENT.g, UITheme.ACCENT.b,
-				  0.92 if hovered else 0.78),
+				  fill_alpha * (1.0 - _press * 0.35)),
 			Color(1, 1, 1, 0.5 if hovered else 0.25), 12.0)
-	_canvas.draw_line(fly_rect.position + Vector2(14, 5),
-					  fly_rect.position + Vector2(fly_w - 14, 5),
+	_canvas.draw_line(pressed_rect.position + Vector2(14, 5),
+					  pressed_rect.position + Vector2(fly_w - 14, 5),
 					  Color(1, 1, 1, 0.35), 1.0)
 	UITheme.draw_text_shadow(_canvas,
-			fly_rect.position + Vector2(fly_w * 0.5, 38.0), "FLY",
+			pressed_rect.position + Vector2(fly_w * 0.5, 38.0), "FLY",
 			UITheme.SIZE_LARGE, Color(0.02, 0.06, 0.09, 1.0),
 			Color(0, 0, 0, 0.4))
 

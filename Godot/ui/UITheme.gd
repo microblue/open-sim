@@ -149,6 +149,12 @@ static func draw_text(ci: CanvasItem, position: Vector2, text: String,
 					  size: int = SIZE_BODY, colour: Color = TEXT,
 					  align: HorizontalAlignment = HORIZONTAL_ALIGNMENT_LEFT,
 					  width: float = -1.0) -> void:
+	# A soft shadow under every glyph. The HUD sits over a bright sky and a
+	# pale field; without the shadow the numbers fight the world behind them,
+	# and the menu's text over the frosted field loses the same battle. One
+	# extra pass, offset a pixel and a half down.
+	ci.draw_string(font(), position + Vector2(1.0, 1.5), text, align, width, size,
+				   Color(0, 0, 0, 0.45))
 	ci.draw_string(font(), position, text, align, width, size, colour)
 
 
