@@ -162,13 +162,19 @@ void Report(rctest::TestContext& ctx, const AircraftDefinition& definition,
 }
 }
 
-RC_TEST(TrainerTargets, EveryPerformanceNumberMatchesTheAircraftFile)
+/** Fly one aircraft through the whole battery and report every number against
+ *  its file. Shared by the trainer's own suite and by the roster's, so a new
+ *  aeroplane is measured exactly the same way as the one everything else was
+ *  calibrated against. */
+void MeasureAndReport(rctest::TestContext& ctx, const char* stem)
 {
     FlightTestRig rig;
-    if (!rig.LoadTrainer().empty()) { RC_FAIL("could not load the trainer"); return; }
+    const std::string error = rig.Load(stem);
+    if (!error.empty()) { ctx.Fail(error, __FILE__, 0); return; }
     const AircraftDefinition definition = rig.Definition;
 
-    std::printf("\n        %-26s %9s %-7s %-20s %7s\n",
+    std::printf("\n      %s\n        %-26s %9s %-7s %-20s %7s\n",
+                definition.Name.c_str(),
                 "measurement", "measured", "", "target", "delta");
 
     // --- power off ------------------------------------------------------
@@ -185,14 +191,38 @@ RC_TEST(TrainerTargets, EveryPerformanceNumberMatchesTheAircraftFile)
     // --- power on -------------------------------------------------------
     Report(ctx, definition, "static_thrust_n", MeasureStaticThrust(rig), "N");
     Report(ctx, definition, "cruise_speed_mps", MeasureLevelSpeed(rig, 0.60), "m/s");
-    Report(ctx, definition, "takeoff_ground_roll_m", MeasureTakeoffRoll(rig), "m");
+    // A glider has no undercarriage, so there is no ground roll to measure.
+    if (!definition.LandingGear.empty())
+    {
+        Report(ctx, definition, "takeoff_ground_roll_m", MeasureTakeoffRoll(rig), "m");
+    }
 
-    std::printf("\n        maximum lift coefficient %.3f, thrust-to-weight %.2f\n\n",
+    std::printf("\n        maximum lift coefficient %.3f, thrust-to-weight %.2f\n",
                 polar.MaximumLiftCoefficient,
                 MeasureStaticThrust(rig) / (definition.Mass * units::kGravity));
 
-    RC_CHECK(polar.BestGlideRatio > 0.0);
+    ctx.Check(polar.BestGlideRatio > 0.0, "it glides", __FILE__, 0);
 }
+
+RC_TEST(TrainerTargets, EveryPerformanceNumberMatchesTheAircraftFile)
+{
+    MeasureAndReport(ctx, "Trainer1500");
+}
+
+RC_TEST(RosterTargets, EveryAircraftMatchesItsOwnFile)
+{
+    // The trainer has had locked targets since the first milestone, and they
+    // have caught real regressions. The rest of the roster had none, so a
+    // change to the aerodynamics could quietly alter how the Sport or the
+    // Glider flies and nothing would say so. Now every aeroplane is held to its
+    // own measurements.
+    for (const char* stem : {"Sport1200", "Glider2400", "Warbird1100"})
+    {
+        MeasureAndReport(ctx, stem);
+    }
+    std::printf("\n");
+}
+
 
 RC_TEST(TrainerTargets, TheAircraftFileDeclaresEveryTargetTheSuiteMeasures)
 {

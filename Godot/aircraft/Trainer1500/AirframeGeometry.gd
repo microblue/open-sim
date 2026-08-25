@@ -71,7 +71,7 @@ static func loft_wing(stations: Array, segments: int = 14,
 	_cap(surface, rings[0], true)
 	if round_tip:
 		var tip: Dictionary = stations[stations.size() - 1]
-		_round_tip(surface, rings[rings.size() - 1], tip, segments)
+		_round_tip(surface, rings[rings.size() - 1], tip)
 	else:
 		_cap(surface, rings[rings.size() - 1], false)
 
@@ -184,9 +184,10 @@ static func _cap(surface: SurfaceTool, ring: PackedVector3Array, flip: bool) -> 
 
 
 ## A rounded wing tip: shrink the last ring over a quarter-ellipse rather than
-## stopping dead.
+## stopping dead. The ring it works from is the one the caller already built, so
+## it needs no segment count of its own.
 static func _round_tip(surface: SurfaceTool, ring: PackedVector3Array,
-					   station: Dictionary, segments: int) -> void:
+					   station: Dictionary) -> void:
 	var chord: float = station.get("chord", 0.2)
 	var steps: int = 4
 	var radius: float = chord * 0.30
@@ -209,7 +210,3 @@ static func _round_tip(surface: SurfaceTool, ring: PackedVector3Array,
 		previous = scaled
 
 	_cap(surface, previous, false)
-	# segments is part of the signature so callers do not have to know that the
-	# tip reuses the ring they already built.
-	if segments < 0:
-		push_warning("unreachable")

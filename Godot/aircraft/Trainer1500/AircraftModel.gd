@@ -260,7 +260,7 @@ func _build() -> void:
 
 	_build_fuselage(nose_z, tail_z)
 	_build_gear()
-	_build_propeller(nose_z)
+	_build_propeller()
 
 	if show_debug_vectors:
 		var debug_instance := MeshInstance3D.new()
@@ -418,7 +418,8 @@ func _build_gear() -> void:
 			add_child(spat)
 
 
-func _build_propeller(nose_z: float) -> void:
+## The propeller and its spinner, at the motor mount the definition gives.
+func _build_propeller() -> void:
 	var mount: Vector3 = _sim.get_motor_position()
 	var diameter: float = _sim.get_propeller_diameter_m()
 
@@ -472,10 +473,6 @@ func _build_propeller(nose_z: float) -> void:
 		blade.position = Vector3(cos(PI * float(blade_index)) * diameter * 0.24,
 								 sin(PI * float(blade_index)) * diameter * 0.24, 0.0)
 		_propeller.add_child(blade)
-	# nose_z is unused beyond keeping the signature explicit about where the
-	# front of the aircraft is.
-	if nose_z > 1e9:
-		push_warning("unreachable")
 
 
 func _draw_debug_vectors() -> void:

@@ -75,8 +75,6 @@ func _ready() -> void:
 
 	# What stands on that terrain: grass, scrub, trees, boulders. The circuit is
 	# generated in full before the first frame; beyond it, cells stream.
-	if OS.has_environment("RC_NO_DETAIL"):
-		pass
 	var detail := DetailScript.new()
 	detail.name = "Detail"
 	detail.simulation_path = NodePath("../../Aircraft")

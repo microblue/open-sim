@@ -51,14 +51,12 @@ const SKY_HDRI: String = "Godot/assets/hdri/kloofendal_48d_partly_cloudy_puresky
 var _sim: RCSimulationNode
 var _grass_material: ShaderMaterial
 var _foliage_material: ShaderMaterial
-var _sky_material: ShaderMaterial
 var _sky_panorama: PanoramaSkyMaterial
 var _scene_sky: Sky
 var _environment: Environment
 var _sun: DirectionalLight3D
 var _base_sun_energy: float = 6.5
 var _scene_hdri: String = "kloofendal_48d_partly_cloudy_puresky"
-var _rng_unused: int = 0
 var _windsock: Node3D
 var _rng := RandomNumberGenerator.new()
 
@@ -104,8 +102,6 @@ func _process(_delta: float) -> void:
 	if _foliage_material != null:
 		_foliage_material.set_shader_parameter("wind_vector", wind)
 		_foliage_material.set_shader_parameter("gust", gust)
-	if _sky_material != null:
-		_sky_material.set_shader_parameter("wind_vector", wind)
 
 	if _windsock != null:
 		_update_windsock(wind, gust)
@@ -247,7 +243,6 @@ func _build_environment() -> void:
 		# Filtered: an unfiltered 4K panorama aliases badly along the horizon,
 		# which is exactly where a low-flying model is silhouetted against it.
 		sky_material.filter = true
-	_sky_material = null
 	_sky_panorama = sky_material
 
 	var sky := Sky.new()

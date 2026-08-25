@@ -379,54 +379,23 @@
   },
   "landing_gear": [
     {
-      "name": "nose",
+      "name": "belly_skid",
       "position_m": [
+        0.05,
         0.0,
-        0.0,
-        0.0
+        0.052
       ],
-      "radius_m": 0.0,
-      "spring_n_per_m": 1500.0,
-      "damper_ns_per_m": 40.0,
+      "radius_m": 0.02,
+      "spring_n_per_m": 2600.0,
+      "damper_ns_per_m": 90.0,
       "max_travel_m": 0.02,
       "friction_static": 0.7,
       "friction_dynamic": 0.55,
-      "rolling_resistance": 0.12,
-      "steerable": true,
+      "rolling_resistance": 0.32,
+      "steerable": false,
       "steering_channel": "rudder",
-      "max_steering_deg": 25.0
-    },
-    {
-      "name": "main_left",
-      "position_m": [
-        -0.0,
-        -0.0,
-        0.0
-      ],
-      "radius_m": 0.0,
-      "spring_n_per_m": 2000.0,
-      "damper_ns_per_m": 50.0,
-      "max_travel_m": 0.02,
-      "friction_static": 0.7,
-      "friction_dynamic": 0.55,
-      "rolling_resistance": 0.12,
-      "steerable": false
-    },
-    {
-      "name": "main_right",
-      "position_m": [
-        -0.0,
-        0.0,
-        0.0
-      ],
-      "radius_m": 0.0,
-      "spring_n_per_m": 2000.0,
-      "damper_ns_per_m": 50.0,
-      "max_travel_m": 0.02,
-      "friction_static": 0.7,
-      "friction_dynamic": 0.55,
-      "rolling_resistance": 0.12,
-      "steerable": false
+      "max_steering_deg": 25.0,
+      "static_friction": 0.55
     }
   ],
   "control_channels": {
@@ -456,5 +425,46 @@
     "approach_speed_mps": 8.5,
     "air_start_altitude_m": 60.0
   },
-  "validation_targets": {}
+  "validation_targets": {
+    "glide_ratio": {
+      "value": 13.03,
+      "tolerance": 0.08,
+      "locked": true
+    },
+    "best_glide_speed_mps": {
+      "value": 5.26,
+      "tolerance": 0.08,
+      "locked": true
+    },
+    "min_sink_rate_mps": {
+      "value": 0.4,
+      "tolerance": 0.1,
+      "locked": true
+    },
+    "stall_speed_mps": {
+      "value": 5.22,
+      "tolerance": 0.05,
+      "locked": true
+    },
+    "roll_rate_deg_per_s": {
+      "value": 62.3,
+      "tolerance": 0.1,
+      "locked": true
+    },
+    "static_thrust_n": {
+      "value": 9.45,
+      "tolerance": 0.05,
+      "locked": true
+    },
+    "cruise_speed_mps": {
+      "value": 11.52,
+      "tolerance": 0.1,
+      "locked": true
+    },
+    "takeoff_ground_roll_m": {
+      "value": 9.89,
+      "tolerance": 0.2,
+      "locked": true
+    }
+  }
 }

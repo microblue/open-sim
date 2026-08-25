@@ -439,5 +439,46 @@
     "approach_speed_mps": 13.0,
     "air_start_altitude_m": 60.0
   },
-  "validation_targets": {}
+  "validation_targets": {
+    "glide_ratio": {
+      "value": 6.93,
+      "tolerance": 0.08,
+      "locked": true
+    },
+    "best_glide_speed_mps": {
+      "value": 8.81,
+      "tolerance": 0.08,
+      "locked": true
+    },
+    "min_sink_rate_mps": {
+      "value": 1.25,
+      "tolerance": 0.1,
+      "locked": true
+    },
+    "stall_speed_mps": {
+      "value": 8.72,
+      "tolerance": 0.05,
+      "locked": true
+    },
+    "roll_rate_deg_per_s": {
+      "value": 268.52,
+      "tolerance": 0.1,
+      "locked": true
+    },
+    "static_thrust_n": {
+      "value": 14.66,
+      "tolerance": 0.05,
+      "locked": true
+    },
+    "cruise_speed_mps": {
+      "value": 21.44,
+      "tolerance": 0.1,
+      "locked": true
+    },
+    "takeoff_ground_roll_m": {
+      "value": 8.78,
+      "tolerance": 0.15,
+      "locked": true
+    }
+  }
 }
