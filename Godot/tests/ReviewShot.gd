@@ -3,6 +3,7 @@
 extends SceneTree
 
 var _frames: int = 0
+var _step_set: bool = false
 var _shot: String = OS.get_environment("RC_SHOT")
 
 func _initialize() -> void:
@@ -15,7 +16,14 @@ func _process(_d: float) -> bool:
 	var scene: Node3D = root.get_child(root.get_child_count() - 1)
 
 	if _shot == "menu":
-		if scene.get_node_or_null("MainMenu") != null and _frames > 90:
+		var menu: Node = scene.get_node_or_null("MainMenu")
+		if menu != null and _frames > 90:
+			var step_env: String = OS.get_environment("RC_STEP")
+			if step_env != "" and menu.get("_step") != null and not _step_set:
+				menu.set("_step", clampi(int(step_env), 0, 3))
+				menu.call("_layout")
+				_step_set = true
+				return false
 			_capture("menu")
 			return true
 		return false

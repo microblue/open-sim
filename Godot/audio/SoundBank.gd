@@ -143,6 +143,89 @@ static func impact() -> AudioStreamWAV:
 ## Blend the tail of a buffer into its head so a looping noise bed has no seam.
 ## Tonal loops do not need this - they are generated at a whole number of
 ## cycles - but noise has no period to land on.
+
+# ---------------------------------------------------------------- interface --
+
+## Menu music: a slow warm pad, synthesised like everything else. Two detuned
+## chords breathe against each other over an eight-second loop - quiet enough
+## that it never competes with the engine once the sortie starts, present
+## enough that the briefing room does not sit in silence.
+static func menu_music() -> AudioStreamWAV:
+	var seconds: float = 8.0
+	var frames: int = int(MIX_RATE * seconds)
+	var samples := PackedFloat32Array()
+	samples.resize(frames)
+
+	# Cmaj7 and Am7, an octave up as a shimmer. Whole cycles within the loop
+	# length, so the loop boundary is seamless.
+	var chords: Array = [
+		[130.81, 196.0, 261.63, 329.63, 493.88],   # C2 G3 C4 E4 B4
+		[110.0, 164.81, 220.0, 261.63, 392.0],     # A2 E3 A3 C4 G4
+	]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 0xBEEF00
+	for i in frames:
+		var t: float = float(i) / float(MIX_RATE)
+		var chord_index: int = int(t / (seconds * 0.5)) % chords.size()
+		var chord: Array = chords[chord_index]
+		# Slow attack and release across the chord's half-loop, with a gentle
+		# detune wobble so the pad breathes instead of standing still.
+		var envelope: float = sin(PI * fmod(t, seconds * 0.5) / (seconds * 0.5))
+		envelope = pow(envelope, 0.7)
+		var value: float = 0.0
+		for f in chord:
+			var detune: float = 1.0 + 0.0015 * sin(TAU * 0.13 * t + float(f) * 0.7)
+			value += sin(TAU * float(f) * detune * t)
+		# A touch of slow noise, like air in a room.
+		value += (rng.randf() * 2.0 - 1.0) * 0.05
+		samples[i] = value * envelope * 0.05
+	_crossfade_ends(samples, int(MIX_RATE * 0.25))
+	return _to_stream(samples, true)
+
+
+## A UI tick: the soft click of a card or button responding. Short, quiet,
+## and pitched high enough to read as "interface" rather than "thump".
+static func ui_tick() -> AudioStreamWAV:
+	var frames: int = int(MIX_RATE * 0.06)
+	var samples := PackedFloat32Array()
+	samples.resize(frames)
+	for i in frames:
+		var t: float = float(i) / float(MIX_RATE)
+		var decay: float = exp(-t * 90.0)
+		samples[i] = (sin(TAU * 1500.0 * t) * 0.5
+					  + sin(TAU * 2250.0 * t) * 0.3) * decay * 0.5
+	return _to_stream(samples, false)
+
+
+## A step advancing: two rising tones, the sound of "next".
+static func ui_confirm() -> AudioStreamWAV:
+	var frames: int = int(MIX_RATE * 0.14)
+	var samples := PackedFloat32Array()
+	samples.resize(frames)
+	for i in frames:
+		var t: float = float(i) / float(MIX_RATE)
+		var decay: float = exp(-t * 22.0)
+		var f1: float = 620.0
+		var f2: float = 940.0
+		var phase: float = TAU * (f1 * t + (f2 - f1) * t * t * 0.5)
+		samples[i] = sin(phase) * decay * 0.45
+	return _to_stream(samples, false)
+
+
+## A step going back: the same pair, descending.
+static func ui_back() -> AudioStreamWAV:
+	var frames: int = int(MIX_RATE * 0.14)
+	var samples := PackedFloat32Array()
+	samples.resize(frames)
+	for i in frames:
+		var t: float = float(i) / float(MIX_RATE)
+		var decay: float = exp(-t * 22.0)
+		var f1: float = 940.0
+		var f2: float = 620.0
+		var phase: float = TAU * (f1 * t + (f2 - f1) * t * t * 0.5)
+		samples[i] = sin(phase) * decay * 0.4
+	return _to_stream(samples, false)
+
 static func _crossfade_ends(samples: PackedFloat32Array, blend: int) -> void:
 	var count: int = samples.size()
 	if blend <= 0 or blend * 2 >= count:
