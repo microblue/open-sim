@@ -140,11 +140,24 @@ func _focus() -> Vector2:
 	return Vector2(here.x, here.z)
 
 
-## Snap a level to its own grid, so it lands in the same place whichever
-## direction it was approached from and does not shimmer as the camera drifts.
-func _anchor_for(level: Dictionary, focus: Vector2) -> Vector2:
-	var size: float = level["size"]
-	return Vector2(floor(focus.x / size) * size, floor(focus.y / size) * size)
+## Snap every level to the SAME base grid.
+##
+## This is what makes the levels tile. Level k's hollow (its inner 2x2) is
+## exactly the block the level below covers - when the anchors agree. The
+## first version snapped each level to its own grid (a 640 m level to the
+## 640 m grid, a 320 m level to the 320 m grid), so the two anchors could
+## differ by half a chunk. Where they did, a strip of ground the level below
+## did not cover and the level above had hollowed out was left with no mesh at
+## all - visible as a ragged hole in the terrain a few hundred metres out,
+## exactly where a pilot is looking for somewhere to put down.
+##
+## Every level size is a power of two times BASE_CHUNK, so a single anchor on
+## the base grid lands on every level's own grid too: level 0's block is then
+## exactly level 1's hollow, level 1's ring exactly level 2's hollow, and so
+## on out to the horizon.
+func _anchor_for(_level: Dictionary, focus: Vector2) -> Vector2:
+	return Vector2(floor(focus.x / BASE_CHUNK) * BASE_CHUNK,
+				   floor(focus.y / BASE_CHUNK) * BASE_CHUNK)
 
 
 func _rebuild_level(level: Dictionary, anchor: Vector2) -> void:

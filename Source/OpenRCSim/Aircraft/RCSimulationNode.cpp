@@ -699,6 +699,37 @@ RCInputNode* RCSimulationNode::ResolveInput()
 void RCSimulationNode::set_physics_rate_hz(int rateHz) { Clock.SetRateHz(static_cast<rc::Real>(rateHz)); }
 int RCSimulationNode::get_physics_rate_hz() const { return static_cast<int>(Clock.RateHz() + 0.5); }
 
+void RCSimulationNode::set_tree_obstacles(const PackedFloat32Array& data)
+{
+    std::vector<rc::TerrainGround::Obstacle> obstacles;
+    const std::int64_t quads = data.size() / 4;
+    obstacles.reserve(static_cast<std::size_t>(quads));
+    for (std::int64_t i = 0; i < quads; ++i)
+    {
+        // The caller hands over Godot world metres (x, z, radius, height).
+        // The physics works in NED (north, east, down): the same frame change
+        // PositionFromGodot applies, so north = -z and east = x. Getting this
+        // wrong puts every tree somewhere it is not, and the aircraft flies
+        // through the one it can see.
+        const std::int64_t base = i * 4;
+        const rc::Real godotX = static_cast<rc::Real>(data[static_cast<std::int64_t>(base)]);
+        const rc::Real godotZ = static_cast<rc::Real>(data[base + 1]);
+        obstacles.push_back(rc::TerrainGround::Obstacle{
+            -godotZ,
+            godotX,
+            static_cast<rc::Real>(data[base + 2]),
+            static_cast<rc::Real>(data[base + 3]),
+        });
+    }
+    Ground.SetObstacles(std::move(obstacles));
+}
+
+double RCSimulationNode::get_surface_height_at(double x, double z) const
+{
+    return -Ground.Sample(-static_cast<rc::Real>(z), static_cast<rc::Real>(x))
+               .SurfaceHeight;
+}
+
 void RCSimulationNode::set_gravity_enabled(bool enabled) { GravityEnabled = enabled; }
 bool RCSimulationNode::get_gravity_enabled() const { return GravityEnabled; }
 
@@ -996,6 +1027,9 @@ void RCSimulationNode::_bind_methods()
     #define OPENRC_BIND1(Name, Arg) ClassDB::bind_method(D_METHOD(#Name, Arg), &RCSimulationNode::Name)
 
     OPENRC_BIND1(set_aircraft_definition, "path");
+    OPENRC_BIND1(set_tree_obstacles, "obstacles");
+    ClassDB::bind_method(D_METHOD("get_surface_height_at", "x", "z"),
+                          &RCSimulationNode::get_surface_height_at);
     OPENRC_BIND(get_aircraft_definition);
     ADD_PROPERTY(PropertyInfo(Variant::STRING, "aircraft_definition"),
                  "set_aircraft_definition", "get_aircraft_definition");

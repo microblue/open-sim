@@ -91,6 +91,14 @@ public:
 
     /** Terrain seed, so a session can be reproduced. */
     void set_terrain_seed(int seed);
+
+    /** Replace the world's solid obstacles (trees): flat x, z, radius, height
+     *  quads in Godot world metres. Rebuilds the physics collision grid. */
+    void set_tree_obstacles(const godot::PackedFloat32Array& obstacles);
+
+    /** Surface height (terrain plus trees) above sea level at a Godot XZ
+     *  point, for verification. */
+    double get_surface_height_at(double x, double z) const;
     int  get_terrain_seed() const;
 
     /** Reshape the world. A scene preset is these numbers and a sky; the biome

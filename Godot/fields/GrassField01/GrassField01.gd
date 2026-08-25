@@ -42,6 +42,7 @@ const TREE_RING_RADIUS: float = 125.0
 ## the project has to open without the assets present.
 const ImpostorLib := preload("res://world/Impostors.gd")
 const GrassLib := preload("res://world/GrassCards.gd")
+const Obstacles := preload("res://world/TreeObstacles.gd")
 const HDRI_DIR: String = "Godot/assets/hdri"
 const SKY_HDRI: String = "Godot/assets/hdri/kloofendal_48d_partly_cloudy_puresky.hdr"
 
@@ -84,6 +85,7 @@ func _ready() -> void:
 	_build_structures()
 	_build_cones()
 	_windsock = _build_windsock()
+	Obstacles.flush(_sim)
 
 
 func _process(_delta: float) -> void:
@@ -537,7 +539,9 @@ func _build_grass() -> void:
 		var across: float = absf(x - STRIP_CENTRE_X) / (STRIP_HALF_WIDTH + 1.2)
 		if maxf(along, across) < 1.0 and _rng.randf() < 0.97:
 			continue
-		var scale: float = _rng.randf_range(0.72, 1.34)
+		# The scan is a 0.4 m clump - the size of rough, not of a mown field.
+		# Scaled to ~0.13-0.21 m, which is what a club strip actually is.
+		var scale: float = _rng.randf_range(0.32, 0.52)
 		var basis := Basis(Vector3.UP, _rng.randf() * TAU) \
 			.scaled(Vector3(scale, scale * _rng.randf_range(0.85, 1.2), scale))
 		multi.set_instance_transform(i, Transform3D(basis,
@@ -744,6 +748,14 @@ func _build_trees() -> void:
 			else _foliage_material
 		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		add_child(instance)
+
+		# The treeline is solid: a wing tip into a trunk is a crash, not a
+		# pass-through. Each tree gets a collision cylinder at its position.
+		for i in entries.size():
+			var transform: Transform3D = entries[i][0]
+			var tree_scale: float = transform.basis.get_scale().y
+			Obstacles.add_field(transform.origin.x, transform.origin.z,
+								tree_scale * 0.9, tree_scale * 7.0)
 
 
 # ---------------------------------------------------------------------- hills

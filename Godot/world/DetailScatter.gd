@@ -26,6 +26,7 @@ extends Node3D
 const Meshes := preload("res://world/DetailMeshes.gd")
 const DetailShaders := preload("res://world/DetailShaders.gd")
 const Assets := preload("res://world/DetailAssets.gd")
+const Obstacles := preload("res://world/TreeObstacles.gd")
 
 ## Tiers: cell size, how far out to keep cells, candidate points per cell, and
 ## which kinds this tier is allowed to place.
@@ -132,6 +133,7 @@ func _ready() -> void:
 ## scene preset changes the world underneath them - vegetation placed by the old
 ## climate is standing in the wrong place, or in the sea.
 func rebuild() -> void:
+	Obstacles.clear_scatter()
 	for key in _cells:
 		var holder = _cells[key]
 		if holder != null and is_instance_valid(holder):
@@ -142,6 +144,7 @@ func rebuild() -> void:
 	_queue_cells(_focus(), PREBUILT_RADIUS)
 	while not _pending.is_empty():
 		_build_next()
+	Obstacles.flush(_sim)
 
 
 func _process(_delta: float) -> void:
@@ -283,6 +286,7 @@ func _build_next() -> void:
 
 	_tier_roots[tier].add_child(holder)
 	_cells[entry[3]] = holder
+	Obstacles.flush(_sim)
 
 
 ## One MultiMesh: the instances of `kind` that belong to this species and this
@@ -331,6 +335,16 @@ func _add_batch(holder: Node3D, indices: PackedInt32Array,
 		multi.set_instance_color(slot, Color(0.90 + tint * 0.16,
 											 0.93 + tint * 0.12,
 											 0.90 + tint * 0.15))
+
+		# The physics needs to know the trees are solid. One cylinder per
+		# tree, registered once: impostors (level < 0) carry the whole range
+		# in one batch, and generated meshes register at the near level only.
+		if level < 0 or level == 0:
+			var trunk_radius: float = Meshes.collision_radius(kind) * scale
+			var tree_height: float = Meshes.collision_height(kind) * scale
+			if trunk_radius > 0.0:
+				Obstacles.add_scatter(positions[i].x, positions[i].z,
+									  trunk_radius, tree_height)
 
 	var instance := MultiMeshInstance3D.new()
 	instance.name = "K%d_v%d_l%d" % [kind, variant, level]

@@ -248,7 +248,9 @@ CrashResult CrashModel::Check(const RigidBodyState& state,
         }
     }
 
-    // Anything that is not a wheel touching the ground is a crash.
+    // Anything that is not a wheel touching the ground is a crash. A tree is
+    // part of the ground for this purpose - the terrain ground raises its
+    // surface to the canopy - but it deserves its own reason.
     for (const HardPoint& point : Points)
     {
         const Vec3 world = state.PositionWorld + state.Orientation.Rotate(point.PositionBody);
@@ -256,7 +258,9 @@ CrashResult CrashModel::Check(const RigidBodyState& state,
         if (world.z >= sample.SurfaceHeight)
         {
             result.Crashed = true;
-            result.Reason = point.Name + " struck the ground";
+            result.Reason = point.Name + (ground.IsObstacle(world.x, world.y)
+                                          ? " struck a tree"
+                                          : " struck the ground");
             result.ImpactSpeed = state.VelocityWorld.Length();
             result.PointBody = point.PositionBody;
             return result;

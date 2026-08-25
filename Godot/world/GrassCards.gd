@@ -190,9 +190,13 @@ void vertex() {
 	float free = clamp((up_blade - rooted_fraction)
 					   / max(1.0 - rooted_fraction, 0.001), 0.0, 1.0);
 	// Cubic: a blade's tip travels much further than its middle, and the roots
-	// do not move at all.
+	// do not move at all. The displacement is metres, so it has to scale with
+	// the instance: a card cut to a third of the scan's size is a third of
+	// the height, and a third of the height bending the same distance would
+	// look like a storm.
+	float inst_scale = length(MODEL_MATRIX[0].xyz);
 	vec3 direction = speed > 0.01 ? normalize(wind_vector) : vec3(1.0, 0.0, 0.0);
-	VERTEX += direction * 0.14 * (free * free * free) * lean
+	VERTEX += direction * 0.14 * inst_scale * (free * free * free) * lean
 			* (0.65 + 0.35 * sin(phase));
 }
 

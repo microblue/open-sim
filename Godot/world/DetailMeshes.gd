@@ -36,6 +36,31 @@ static func build(kind: int) -> ArrayMesh:
 		_:         return _shrub()
 
 
+## How tall the kind's collision cylinder is, in metres - the physics treats
+## a tree as a solid vertical cylinder of this height above the terrain, so a
+## wing tip entering it is a crash. Zero means "does not collide" (ground
+## cover is walked over, not flown into).
+static func collision_height(kind: int) -> float:
+	match kind:
+		CONIFER:   return 8.0
+		BROADLEAF: return 7.0
+		DEAD_TREE: return 5.0
+		BOULDER:   return 0.9
+		_:         return 0.0
+
+
+## Radius of the collision cylinder, in metres at unit scale. Generous: the
+## cylinder is what the pilot is flying into, and it being a little wider than
+## the trunk is far less jarring than passing through a visible canopy.
+static func collision_radius(kind: int) -> float:
+	match kind:
+		CONIFER:   return 1.0
+		BROADLEAF: return 1.3
+		DEAD_TREE: return 0.8
+		BOULDER:   return 0.9
+		_:         return 0.0
+
+
 ## How far each kind is worth drawing, in metres. Grass is only there for the
 ## near field; a tree is a silhouette on the skyline and earns its distance.
 static func view_distance(kind: int) -> float:
@@ -59,8 +84,11 @@ static func _grass_tuft() -> ArrayMesh:
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for blade in 3:
 		var angle: float = float(blade) / 3.0 * PI
-		var right := Vector3(cos(angle), 0.0, sin(angle)) * 0.030
-		var top := Vector3(0.0, 0.34, 0.0) + right * 0.5
+		var right := Vector3(cos(angle), 0.0, sin(angle)) * 0.022
+		# 0.16 m: a mown field's grass, not a meadow of weeds. The tuft used to
+		# be 0.34 m, which next to a 1.5 m trainer read as the model flying
+		# through undergrowth.
+		var top := Vector3(0.0, 0.16, 0.0) + right * 0.5
 		var normal := Vector3(-sin(angle) * 0.3, 0.95, cos(angle) * 0.3).normalized()
 		surface.set_normal(normal)
 		for v in [-right, right, top]:
@@ -176,7 +204,7 @@ static func _reeds() -> ArrayMesh:
 		var lean := Vector3(cos(angle), 0.0, sin(angle)) * 0.22
 		var base := Vector3(cos(angle), 0.0, sin(angle)) * 0.10
 		var right := Vector3(-sin(angle), 0.0, cos(angle)) * 0.022
-		var top: Vector3 = base + lean + Vector3(0.0, 1.05 + 0.2 * sin(float(blade)), 0.0)
+		var top: Vector3 = base + lean + Vector3(0.0, 0.55 + 0.12 * sin(float(blade)), 0.0)
 		for v in [base - right, base + right, top]:
 			surface.add_vertex(v)
 	surface.generate_normals()

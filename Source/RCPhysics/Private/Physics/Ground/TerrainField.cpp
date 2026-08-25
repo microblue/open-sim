@@ -279,6 +279,66 @@ namespace rc
 
     // ------------------------------------------------------------ ground --
 
+    std::int64_t TerrainGround::GridKey(Real north, Real east) const
+    {
+        const std::int64_t cx = static_cast<std::int64_t>(std::floor(north / GRID_CELL));
+        const std::int64_t cy = static_cast<std::int64_t>(std::floor(east / GRID_CELL));
+        return (cx << 32) ^ (cy & 0xffffffffLL);
+    }
+
+    void TerrainGround::SetObstacles(std::vector<Obstacle> obstacles)
+    {
+        Obstacles = std::move(obstacles);
+        Grid.clear();
+        for (std::size_t i = 0; i < Obstacles.size(); ++i)
+        {
+            Grid[GridKey(Obstacles[i].X, Obstacles[i].Y)].push_back(
+                static_cast<int>(i));
+        }
+    }
+
+    Real TerrainGround::ObstacleHeightAt(Real north, Real east) const
+    {
+        if (Obstacles.empty())
+        {
+            return 0.0;
+        }
+
+        const std::int64_t cx = static_cast<std::int64_t>(std::floor(north / GRID_CELL));
+        const std::int64_t cy = static_cast<std::int64_t>(std::floor(east / GRID_CELL));
+
+        Real highest = 0.0;
+        for (int dy = -GRID_RADIUS; dy <= GRID_RADIUS; ++dy)
+        {
+            for (int dx = -GRID_RADIUS; dx <= GRID_RADIUS; ++dx)
+            {
+                const auto found = Grid.find(
+                    ((cx + dx) << 32) ^ ((cy + dy) & 0xffffffffLL));
+                if (found == Grid.end())
+                {
+                    continue;
+                }
+                for (const int idx : found->second)
+                {
+                    const Obstacle& o = Obstacles[static_cast<std::size_t>(idx)];
+                    const Real dx2 = north - o.X;
+                    const Real dy2 = east - o.Y;
+                    if (dx2 * dx2 + dy2 * dy2 > o.Radius * o.Radius)
+                    {
+                        continue;
+                    }
+                    highest = std::max(highest, o.Height);
+                }
+            }
+        }
+        return highest;
+    }
+
+    bool TerrainGround::IsObstacle(Real north, Real east) const
+    {
+        return ObstacleHeightAt(north, east) > 0.0;
+    }
+
     GroundSample TerrainGround::Sample(Real north, Real east) const
     {
         const TerrainSample terrain = Field->SampleAt(north, east);
@@ -286,7 +346,8 @@ namespace rc
         GroundSample ground;
         // GroundSample carries world Z, which points DOWN, so a surface that is
         // 120 m above sea level is at z = -120.
-        ground.SurfaceHeight = -terrain.Height;
+        const Real obstacle = ObstacleHeightAt(north, east);
+        ground.SurfaceHeight = -(terrain.Height + obstacle);
         ground.Normal = terrain.Normal;
 
         switch (terrain.Type)

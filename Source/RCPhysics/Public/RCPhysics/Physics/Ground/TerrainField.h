@@ -24,6 +24,8 @@
 #include "RCPhysics/Physics/Ground/LandingGear.h"
 
 #include <cstdint>
+#include <unordered_map>
+#include <vector>
 
 namespace rc
 {
@@ -143,16 +145,46 @@ namespace rc
     };
 
     /** Ground provider backed by a TerrainField, so the aircraft collides with
-     *  the terrain the pilot can see. */
+     *  the terrain the pilot can see.
+     *
+     *  Trees are fed in as vertical cylinders and the ground height rises to
+     *  meet them: a wing tip entering a trunk samples a surface that high, so
+     *  the crash model calls it, and ground contact sets the wreck down on the
+     *  canopy instead of letting it pass through. The obstacles are bucketed
+     *  into a spatial grid, because a collision point can only ever be near a
+     *  handful of them and the sample runs per contact point per physics step. */
     class TerrainGround : public GroundProvider
     {
     public:
         explicit TerrainGround(const TerrainField& field) : Field(&field) {}
 
+        struct Obstacle
+        {
+            Real X = 0.0;        ///< north (world x)
+            Real Y = 0.0;        ///< east (world y)
+            Real Radius = 0.0;   ///< trunk/canopy radius [m]
+            Real Height = 0.0;   ///< top of the tree above the terrain [m]
+        };
+
+        /** Replace the obstacle set. Rebuilds the spatial grid. */
+        void SetObstacles(std::vector<Obstacle> obstacles);
+
         GroundSample Sample(Real north, Real east) const override;
+        bool IsObstacle(Real north, Real east) const override;
+
+        /** Extra surface height from an obstacle at this point, or 0. */
+        Real ObstacleHeightAt(Real north, Real east) const;
 
     private:
         const TerrainField* Field;
+        std::vector<Obstacle> Obstacles;
+        /// Grid cells -> obstacle indices. Cell size is fixed; the grid itself
+        /// is a hash so a huge world does not mean a huge table.
+        std::unordered_map<std::int64_t, std::vector<int>> Grid;
+        static constexpr Real GRID_CELL = 16.0;
+        static constexpr int GRID_RADIUS = 2;   ///< cells to inspect around a point
+
+        std::int64_t GridKey(Real north, Real east) const;
     };
 }
 

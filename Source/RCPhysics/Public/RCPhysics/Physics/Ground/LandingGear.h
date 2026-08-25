@@ -37,6 +37,12 @@ class GroundProvider
 public:
     virtual ~GroundProvider() = default;
     virtual GroundSample Sample(Real north, Real east) const = 0;
+
+    /** True when the surface under this point is a solid obstacle (a tree)
+     *  rather than the terrain itself. Lets the crash model say "struck a
+     *  tree" instead of "struck the ground". Defaults to false so the flat
+     *  and procedural grounds keep working unchanged. */
+    virtual bool IsObstacle(Real /*north*/, Real /*east*/) const { return false; }
 };
 
 /** A perfectly flat field. The default, and what the validation suite uses so

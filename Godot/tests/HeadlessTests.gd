@@ -28,6 +28,8 @@ var _surface_model: Node3D
 var _surface_start_s: float = -1.0
 var _dive_start_s: float = -1.0
 var _deepest_below_ground: float = -1e9
+var _tree_start_s: float = -1.0
+var _tree_debug_step: int = -1
 var _start_altitude: float = 0.0
 var _min_airspeed: float = 1e30
 var _max_airspeed: float = 0.0
@@ -228,6 +230,35 @@ func _process(_delta: float) -> bool:
 		if _sim.get_simulated_time_s() - _dive_start_s < 12.0:
 			return false
 		_finish_dive()
+		# Not `true`: returning true quits the tree, and the tree phase that
+		# _finish_dive starts needs frames to run in.
+		return false
+
+	if _tree_start_s >= 0.0:
+		var elapsed: float = _sim.get_simulated_time_s() - _tree_start_s
+		# Let the aircraft reach steady level flight, then drop the tree under
+		# it: the model is now inside the trunk, and the physics has to call
+		# the crash before it can fly on. Placing the tree at the model's own
+		# position is deliberate - the flight path of a trainer at throttle is
+		# a curve, and this test is about the collision, not about hitting a
+		# target with a static obstacle.
+		if elapsed < 3.0:
+			return false
+		if _tree_debug_step == -1:
+			_tree_debug_step = 0
+			# The trunk, placed in front of the model at its own altitude: the
+			# wing tip meets it edge-on, a centimetre a step, which is how a
+			# real tree is hit. (Dropping a tree under the whole airframe
+			# buried it 45 m deep and the contact solver, asked to push a
+			# wreck out from that depth, launched it at 10^170 m/s.)
+			var forward: Vector3 = -_sim.global_transform.basis.z.normalized()
+			_sim.set_tree_obstacles(PackedFloat32Array([
+				_sim.global_position.x + forward.x * 6.0,
+				_sim.global_position.z + forward.z * 6.0,
+				1.5, 40.0]))
+		if elapsed < 9.0:
+			return false
+		_finish_tree()
 		return true
 
 	if _surface_start_s >= 0.0:
@@ -432,6 +463,40 @@ func _finish_dive() -> void:
 	_check(_sim.get_altitude_m() > -1.0, "the wreck is not underground")
 
 	_sim.clear_manual_channels()
+
+	# ------------------------------------------------------------------ trees --
+	# A tree is solid: fly the model into one and it has to crash, with the
+	# crash naming the tree rather than the ground. The obstacle is placed a
+	# fixed distance ahead of the spawn point, tall and wide enough that the
+	# model cannot pass over or around it.
+	print("\n  flying it into a tree")
+	var spawn := _sim.global_position
+	# Tall and wide enough that climbing or drifting cannot clear it: a full
+	# throttle trainer balloons to 50 m in the time it takes to reach the tree,
+	# and it drifts a few degrees off the line.
+	_sim.spawn_mode = RCSimulationNode.SPAWN_AIR
+	_sim.spawn_altitude_m = 10.0
+	_sim.reset_state()
+	_sim.set_manual_channel(RCInputNode.CHANNEL_THROTTLE, 0.5)
+	_dive_start_s = -1.0
+	_tree_start_s = _sim.get_simulated_time_s()
+
+
+func _finish_tree() -> void:
+	_check(_sim.has_crashed(), "flying into a tree counts as a crash")
+	_check(_sim.get_crash_reason().find("tree") >= 0,
+		   "the crash names the tree, not the ground")
+	# The impact speed is the number that says the collision was real: a sane
+	# arrival speed, not a solver artefact. (The first version of this test
+	# dropped the tree under the whole airframe, buried it 45 m deep, and the
+	# contact solver reported 10^170 m/s.)
+	var impact: float = _sim.get_airspeed_mps()
+	print("       crashed=%s  reason='%s'  impact %.2f m/s"
+		% [_sim.has_crashed(), _sim.get_crash_reason(), impact])
+	_check(impact < 30.0, "the impact speed is sane (%.2f m/s)" % impact)
+
+	_sim.clear_manual_channels()
+	_sim.set_tree_obstacles(PackedFloat32Array())
 
 	print("\n%d checks, %d failed" % [_checks, _failures])
 	if _failures == 0:
