@@ -23,6 +23,7 @@
 #include "RCPhysics/Physics/Ground/GroundContact.h"
 #include "RCPhysics/Physics/Ground/LandingGear.h"
 #include "RCPhysics/Physics/Ground/TerrainField.h"
+#include "RCPhysics/Physics/Environment/LiftField.h"
 #include "RCPhysics/Physics/Ground/TerrainScatter.h"
 #include "RCPhysics/Physics/Propulsion/PowerSystem.h"
 
@@ -100,6 +101,35 @@ public:
      *  point, for verification. */
     double get_surface_height_at(double x, double z) const;
     int  get_terrain_seed() const;
+
+    // ------------------------------------------------------------- soaring --
+
+    /** Vertical speed of the AIR at the aircraft [m/s, positive up]. This is
+     *  what a variometer measures once the aircraft's own sink is taken out,
+     *  and it is what a soaring pilot flies by. */
+    double get_air_vertical_speed_mps() const;
+
+    /** The same, split into where it came from, so the pilot can tell a thermal
+     *  from a hillside. */
+    double get_thermal_lift_mps() const;
+    double get_slope_lift_mps() const;
+
+    /** Netto: the air's motion with the aircraft's own sink rate removed, which
+     *  is the number that says whether staying here is worth it. */
+    double get_netto_mps() const;
+
+    /** How strongly the ground beneath makes thermals, 0 to 1. What an
+     *  experienced pilot reads off the landscape. */
+    double get_ground_heating() const;
+
+    /** Scale the day's thermal activity. Weather drives this: a windy afternoon
+     *  works better than a still one, an overcast sky barely at all, and rain
+     *  not at all. */
+    void set_thermal_scale(double scale);
+    double get_thermal_scale() const;
+
+    void set_lift_enabled(bool enabled);
+    bool get_lift_enabled() const;
 
     /** Reshape the world. A scene preset is these numbers and a sky; the biome
      *  rules never change, only the climate and the geology they read. Applying
@@ -311,6 +341,8 @@ private:
     rc::TerrainField    Terrain;
     rc::TerrainGround   Ground{Terrain};
     rc::TerrainScatter  Scatter{Terrain};
+    rc::LiftField       Lift{Terrain};
+    double              ThermalScale = 1.0;
     rc::CrashResult     Crash;
     rc::ContactSettings ContactTuning;
     rc::ChannelValues   Channels;

@@ -15,6 +15,8 @@
 #pragma once
 
 #include "RCPhysics/Core/Math/Vec3.h"
+
+namespace rc { class LiftField; }
 #include "RCPhysics/Core/Types.h"
 
 #include <array>
@@ -58,7 +60,30 @@ public:
     /** Wind velocity at a world position, NED [m/s]. This is the velocity of
      *  the AIR, so an aircraft's velocity relative to the air is its ground
      *  velocity minus this. */
+    /** The air's total velocity: wind, gust, turbulence and any rising air.
+     *  This is what the aerodynamics flies through. */
     Vec3 SampleWorld(const Vec3& positionWorld) const;
+
+    /** Wind alone - horizontal air movement, with no lift in it.
+     *
+     *  A windsock shows this. So does the HUD. A thermal is not wind, and an
+     *  instrument that reported a vertical component every time the model
+     *  passed through rising air would be reporting something no windsock has
+     *  ever done. */
+    Vec3 SampleWindOnly(const Vec3& positionWorld) const;
+
+    /** Attach a lift field, so rising air arrives through the same per-section
+     *  sampling the wind does.
+     *
+     *  That is not a convenience. A wing with one tip in a thermal and the
+     *  other outside it gets a rolling moment, and that roll is exactly how a
+     *  pilot feels a thermal and knows which way to turn into it. Adding lift
+     *  at the centre of gravity instead would give the aircraft the climb and
+     *  take away the only cue that lets anyone find it.
+     *
+     *  Null to fly in air that only blows sideways. */
+    void SetLiftField(const LiftField* lift) { Lift = lift; }
+    const LiftField* GetLiftField() const { return Lift; }
 
     /** The steady component alone - what a windsock averages out to. */
     Vec3 SteadyVector() const;
@@ -84,6 +109,8 @@ private:
     void RebuildModes();
 
     std::uint32_t Seed = 1u;
+
+    const LiftField* Lift = nullptr;
 
     Real SteadySpeed     = 0.0;
     Real SteadyDirection = 0.0;

@@ -38,6 +38,7 @@ var _fps: float = 0.0
 var _fps_accumulator: float = 0.0
 var _fps_frames: int = 0
 var _alert_phase: float = 0.0
+var _vario_shown: float = 0.0
 
 
 func _ready() -> void:
@@ -105,6 +106,7 @@ func _draw_hud() -> void:
 	_draw_power(Vector2(size.x - UITheme.S5 - 236.0, strip))
 	_draw_attitude_block(Vector2(size.x * 0.5, strip + 86.0))
 	_draw_alerts(Vector2(size.x * 0.5, size.y * 0.13))
+	_draw_variometer(Vector2(size.x - 118.0, size.y * 0.5))
 	_draw_hints(Vector2(size.x * 0.5, size.y - UITheme.S4))
 
 	if _diagnostics:
@@ -297,6 +299,68 @@ func _draw_attitude_block(centre: Vector2) -> void:
 					  UITheme.SIZE_VALUE, stall_colour)
 	UITheme.draw_track(_canvas, Rect2(right + Vector2(0, 30), Vector2(96, 3)),
 					   _stall if flying else 0.0, stall_colour)
+
+
+## The variometer.
+##
+## What the AIR is doing, not what the aeroplane is doing. A pilot flying a
+## glider reads this constantly: positive means the air here is going up and it
+## is worth turning, negative means leave. It is drawn as a column rather than a
+## number because the thing that matters is the trend - whether the needle is
+## rising as you turn - and a number changing four times a second cannot show
+## that.
+##
+## Hidden when the air is dead still, so a powered circuit is not cluttered by
+## an instrument that has nothing to say.
+func _draw_variometer(centre: Vector2) -> void:
+	if _sim == null or not _sim.get_lift_enabled():
+		return
+
+	var air: float = _sim.get_air_vertical_speed_mps()
+	var thermal: float = _sim.get_thermal_lift_mps()
+	var slope: float = _sim.get_slope_lift_mps()
+	if absf(air) < 0.05 and absf(_vario_shown) < 0.05:
+		return
+
+	# Smoothed, hard. A real variometer lags because the air is turbulent and an
+	# instantaneous reading is unreadable; so is this one without it.
+	_vario_shown = lerpf(_vario_shown, air, 0.08)
+
+	var height: float = 150.0
+	var width: float = 13.0
+	var rect := Rect2(centre - Vector2(width * 0.5, height * 0.5), Vector2(width, height))
+	UITheme.draw_panel(_canvas, rect.grow(7.0), UITheme.PANEL, UITheme.STROKE)
+
+	# Zero line, and the scale it is measured against.
+	var middle: float = centre.y
+	UITheme.draw_rule(_canvas, Vector2(rect.position.x - 4.0, middle), width + 8.0,
+			UITheme.STROKE_STRONG)
+
+	var full_scale: float = 4.0
+	var fraction: float = clampf(_vario_shown / full_scale, -1.0, 1.0)
+	var bar: float = fraction * (height * 0.5)
+	var colour: Color = UITheme.GOOD if _vario_shown > 0.0 else UITheme.WARN
+	if _vario_shown > 0.0:
+		_canvas.draw_rect(Rect2(rect.position.x, middle - bar, width, bar), colour)
+	else:
+		_canvas.draw_rect(Rect2(rect.position.x, middle, width, -bar), colour)
+
+	UITheme.draw_text(_canvas, Vector2(centre.x, rect.position.y - 16.0),
+			"%+.1f" % _vario_shown, UITheme.SIZE_BODY, colour,
+			HORIZONTAL_ALIGNMENT_CENTER)
+	UITheme.draw_label(_canvas, Vector2(centre.x - 12.0, rect.end.y + 20.0),
+			"VARIO", UITheme.TEXT_FAINT, 2.0, UITheme.SIZE_MICRO)
+
+	# Where it is coming from. A pilot who can tell a thermal from a hillside
+	# knows whether to circle or to beat along the ridge.
+	var source: String = ""
+	if absf(thermal) > absf(slope) and absf(thermal) > 0.25:
+		source = "THERMAL"
+	elif absf(slope) > 0.25:
+		source = "SLOPE"
+	if not source.is_empty():
+		UITheme.draw_label(_canvas, Vector2(centre.x - 22.0, rect.end.y + 36.0),
+				source, UITheme.ACCENT, 1.8, UITheme.SIZE_MICRO)
 
 
 ## One banner slot, for the one thing that needs saying. Never two at once.

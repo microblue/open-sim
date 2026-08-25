@@ -22,13 +22,14 @@ static func all() -> Array[Dictionary]:
 		{
 			"id": "clear",
 			"name": "Clear",
-			"description": "Light wind, good visibility.",
+			"description": "Light wind, good visibility. Thermals working over "
+					+ "the warmer ground.",
 			"wind_mps": 3.0, "gust": 0.15, "turbulence": 0.6,
 			"fog_density": 0.0000075, "aerial": 0.22,
 			"light_scale": 1.0, "sky_scale": 1.0,
 			"volumetric": 0.0,
 			"precipitation": "", "rate": 0.0,
-			"ground_grip": 1.0,
+			"ground_grip": 1.0, "thermal_scale": 1.0,
 		},
 		{
 			"id": "breezy",
@@ -40,19 +41,19 @@ static func all() -> Array[Dictionary]:
 			"light_scale": 0.96, "sky_scale": 1.0,
 			"volumetric": 0.0,
 			"precipitation": "", "rate": 0.0,
-			"ground_grip": 1.0,
+			"ground_grip": 1.0, "thermal_scale": 1.25,
 		},
 		{
 			"id": "overcast",
 			"name": "Overcast",
-			"description": "Flat grey light and a low cloudbase. Nothing wrong "
-					+ "with the air; you just cannot see the model as well.",
+			"description": "Flat grey light and a low cloudbase. No sun on the "
+					+ "ground means no thermals - a glider is on its own.",
 			"wind_mps": 5.0, "gust": 0.25, "turbulence": 1.1,
 			"fog_density": 0.00006, "aerial": 0.55,
 			"light_scale": 0.42, "sky_scale": 0.72,
 			"volumetric": 0.0,
 			"precipitation": "", "rate": 0.0,
-			"ground_grip": 1.0,
+			"ground_grip": 1.0, "thermal_scale": 0.15,
 		},
 		{
 			"id": "rain",
@@ -68,7 +69,7 @@ static func all() -> Array[Dictionary]:
 			# nothing to occlude it. Depth fog carries the rain's mood.
 			"volumetric": 0.0,
 			"precipitation": "rain", "rate": 6000.0,
-			"ground_grip": 0.55,
+			"ground_grip": 0.55, "thermal_scale": 0.0,
 		},
 		{
 			"id": "snow",
@@ -81,7 +82,7 @@ static func all() -> Array[Dictionary]:
 			"light_scale": 0.46, "sky_scale": 0.80,
 			"volumetric": 0.0,
 			"precipitation": "snow", "rate": 4200.0,
-			"ground_grip": 0.42,
+			"ground_grip": 0.42, "thermal_scale": 0.0,
 		},
 	]
 

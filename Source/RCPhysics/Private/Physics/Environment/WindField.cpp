@@ -1,5 +1,7 @@
 #include "RCPhysics/Physics/Environment/WindField.h"
 
+#include "RCPhysics/Physics/Environment/LiftField.h"
+
 #include <cmath>
 
 namespace rc
@@ -160,7 +162,7 @@ Real WindField::GustFraction() const
     return strength * 0.5 * (1.0 - std::cos(kTwoPi * since / duration));
 }
 
-Vec3 WindField::SampleWorld(const Vec3& positionWorld) const
+Vec3 WindField::SampleWindOnly(const Vec3& positionWorld) const
 {
     const Vec3 steady = SteadyVector();
     Vec3 wind = steady;
@@ -186,7 +188,21 @@ Vec3 WindField::SampleWorld(const Vec3& positionWorld) const
         }
     }
 
+
     return wind;
+}
+
+Vec3 WindField::SampleWorld(const Vec3& positionWorld) const
+{
+    Vec3 air = SampleWindOnly(positionWorld);
+    // Rising air, added here so it reaches the aerodynamics through the same
+    // per-section sampling the wind does - which is what gives a wing with one
+    // tip in a thermal the rolling moment a pilot turns towards.
+    if (Lift != nullptr)
+    {
+        air += Lift->VelocityAt(positionWorld, CurrentTime, SteadyVector());
+    }
+    return air;
 }
 
 } // namespace rc

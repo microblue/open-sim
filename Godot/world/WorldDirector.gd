@@ -75,6 +75,10 @@ func apply_weather(id: String) -> void:
 		_sim.wind_speed_mps = state["wind_mps"]
 		_sim.gust_amplitude_mps = state["wind_mps"] * float(state["gust"])
 		_sim.turbulence_mps = state["turbulence"]
+		# And the day's soaring. Sun on the ground is what makes a thermal, so
+		# an overcast sky barely works and rain does not at all - which is what
+		# decides whether the glider is worth taking out.
+		_sim.set_thermal_scale(float(state.get("thermal_scale", 1.0)))
 
 	if _field_script != null and _field_script.has_method("apply_weather"):
 		_field_script.apply_weather(state)

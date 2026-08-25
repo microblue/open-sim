@@ -384,6 +384,64 @@ void RCSimulationNode::set_terrain_seed(int seed)
     Terrain.SetSettings(settings);
 }
 
+double RCSimulationNode::get_air_vertical_speed_mps() const
+{
+    return Lift.SampleAt(State.PositionWorld, Wind.Time(), Wind.SteadyVector()).Total();
+}
+
+double RCSimulationNode::get_thermal_lift_mps() const
+{
+    return Lift.SampleAt(State.PositionWorld, Wind.Time(), Wind.SteadyVector()).Thermal;
+}
+
+double RCSimulationNode::get_slope_lift_mps() const
+{
+    return Lift.SampleAt(State.PositionWorld, Wind.Time(), Wind.SteadyVector()).Slope;
+}
+
+double RCSimulationNode::get_netto_mps() const
+{
+    // A plain variometer shows the aircraft's own climb, which includes
+    // whatever the airframe is losing by flying. Netto adds that sink back, so
+    // what is left is the air alone - the number that answers "is it worth
+    // staying here", which is the only question in soaring.
+    //
+    //   climb  = air's rise  -  the aeroplane's own sink
+    //   netto  = climb + own sink  =  air's rise
+    //
+    // Which is exactly what the lift field reports. Kept as its own accessor
+    // because the two are different instruments on a real glider and a pilot
+    // learning to use them needs to see both.
+    return get_air_vertical_speed_mps();
+}
+
+double RCSimulationNode::get_ground_heating() const
+{
+    return Lift.GroundHeating(State.PositionWorld.x, State.PositionWorld.y);
+}
+
+void RCSimulationNode::set_thermal_scale(double scale)
+{
+    rc::LiftSettings config = Lift.Settings();
+    // Relative to the reference day the defaults describe, so a preset says
+    // "half as good as a good day" rather than quoting metres per second.
+    config.ThermalStrength = rc::LiftSettings{}.ThermalStrength * std::max(scale, 0.0);
+    Lift.SetSettings(config);
+    ThermalScale = scale;
+}
+
+double RCSimulationNode::get_thermal_scale() const { return ThermalScale; }
+
+void RCSimulationNode::set_lift_enabled(bool enabled)
+{
+    rc::LiftSettings config = Lift.Settings();
+    config.Enabled = enabled;
+    Lift.SetSettings(config);
+    Wind.SetLiftField(enabled ? &Lift : nullptr);
+}
+
+bool RCSimulationNode::get_lift_enabled() const { return Lift.Settings().Enabled; }
+
 void RCSimulationNode::configure_terrain(const Dictionary& settings)
 {
     rc::TerrainSettings config = Terrain.Settings();
@@ -638,6 +696,9 @@ void RCSimulationNode::ResetPhysicsState()
     Plane.ResetAeroState();
     Power.Reset();
     Crash = rc::CrashResult{};
+    // The lift field lives on the wind, so rising air reaches the aerodynamics
+    // through the same per-section sampling the wind does.
+    Wind.SetLiftField(Lift.Settings().Enabled ? &Lift : nullptr);
     LastForces = rc::AircraftForces{};
     WarnedAboutDrops = false;
 }
@@ -784,7 +845,9 @@ double RCSimulationNode::get_gust_fraction() const { return Wind.GustFraction();
 
 Vector3 RCSimulationNode::get_wind_vector() const
 {
-    return ToGodotVector(Wind.SampleWorld(State.PositionWorld));
+    // Wind, not air. The windsock and the HUD show what is blowing across the
+    // field; rising air is reported separately by the variometer.
+    return ToGodotVector(Wind.SampleWindOnly(State.PositionWorld));
 }
 
 // ---------------------------------------------------------------- telemetry --
@@ -1049,6 +1112,15 @@ void RCSimulationNode::_bind_methods()
     OPENRC_BIND(get_terrain_seed);
     OPENRC_BIND1(configure_terrain, "settings");
     OPENRC_BIND(get_terrain_settings);
+    OPENRC_BIND(get_air_vertical_speed_mps);
+    OPENRC_BIND(get_thermal_lift_mps);
+    OPENRC_BIND(get_slope_lift_mps);
+    OPENRC_BIND(get_netto_mps);
+    OPENRC_BIND(get_ground_heating);
+    OPENRC_BIND1(set_thermal_scale, "scale");
+    OPENRC_BIND(get_thermal_scale);
+    OPENRC_BIND1(set_lift_enabled, "enabled");
+    OPENRC_BIND(get_lift_enabled);
     OPENRC_BIND(reload_aircraft);
     OPENRC_BIND(is_aircraft_loaded);
     OPENRC_BIND(get_aircraft_name);
