@@ -1,0 +1,10 @@
+Fira Sans and Fira Sans Condensed
+Copyright (c) 2014-2019, The Mozilla Foundation and Telefonica S.A.
+
+Licensed under the SIL Open Font License, Version 1.1.
+The full license text is available at:
+https://openfontlicense.org/open-font-license-official-text/
+
+In brief: the fonts may be used, bundled, modified and redistributed freely,
+provided the license text accompanies them and the names "Fira Sans" and
+"Fira Sans Condensed" are not used to sell modified versions of the fonts.

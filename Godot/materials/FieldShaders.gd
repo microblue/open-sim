@@ -259,6 +259,28 @@ void fragment() {
 	base = mix(base * 0.82, base * 1.12, fine);
 	// A little bare earth where the strip is worn.
 	base = mix(base, dirt, mown * smoothstep(0.55, 0.85, fine) * 0.35);
+
+	// Painted markings on the strip: a dashed centreline and threshold bars at
+	// each end. A real club strip is marked - a bare green runway is one of the
+	// tells that a scene was generated rather than visited. The paint is worn
+	// by the same noise that mottles the grass, so it reads as painted on over
+	// the years rather than as a decal pasted over a clean surface.
+	vec2 strip_centre = vec2(-16.0, -30.0);
+	vec2 half_size = vec2(4.5, 35.0);
+	vec2 p = world_position.xz - strip_centre;
+	float in_strip = 1.0 - smoothstep(0.90, 1.02,
+		max(abs(p.x) / half_size.x, abs(p.y) / half_size.y));
+	float dash = step(fract(abs(p.y) / 6.0), 0.42);
+	float centre = 1.0 - smoothstep(0.14, 0.24, abs(p.x));
+	float line = centre * dash * in_strip;
+	float bar = (1.0 - smoothstep(0.35, 0.55, abs(abs(p.y) - half_size.y)))
+				* (1.0 - smoothstep(half_size.x - 0.6, half_size.x - 0.25, abs(p.x)))
+				* in_strip;
+	float paint = clamp(line + bar, 0.0, 1.0);
+	vec3 paint_colour = vec3(0.72, 0.72, 0.70);
+	paint *= 0.50 + 0.50 * fine;
+	base = mix(base, paint_colour, paint * 0.85);
+
 	ALBEDO = base;
 	ROUGHNESS = 1.0;
 }

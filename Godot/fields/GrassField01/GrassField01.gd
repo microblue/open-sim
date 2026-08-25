@@ -82,6 +82,7 @@ func _ready() -> void:
 		_build_grass()
 	_build_trees()
 	_build_structures()
+	_build_cones()
 	_windsock = _build_windsock()
 
 
@@ -527,6 +528,15 @@ func _build_grass() -> void:
 		var radius: float = sqrt(_rng.randf()) * GRASS_RADIUS
 		var x: float = cos(angle) * radius
 		var z: float = sin(angle) * radius
+		# The mown strip is mown: no tufts on it. Grass on a runway is not only
+		# wrong to look at, it hides the painted markings and the wheels sink
+		# into it. Skipping the strip area only removes a fraction of a percent
+		# of the field's tufts, and the edge between bare strip and rough comes
+		# out of the mown mask in the ground shader, so it is not a hard line.
+		var along: float = absf(z - STRIP_CENTRE_Z) / (STRIP_HALF_LENGTH + 4.0)
+		var across: float = absf(x - STRIP_CENTRE_X) / (STRIP_HALF_WIDTH + 1.2)
+		if maxf(along, across) < 1.0 and _rng.randf() < 0.97:
+			continue
 		var scale: float = _rng.randf_range(0.72, 1.34)
 		var basis := Basis(Vector3.UP, _rng.randf() * TAU) \
 			.scaled(Vector3(scale, scale * _rng.randf_range(0.85, 1.2), scale))
@@ -822,6 +832,51 @@ func _build_structures() -> void:
 	for i in 3:
 		_box(Vector3(1.9, 1.5, 4.4), Vector3(24.0 + float(i) * 3.2, 0.75, 12.0),
 			colours[i], "ParkedCar")
+
+
+## Marker cones along both edges of the strip. They are what a club field
+## actually has - and they give the pilot a continuous depth cue down the
+## runway, which is most of what makes an approach readable. One mesh, instanced
+## with slight size and lean variation so the row does not read as a stamp.
+func _build_cones() -> void:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 0.0
+	mesh.bottom_radius = 0.13
+	mesh.height = 0.36
+	mesh.radial_segments = 10
+
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(0.85, 0.24, 0.10)
+	material.roughness = 0.6
+
+	var multi := MultiMesh.new()
+	multi.transform_format = MultiMesh.TRANSFORM_3D
+	multi.mesh = mesh
+
+	var placements: Array[Transform3D] = []
+	for side in [-1.0, 1.0]:
+		for slot in 9:
+			var z: float = -STRIP_CENTRE_Z + float(slot) * 7.2 - 26.0
+			z = clampf(z, -STRIP_HALF_LENGTH + 2.0, STRIP_HALF_LENGTH - 2.0)
+			var x: float = STRIP_CENTRE_X + side * (STRIP_HALF_WIDTH + 1.0) \
+					+ _rng.randf_range(-0.25, 0.25)
+			var scale: float = _rng.randf_range(0.85, 1.15)
+			var lean := Basis(Vector3.UP, _rng.randf() * TAU).scaled(
+					Vector3(scale, scale, scale))
+			# A little lean, so they are cones on grass, not chess pieces.
+			lean = lean.rotated(Vector3(1, 0, 0), _rng.randf_range(-0.06, 0.06))
+			placements.append(Transform3D(lean, Vector3(x, 0.0, z)))
+
+	multi.instance_count = placements.size()
+	for i in placements.size():
+		multi.set_instance_transform(i, placements[i])
+
+	var instance := MultiMeshInstance3D.new()
+	instance.name = "Cones"
+	instance.multimesh = multi
+	instance.material_override = material
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	add_child(instance)
 
 
 # ------------------------------------------------------------------- windsock

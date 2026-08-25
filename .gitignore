@@ -10,7 +10,7 @@ Godot/logs/
 
 # Downloaded CC0 assets. Hundreds of megabytes of photogrammetry, reproducible
 # from Data/Assets/manifest.json with scripts/fetch-assets.sh.
-Godot/assets/
+Godot/assets/*
 
 # --- Third party ------------------------------------------------------------
 # godot-cpp is fetched at a pinned commit by scripts/bootstrap.sh rather than
@@ -50,3 +50,7 @@ dist/
 .env
 *.log
 Godot/shots/
+Godot/assets/previews/
+
+# Bundled UI fonts (SIL OFL) - part of the repository, unlike the fetched assets.
+!Godot/assets/fonts/

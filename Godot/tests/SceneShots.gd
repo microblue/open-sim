@@ -99,3 +99,9 @@ func _capture() -> void:
 	if image != null:
 		image.save_png(ProjectSettings.globalize_path(path))
 		print("  %s" % path)
+		# The main menu shows these previews, and the export excludes shots/ -
+		# so the same frame is also written where the export will pick it up.
+		DirAccess.make_dir_recursive_absolute(
+			ProjectSettings.globalize_path("res://assets/previews"))
+		var preview: String = "res://assets/previews/%s_%s.png" % [entry["kind"], entry["id"]]
+		image.save_png(ProjectSettings.globalize_path(preview))

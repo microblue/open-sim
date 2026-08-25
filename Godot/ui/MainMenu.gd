@@ -287,16 +287,23 @@ func _layout() -> void:
 	_canvas.queue_redraw()
 
 
-## Load a preview from the shots a render test writes, or null to draw a
-## placeholder instead. The shots are not committed, so a fresh checkout gets
-## the placeholder - the menu has to work before the renderer has ever run.
+## Load a preview for the menu, or null to draw a placeholder instead.
+##
+## The previews live in assets/previews/ - a directory that IS exported - so a
+## packaged build shows the real places and weather states. They are generated
+## by tests/SceneShots.gd (which needs a display, so they are not committed; a
+## fresh checkout gets the placeholder until the renderer has run once). The
+## shots/ copies are the debug output and are excluded from the export, hence
+## the fallback rather than loading from there directly.
 func _make_thumb(kind: String, id: String, size: Vector2) -> TextureRect:
 	var key: String = "%s:%s" % [kind, id]
 	if not _thumb_textures.has(key):
-		var path: String = "res://shots/%s_%s.png" % [kind, id]
 		var texture: Texture2D = null
-		if ResourceLoader.exists(path):
-			texture = load(path) as Texture2D
+		for path in ["res://assets/previews/%s_%s.png" % [kind, id],
+					 "res://shots/%s_%s.png" % [kind, id]]:
+			if ResourceLoader.exists(path):
+				texture = load(path) as Texture2D
+				break
 		_thumb_textures[key] = texture
 	var texture: Texture2D = _thumb_textures[key]
 	if texture == null:

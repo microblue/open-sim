@@ -67,8 +67,39 @@ const RADIUS := 10.0
 const HAIRLINE := 1.0
 
 
+static var _fonts: Dictionary = {}
+
+## Fira Sans, bundled (SIL OFL - see assets/fonts/LICENSE.txt). A game UI needs
+## a real typeface, not the engine's fallback: the fallback renders every glyph
+## at the same weight and reads as an engineering drawing rather than a product.
 static func font() -> Font:
-	return ThemeDB.fallback_font
+	return _font("res://assets/fonts/FiraSans-Regular.otf")
+
+
+static func font_bold() -> Font:
+	return _font("res://assets/fonts/FiraSans-Bold.otf")
+
+
+## Condensed heavy: the wordmark and the section headings. This is the face
+## that makes a heading read as a title rather than as a label.
+static func font_condensed() -> Font:
+	return _font("res://assets/fonts/FiraSansCondensed-Heavy.otf")
+
+
+static func font_condensed_bold() -> Font:
+	return _font("res://assets/fonts/FiraSansCondensed-Bold.otf")
+
+
+static func _font(path: String) -> Font:
+	if _fonts.has(path):
+		return _fonts[path]
+	var f: Font = null
+	if ResourceLoader.exists(path):
+		f = load(path) as Font
+	if f == null:
+		f = ThemeDB.fallback_font
+	_fonts[path] = f
+	return f
 
 
 # ------------------------------------------------------------------ panels --
@@ -123,10 +154,11 @@ static func draw_text(ci: CanvasItem, position: Vector2, text: String,
 
 ## Letterspaced small caps, for section headings. The spacing is what separates
 ## a heading from a value at a glance without needing a second font weight.
+## Set in the condensed heavy face: a heading is a title, not a label.
 static func draw_label(ci: CanvasItem, position: Vector2, text: String,
 					   colour: Color = TEXT_FAINT, spacing: float = 2.2,
 					   size: int = SIZE_MICRO) -> void:
-	var f: Font = font()
+	var f: Font = font_condensed()
 	var x: float = position.x
 	for i in text.length():
 		var glyph: String = text[i].to_upper()
@@ -143,7 +175,7 @@ static func text_width(text: String, size: int) -> float:
 ## out with the unspaced width leaves the last few characters hanging off it.
 static func label_width(text: String, spacing: float = 2.2,
 						size: int = SIZE_MICRO) -> float:
-	var f: Font = font()
+	var f: Font = font_condensed()
 	var total: float = 0.0
 	for i in text.length():
 		total += f.get_string_size(text[i].to_upper(), HORIZONTAL_ALIGNMENT_LEFT,

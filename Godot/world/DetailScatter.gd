@@ -40,7 +40,7 @@ const TIERS: Array[Dictionary] = [
 		# is invisible past ninety metres, and spent several seconds of the load
 		# doing it.
 		"prebuild": 460.0,
-		"count": 760,
+		"count": 1000,
 		"kinds": [Meshes.GRASS, Meshes.SHRUB, Meshes.REED],
 	},
 	{
