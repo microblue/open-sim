@@ -33,6 +33,7 @@ const TuningScript := preload("res://ui/TuningPanel.gd")
 const HangarScript := preload("res://ui/HangarScreen.gd")
 const DirectorScript := preload("res://world/WorldDirector.gd")
 const WorldScreenScript := preload("res://ui/WorldScreen.gd")
+const ReplayScript := preload("res://ui/ReplayBar.gd")
 const ModelScript := preload("res://aircraft/Trainer1500/AircraftModel.gd")
 const AudioScript := preload("res://aircraft/Trainer1500/AircraftAudio.gd")
 
@@ -135,6 +136,7 @@ OpenRC Simulator
   F1          hide the telemetry overlay      F2  per-section detail
   F4          tuning panel (wind, weather, physics rate)
   M           menu       H   hangar (aircraft)   W  world (place, weather)
+  Tab         replay the last two minutes
   F3          transmitter setup wizard
   F5          reload the aircraft definition  F6  cycle spawn mode
   Esc         quit
@@ -146,6 +148,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 
 	match event.keycode:
+		KEY_R when has_node("ReplayBar"):
+			get_node("ReplayBar").queue_free()
 		KEY_R:
 			aircraft.reset_state()
 			print("Reset.")
@@ -168,8 +172,24 @@ func _unhandled_input(event: InputEvent) -> void:
 			_open_hangar()
 		KEY_W:
 			_open_world_screen()
+		KEY_TAB:
+			_toggle_replay()
 		KEY_ESCAPE:
 			get_tree().quit()
+
+
+## Watch it again. The recorder is always running, so there is nothing to start -
+## and pressing R while a replay is open closes it and puts the pilot back on the
+## live aircraft, because a replay is something you look at rather than somewhere
+## you can fly from.
+func _toggle_replay() -> void:
+	if has_node("ReplayBar"):
+		get_node("ReplayBar").queue_free()
+		return
+	var bar := ReplayScript.new()
+	bar.name = "ReplayBar"
+	bar.simulation_path = NodePath("../Aircraft")
+	add_child(bar)
 
 
 ## Where and when: the place and the weather, chosen independently.

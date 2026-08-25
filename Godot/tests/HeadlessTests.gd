@@ -498,10 +498,77 @@ func _finish_tree() -> void:
 	_sim.clear_manual_channels()
 	_sim.set_tree_obstacles(PackedFloat32Array())
 
+	# Last, because by now the recorder holds a whole flight with a crash in it,
+	# which is exactly what a replay has to be able to show.
+	_test_replay()
+
 	print("\n%d checks, %d failed" % [_checks, _failures])
 	if _failures == 0:
 		print("in-engine tests passed")
 	quit(1 if _failures > 0 else 0)
+
+
+## The recorder has been running through every phase above, so by now it holds
+## a real flight with a real crash in it. This checks the thing a replay has to
+## get right: that scrubbing to a time shows what the aircraft was doing then,
+## and that leaving the replay puts the live aircraft back exactly as it was.
+func _test_replay() -> void:
+	print("\n  replay")
+
+	var duration: float = _sim.get_replay_duration()
+	_check(duration > 5.0, "the recorder holds a flight (%.1f s)" % duration)
+	if duration <= 5.0:
+		return
+
+	var live_position: Vector3 = _sim.global_position
+	var live_altitude: float = _sim.get_altitude_m()
+
+	_sim.set_replaying(true)
+	_check(_sim.get_replaying(), "replay engages")
+
+	# Scrub to three points and check the aircraft is somewhere different at
+	# each - a replay that shows one frame whatever you ask for is worse than
+	# none, because it looks like it is working.
+	var first: float = _sim.get_replay_earliest()
+	var last: float = _sim.get_replay_latest()
+	var seen: Array[Vector3] = []
+	for fraction in [0.1, 0.5, 0.9]:
+		_sim.set_replay_time(first + (last - first) * fraction)
+		# One frame for the pose to be applied.
+		_sim.advance_replay(1.0 / 60.0)
+		seen.append(_sim.global_position)
+
+	_check(seen[0].distance_to(seen[1]) > 1.0, "scrubbing moves the aircraft")
+	_check(seen[1].distance_to(seen[2]) > 1.0, "and keeps moving it")
+
+	# The telemetry of the frame being shown has to be the telemetry of that
+	# moment, not of the live aircraft.
+	_sim.set_replay_time(first + (last - first) * 0.5)
+	var frame: Dictionary = _sim.get_replay_frame()
+	_check(frame.has("airspeed") and frame.has("altitude"),
+		"the replay reports the telemetry of the frame")
+	_check(frame["airspeed"] >= 0.0 and frame["airspeed"] < 60.0,
+		"replayed airspeed is plausible (%.1f m/s)" % frame["airspeed"])
+
+	# Time runs when it is playing.
+	_sim.set_replay_speed(1.0)
+	var before: float = _sim.get_replay_time()
+	for i in 12:
+		_sim.advance_replay(1.0 / 60.0)
+	_check(_sim.get_replay_time() > before, "playback advances")
+
+	# And the path is available to draw.
+	var path: PackedVector3Array = _sim.get_flight_path(64)
+	_check(path.size() > 8, "the flight path can be drawn (%d points)" % path.size())
+
+	# Leaving must restore the live aircraft exactly. A replay is something you
+	# look at, not somewhere you can fly from.
+	_sim.set_replaying(false)
+	_check(not _sim.get_replaying(), "replay disengages")
+	_check(_sim.global_position.distance_to(live_position) < 0.01,
+		"the live aircraft is put back where it was")
+	_check(absf(_sim.get_altitude_m() - live_altitude) < 0.01,
+		"at the altitude it was at")
 
 
 func _section_index(section_name: String) -> int:

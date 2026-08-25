@@ -23,6 +23,7 @@
 #include "RCPhysics/Physics/Ground/GroundContact.h"
 #include "RCPhysics/Physics/Ground/LandingGear.h"
 #include "RCPhysics/Physics/Ground/TerrainField.h"
+#include "RCPhysics/Core/FlightRecorder.h"
 #include "RCPhysics/Physics/Environment/LiftField.h"
 #include "RCPhysics/Physics/Ground/TerrainScatter.h"
 #include "RCPhysics/Physics/Propulsion/PowerSystem.h"
@@ -101,6 +102,46 @@ public:
      *  point, for verification. */
     double get_surface_height_at(double x, double z) const;
     int  get_terrain_seed() const;
+
+    // -------------------------------------------------------------- replay --
+    //
+    // The most useful thing a simulator can give a learner is the chance to see
+    // what they just did from outside. A pilot who has cartwheeled a model on
+    // landing has no idea why; the same landing watched from the wingtip,
+    // slowly, answers it in one pass.
+
+    /** Seconds of flight available to scrub through, and where in it. */
+    double get_replay_duration() const;
+    double get_replay_earliest() const;
+    double get_replay_latest() const;
+
+    /** Enter or leave replay. While replaying the physics does not advance and
+     *  the aircraft is posed from the recording, so the world around it - wind,
+     *  scenery, the camera - carries on as normal and can be looked around. */
+    void set_replaying(bool replaying);
+    bool get_replaying() const { return Replaying; }
+
+    /** Where in the recording to show, in simulation seconds. */
+    void set_replay_time(double seconds);
+    double get_replay_time() const { return ReplayTime; }
+
+    /** Step the replay by `delta` seconds at the current rate, and pose the
+     *  aircraft from it. The frame loop calls this; a tool or a test that
+     *  drives the simulation itself can call it directly. */
+    void advance_replay(double delta);
+
+    /** Playback rate. Negative runs it backwards; zero holds a frame. */
+    void set_replay_speed(double speed);
+    double get_replay_speed() const { return ReplaySpeed; }
+
+    /** Jump to the moment of the crash, which is what anyone wants to see. */
+    void replay_to_crash();
+
+    /** Telemetry of the frame being shown, for the overlay. */
+    godot::Dictionary get_replay_frame() const;
+
+    /** The path the aircraft took, in Godot coordinates, for drawing a trace. */
+    godot::PackedVector3Array get_flight_path(int max_points) const;
 
     // ------------------------------------------------------------- soaring --
 
@@ -342,6 +383,18 @@ private:
     rc::TerrainGround   Ground{Terrain};
     rc::TerrainScatter  Scatter{Terrain};
     rc::LiftField       Lift{Terrain};
+
+    /** Always running. By the time a pilot knows they want the last thirty
+     *  seconds, those seconds have happened. */
+    rc::FlightRecorder  Recorder;
+    bool                Replaying = false;
+    double              ReplayTime = 0.0;
+    double              ReplaySpeed = 1.0;
+    rc::RigidBodyState  StashedState;
+    rc::ChannelValues   StashedChannels;
+
+    void RecordFrame();
+    void AdvanceReplay(double deltaSeconds);
     double              ThermalScale = 1.0;
     rc::CrashResult     Crash;
     rc::ContactSettings ContactTuning;

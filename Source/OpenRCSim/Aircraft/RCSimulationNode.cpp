@@ -51,6 +51,16 @@ void RCSimulationNode::_process(double deltaSeconds)
         return;
     }
 
+    // In replay the physics does not advance. The aircraft is posed from the
+    // recording instead, and everything around it - the wind in the grass, the
+    // scenery, the camera - carries on, so the pilot can fly the camera around
+    // a moment that has already happened.
+    if (Replaying)
+    {
+        AdvanceReplay(deltaSeconds);
+        return;
+    }
+
     // Sample the sticks once per frame, as late as possible relative to the
     // steps that consume them: input latency is second only to physics fidelity
     // in this project's priorities.
@@ -113,6 +123,8 @@ void RCSimulationNode::_process(double deltaSeconds)
 
         Wind.Advance(dt);
     }
+
+    RecordFrame();
 
     if (!WarnedAboutDrops && Clock.DroppedSteps() > 0)
     {
@@ -441,6 +453,165 @@ void RCSimulationNode::set_lift_enabled(bool enabled)
 }
 
 bool RCSimulationNode::get_lift_enabled() const { return Lift.Settings().Enabled; }
+
+void RCSimulationNode::RecordFrame()
+{
+    if (!AircraftLoaded) { return; }
+
+    rc::FlightFrame frame;
+    frame.Time = get_simulated_time_s();
+    frame.PositionWorld = State.PositionWorld;
+    frame.Orientation = State.Orientation;
+    frame.VelocityWorld = State.VelocityWorld;
+    frame.AngularVelocityBody = State.AngularVelocityBody;
+
+    frame.Airspeed = LastForces.Airspeed;
+    frame.Alpha = LastForces.Alpha;
+    frame.StalledFraction = LastForces.StalledWingFraction;
+    frame.Rpm = Power.State().Rpm;
+    frame.Thrust = Power.State().Thrust;
+    frame.BatteryCharge = Power.State().StateOfCharge;
+    frame.VerticalAirSpeed = get_air_vertical_speed_mps();
+
+    frame.Controls = Channels;
+    frame.OnGround = LastForces.OnGround;
+    frame.Crashed = Crash.Crashed;
+
+    Recorder.Offer(frame);
+}
+
+void RCSimulationNode::advance_replay(double delta) { AdvanceReplay(delta); }
+
+void RCSimulationNode::AdvanceReplay(double deltaSeconds)
+{
+    if (Recorder.Empty()) { return; }
+
+    ReplayTime += deltaSeconds * ReplaySpeed;
+    const double first = Recorder.EarliestTime();
+    const double last = Recorder.LatestTime();
+
+    // Held at the ends rather than wrapping. A replay that loops back to the
+    // start without being asked makes it hard to study the last half second,
+    // which is usually the half second that matters.
+    ReplayTime = std::min(std::max(ReplayTime, first), last);
+
+    const rc::FlightFrame frame = Recorder.SampleAt(ReplayTime);
+    State.PositionWorld = frame.PositionWorld;
+    State.Orientation = frame.Orientation;
+    State.VelocityWorld = frame.VelocityWorld;
+    State.AngularVelocityBody = frame.AngularVelocityBody;
+    Channels = frame.Controls;
+
+    // The control surfaces have to move with the recording too, or the replay
+    // shows an aeroplane manoeuvring with its controls centred.
+    if (AircraftLoaded)
+    {
+        // Zero thrust: the recording is being posed, not flown, and the
+        // propulsion state belongs to the live aircraft that is paused.
+        LastForces = Plane.ComputeForces(State, Channels, Air, Wind,
+                                         rc::PropulsionOutput{}, &Ground);
+    }
+
+    PublishTransform();
+}
+
+double RCSimulationNode::get_replay_duration() const { return Recorder.Duration(); }
+double RCSimulationNode::get_replay_earliest() const { return Recorder.EarliestTime(); }
+double RCSimulationNode::get_replay_latest() const { return Recorder.LatestTime(); }
+
+void RCSimulationNode::set_replaying(bool replaying)
+{
+    if (replaying == Replaying) { return; }
+    Replaying = replaying;
+
+    if (Replaying)
+    {
+        // Entering: start where the interesting part is. If the aircraft has
+        // crashed that is the crash; otherwise it is the last few seconds,
+        // because whatever the pilot wants to see has just happened.
+        StashedState = State;
+        StashedChannels = Channels;
+        ReplaySpeed = 0.35;
+        if (Crash.Crashed)
+        {
+            replay_to_crash();
+        }
+        else
+        {
+            ReplayTime = std::max(Recorder.EarliestTime(), Recorder.LatestTime() - 8.0);
+        }
+    }
+    else
+    {
+        // Leaving: back to the live aircraft exactly as it was. A replay is
+        // something you look at, not somewhere you can fly from - rewinding
+        // and then flying on would be a different simulator.
+        State = StashedState;
+        Channels = StashedChannels;
+        PublishTransform();
+    }
+}
+
+void RCSimulationNode::set_replay_time(double seconds)
+{
+    ReplayTime = std::min(std::max(seconds, Recorder.EarliestTime()), Recorder.LatestTime());
+}
+
+void RCSimulationNode::set_replay_speed(double speed)
+{
+    ReplaySpeed = std::min(std::max(speed, -4.0), 4.0);
+}
+
+void RCSimulationNode::replay_to_crash()
+{
+    // Backwards from the end: the crash is the LAST transition into the
+    // crashed state, not the first, and a flight can contain more than one.
+    for (std::size_t i = Recorder.Size(); i-- > 0; )
+    {
+        if (!Recorder.At(i).Crashed) { continue; }
+        // Six seconds before it, so the approach that caused it is in view.
+        ReplayTime = std::max(Recorder.EarliestTime(), Recorder.At(i).Time - 6.0);
+        return;
+    }
+    ReplayTime = Recorder.LatestTime();
+}
+
+Dictionary RCSimulationNode::get_replay_frame() const
+{
+    const rc::FlightFrame frame = Recorder.SampleAt(ReplayTime);
+    Dictionary out;
+    out["time"] = frame.Time;
+    out["airspeed"] = frame.Airspeed;
+    out["alpha_deg"] = rc::units::ToDegrees(frame.Alpha);
+    out["stalled"] = frame.StalledFraction;
+    out["rpm"] = frame.Rpm;
+    out["thrust"] = frame.Thrust;
+    out["battery"] = frame.BatteryCharge;
+    out["vario"] = frame.VerticalAirSpeed;
+    out["altitude"] = -frame.PositionWorld.z;
+    out["on_ground"] = frame.OnGround;
+    out["crashed"] = frame.Crashed;
+    out["aileron"] = frame.Controls.Aileron();
+    out["elevator"] = frame.Controls.Elevator();
+    out["rudder"] = frame.Controls.Rudder();
+    out["throttle"] = frame.Controls.Throttle();
+    return out;
+}
+
+PackedVector3Array RCSimulationNode::get_flight_path(int maxPoints) const
+{
+    PackedVector3Array path;
+    const std::size_t count = Recorder.Size();
+    if (count == 0) { return path; }
+
+    const auto wanted = static_cast<std::size_t>(std::max(maxPoints, 2));
+    const std::size_t stride = std::max<std::size_t>(1, count / wanted);
+    for (std::size_t i = 0; i < count; i += stride)
+    {
+        path.push_back(ToGodotPosition(Recorder.At(i).PositionWorld));
+    }
+    return path;
+}
 
 void RCSimulationNode::configure_terrain(const Dictionary& settings)
 {
@@ -1112,6 +1283,19 @@ void RCSimulationNode::_bind_methods()
     OPENRC_BIND(get_terrain_seed);
     OPENRC_BIND1(configure_terrain, "settings");
     OPENRC_BIND(get_terrain_settings);
+    OPENRC_BIND(get_replay_duration);
+    OPENRC_BIND(get_replay_earliest);
+    OPENRC_BIND(get_replay_latest);
+    OPENRC_BIND1(set_replaying, "replaying");
+    OPENRC_BIND(get_replaying);
+    OPENRC_BIND1(advance_replay, "delta");
+    OPENRC_BIND1(set_replay_time, "seconds");
+    OPENRC_BIND(get_replay_time);
+    OPENRC_BIND1(set_replay_speed, "speed");
+    OPENRC_BIND(get_replay_speed);
+    OPENRC_BIND(replay_to_crash);
+    OPENRC_BIND(get_replay_frame);
+    OPENRC_BIND1(get_flight_path, "max_points");
     OPENRC_BIND(get_air_vertical_speed_mps);
     OPENRC_BIND(get_thermal_lift_mps);
     OPENRC_BIND(get_slope_lift_mps);

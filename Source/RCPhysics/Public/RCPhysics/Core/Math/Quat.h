@@ -157,4 +157,45 @@ inline bool NearlySameRotation(const Quat& a, const Quat& b, Real tol = 1e-9)
     return std::fabs(std::fabs(d) - 1.0) <= tol;
 }
 
+
+/** Shortest-arc spherical interpolation.
+ *
+ *  A linear blend of two quaternions is not a rotation - renormalising it gives
+ *  something that visibly shrinks the attitude towards the halfway point over a
+ *  fast roll, which is exactly where a replay is being watched closely. This
+ *  costs a trig call and is correct.
+ *
+ *  Falls back to a linear blend when the two are already close, where the
+ *  spherical form loses precision and the difference is invisible. */
+inline Quat Slerp(const Quat& a, const Quat& b, Real t)
+{
+    Real cosine = a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
+
+    // Take the shorter of the two arcs: q and -q are the same rotation, and
+    // without this a roll through more than a half turn goes the long way.
+    Quat end = b;
+    if (cosine < Real(0))
+    {
+        end = Quat(-b.w, -b.x, -b.y, -b.z);
+        cosine = -cosine;
+    }
+
+    if (cosine > Real(0.9995))
+    {
+        return Quat(a.w + (end.w - a.w) * t,
+                    a.x + (end.x - a.x) * t,
+                    a.y + (end.y - a.y) * t,
+                    a.z + (end.z - a.z) * t).Normalized();
+    }
+
+    const Real angle = std::acos(cosine);
+    const Real sine = std::sin(angle);
+    const Real wa = std::sin((Real(1) - t) * angle) / sine;
+    const Real wb = std::sin(t * angle) / sine;
+    return Quat(a.w * wa + end.w * wb,
+                a.x * wa + end.x * wb,
+                a.y * wa + end.y * wb,
+                a.z * wa + end.z * wb).Normalized();
+}
+
 } // namespace rc
