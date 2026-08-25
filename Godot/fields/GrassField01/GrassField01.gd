@@ -353,7 +353,11 @@ func _build_environment() -> void:
 	sun.directional_shadow_max_distance = 300.0
 	sun.shadow_bias = 0.5
 	sun.shadow_normal_bias = 3.5
-	sun.directional_shadow_blend_splits = true
+	# The blend between cascade splits double-sampled thin objects (the
+	# windsock pole and its cone) at the boundary and rendered their shadow as
+	# a hard near-black quad on the ground. With the 8192 map the splits are
+	# already smooth; the blend buys nothing and costs the artifact.
+	sun.directional_shadow_blend_splits = false
 	_sun = sun
 	_base_sun_energy = sun.light_energy
 	add_child(sun)
@@ -522,7 +526,9 @@ func _build_grass() -> void:
 		# that turned out to be the Xvfb present path; on the real display the
 		# scene runs at 160 fps, which is several times the headroom a trainer
 		# needs. See Docs/PERFORMANCE.md.
-		count = int(GRASS_BLADES * 0.70)
+		# Mown-height cards cover a third of the area of the full-size scan,
+		# so the count has to rise to keep the field green rather than dotted.
+		count = int(GRASS_BLADES * 1.5)
 
 	multi.instance_count = count
 	for i in count:
@@ -540,8 +546,8 @@ func _build_grass() -> void:
 		if maxf(along, across) < 1.0 and _rng.randf() < 0.97:
 			continue
 		# The scan is a 0.4 m clump - the size of rough, not of a mown field.
-		# Scaled to ~0.13-0.21 m, which is what a club strip actually is.
-		var scale: float = _rng.randf_range(0.32, 0.52)
+		# Scaled to ~0.15-0.23 m, which is what a club strip actually is.
+		var scale: float = _rng.randf_range(0.38, 0.58)
 		var basis := Basis(Vector3.UP, _rng.randf() * TAU) \
 			.scaled(Vector3(scale, scale * _rng.randf_range(0.85, 1.2), scale))
 		multi.set_instance_transform(i, Transform3D(basis,

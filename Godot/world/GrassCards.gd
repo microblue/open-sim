@@ -103,7 +103,9 @@ static func tuft_mesh(card: Dictionary) -> ArrayMesh:
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
 
-	var segments: int = 8
+	# Five is enough for the cubic bend to read; eight tripled the grass
+	# vertex budget for a bend nobody can count the steps of.
+	var segments: int = 5
 	for blade in 3:
 		var angle: float = float(blade) / 3.0 * PI
 		var right_dir := Vector3(cos(angle), 0.0, sin(angle))

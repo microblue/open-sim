@@ -18,7 +18,7 @@
   "licence": "CC0",
 
   "hdris": [
-    { "name": "kloofendal_48d_partly_cloudy_puresky", "res": "4k",
+    { "name": "kloofendal_48d_partly_cloudy_puresky", "res": "8k",
       "use": "sky and image-based lighting - blue with cumulus, sun high" },
     { "name": "wasteland_clouds_puresky", "res": "4k",
       "use": "alternative: heavier cloud" },

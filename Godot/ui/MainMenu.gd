@@ -76,7 +76,9 @@ func _ready() -> void:
 	_sim = get_node_or_null(simulation_path) as RCSimulationNode
 	_director = get_node_or_null(director_path)
 
-	add_child(UITheme.make_frosted(0.78, 3.6))
+	# Darken and blur enough that the panels sit on the field, not so much
+	# that the field becomes a void - the world behind the menu is the point.
+	add_child(UITheme.make_frosted(0.45, 1.7))
 
 	_canvas = Control.new()
 	_canvas.anchor_right = 1.0
@@ -702,15 +704,20 @@ func _draw_footer(size: Vector2) -> void:
 			UITheme.SIZE_LARGE, Color(0.02, 0.06, 0.09, 1.0),
 			Color(0, 0, 0, 0.4))
 
-	# The briefing line: what exactly you are about to fly.
+	# The briefing line: what exactly you are about to fly, on a panel so it
+	# reads as a status chip rather than a floating string.
 	var summary: String = "%s   %s   %s   wind %.1f m/s" % [
 		_aircraft[_aircraft_index]["name"] if not _aircraft.is_empty() else "",
 		_scenes[_scene_index]["name"],
 		_weathers[_weather_index]["name"],
 		_weathers[_weather_index]["wind_mps"]]
-	UITheme.draw_text(_canvas, Vector2(size.x * 0.5, size.y - 106.0), summary,
+	var sum_w: float = minf(UITheme.text_width(summary, UITheme.SIZE_SECTION) + 48.0,
+							size.x - 80.0)
+	var sum_rect := Rect2((size.x - sum_w) * 0.5, size.y - 112.0, sum_w, 30.0)
+	UITheme.draw_panel(_canvas, sum_rect, Color(0, 0, 0, 0.35), UITheme.STROKE, 8.0)
+	UITheme.draw_text(_canvas, Vector2(size.x * 0.5, size.y - 93.0), summary,
 					  UITheme.SIZE_SECTION, UITheme.TEXT, HORIZONTAL_ALIGNMENT_CENTER,
-					  size.x - 80.0)
+					  sum_w - 20.0)
 
 	UITheme.draw_text(_canvas, Vector2(size.x - PAD, size.y - 24.0),
 					  "arrows choose   tab section   enter fly   esc %s" %

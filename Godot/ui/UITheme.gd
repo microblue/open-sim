@@ -323,16 +323,17 @@ static func frosted_shader() -> Shader:
 shader_type canvas_item;
 
 uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
-uniform float blur = 3.2;
-uniform float darken = 0.72;
+uniform float blur = 1.6;
+uniform float darken = 0.42;
 uniform vec3 base : source_color = vec3(0.043, 0.055, 0.075);
 
 void fragment() {
 	vec3 scene = textureLod(screen_tex, SCREEN_UV, blur).rgb;
-	// A touch of desaturation as well as darkening: a blurred image that keeps
-	// its full colour still competes with the text sitting on it.
+	// Desaturate and darken just enough that text sits on it - the point of
+	// the frost is that the field stays recognizable behind the panels, so
+	// anything stronger than this reads as mud instead of as glass.
 	float luma = dot(scene, vec3(0.2126, 0.7152, 0.0722));
-	scene = mix(scene, vec3(luma), 0.35);
+	scene = mix(scene, vec3(luma), 0.18);
 	COLOR = vec4(mix(scene, base, darken), 1.0);
 }
 """

@@ -36,7 +36,7 @@ const GRID: int = 4
 ## constant and the detail fall off with distance.
 ## Vertices along one edge of a chunk. Raised from 40 once the frame time was
 ## understood: this is what decides how sharp a ridgeline is.
-const CHUNK_RESOLUTION: int = 72
+const CHUNK_RESOLUTION: int = 96
 
 ## Levels beyond this do not cast shadows. A shadow map stretched over tens of
 ## kilometres has no resolution left for the aircraft, and a mountain twenty
