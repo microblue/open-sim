@@ -102,7 +102,8 @@ func _gather() -> void:
 
 	if _sim == null:
 		_aircraft = [{"stem": "Trainer1500", "name": "Trainer 1500",
-					  "description": "", "span": 0.0, "mass": 0.0, "approach": 0.0}]
+					  "description": "", "span": 0.0, "mass": 0.0, "approach": 0.0,
+					  "loading": 0.0, "pw": 0.0}]
 		return
 	var restore: String = _sim.aircraft_definition
 	var stems: PackedStringArray = _sim.list_aircraft()
@@ -117,6 +118,8 @@ func _gather() -> void:
 			"span": _sim.get_wingspan_m(),
 			"mass": _sim.get_mass_kg(),
 			"approach": _sim.get_approach_speed_mps(),
+			"loading": _sim.get_wing_loading_pa(),
+			"pw": _sim.get_power_to_weight_w_per_kg(),
 		})
 	_sim.aircraft_definition = restore
 	_sim.reload_aircraft()
@@ -231,43 +234,38 @@ func _layout() -> void:
 			thumb.queue_free()
 	_thumbs.clear()
 
-	var top: float = 122.0
-	var aircraft_w: float = minf(400.0, size.x * 0.32)
-	var right_x: float = PAD + aircraft_w + 36.0
-	var right_w: float = maxf(size.x - right_x - PAD, 200.0)
+	var g: Dictionary = _geometry(size)
+	var top: float = g["top"]
+	var aircraft_w: float = g["aircraft_w"]
+	var right_x: float = g["right_x"]
 
 	# --- aircraft cards -----------------------------------------------------
-	var card_h: float = 76.0
-	var gap: float = 12.0
+	var card_h: float = g["aircraft_card_h"]
+	var gap: float = g["aircraft_gap"]
 	for i in _aircraft.size():
 		var rect := Rect2(PAD, top + 40.0 + float(i) * (card_h + gap),
 						  aircraft_w, card_h)
 		_hit.append({"rect": rect, "kind": "aircraft", "index": i, "action": "aircraft"})
 
 	# --- scene cards --------------------------------------------------------
-	var scene_gap: float = 14.0
-	var scene_w: float = (right_w - scene_gap * float(_scenes.size() - 1)) / float(_scenes.size())
-	var scene_thumb_h: float = scene_w * 9.0 / 16.0
 	for i in _scenes.size():
-		var rect := Rect2(right_x + float(i) * (scene_w + scene_gap),
-						  top + 40.0, scene_w, scene_thumb_h)
+		var rect := Rect2(right_x + float(i) * (g["scene_w"] + g["scene_gap"]),
+						  g["scene_y"], g["scene_w"], g["scene_thumb_h"])
 		_hit.append({"rect": rect, "kind": "scene", "index": i, "action": "scene"})
 		var thumb: TextureRect = _make_thumb("scene", _scenes[i]["id"],
-				Vector2(scene_w, scene_thumb_h))
+				Vector2(g["scene_w"], g["scene_thumb_h"]))
 		if thumb != null:
 			thumb.position = rect.position
 			_canvas.add_child(thumb)
 			_thumbs.append(thumb)
 
 	# --- weather cards ------------------------------------------------------
-	var weather_y: float = top + 40.0 + scene_thumb_h + 30.0
-	var weather_thumb_h: float = minf(scene_thumb_h * 0.62, 84.0)
 	for i in _weathers.size():
-		var rect := Rect2(right_x + float(i) * (scene_w + scene_gap),
-						  weather_y, scene_w, weather_thumb_h)
+		var rect := Rect2(right_x + float(i) * (g["scene_w"] + g["scene_gap"]),
+						  g["weather_y"], g["scene_w"], g["weather_thumb_h"])
 		_hit.append({"rect": rect, "kind": "weather", "index": i, "action": "weather"})
 		var thumb: TextureRect = _make_thumb("weather", _weathers[i]["id"],
-				Vector2(scene_w, weather_thumb_h))
+				Vector2(g["scene_w"], g["weather_thumb_h"]))
 		if thumb != null:
 			thumb.position = rect.position
 			_canvas.add_child(thumb)
@@ -285,6 +283,69 @@ func _layout() -> void:
 	_hit.append({"rect": _fly_rect, "action": "fly"})
 
 	_canvas.queue_redraw()
+
+
+## One place that decides where every column and row sits. The draw functions
+## and the hit-testing both read this, so what is drawn and what is clickable
+## can never disagree - which is exactly how the description row came to sit on
+## top of the weather thumbnails before.
+##
+## The layout is height-aware: the bottom bar must never cover a card, at any
+## window size. On a short window the thumbnails and the aircraft cards shrink
+## first, so the FLY button always sits below the content rather than on it.
+func _geometry(size: Vector2) -> Dictionary:
+	var fly_top: float = size.y - 92.0
+	var top: float = minf(176.0, size.y * 0.24)
+	var aircraft_w: float = minf(400.0, size.x * 0.32)
+	var right_x: float = PAD + aircraft_w + 36.0
+	var right_w: float = maxf(size.x - right_x - PAD - 12.0, 200.0)
+	var scene_gap: float = 14.0
+	var scene_w: float = (right_w - scene_gap * float(maxi(_scenes.size() - 1, 1))) \
+			/ float(maxi(_scenes.size(), 1))
+
+	# Vertical budget from the section top to the bottom bar, minus what the
+	# labels need: scene name, one-line tag, weather heading, weather name and
+	# its wind line. Whatever is left is split between the two thumbnail rows.
+	var scene_name_size: int = _fit_size(_widest_name(_scenes), scene_w)
+	var fixed_text: float = 26.0 + 16.0 + 34.0 + 19.0 + 24.0
+	var available_thumbs: float = fly_top - top - 40.0 - fixed_text - 10.0
+	var scene_thumb_h: float = minf(scene_w * 9.0 / 16.0, available_thumbs * 0.56)
+	var weather_thumb_h: float = minf(scene_thumb_h * 0.8, available_thumbs - scene_thumb_h)
+	scene_thumb_h = maxf(scene_thumb_h, 30.0)
+	weather_thumb_h = maxf(weather_thumb_h, 24.0)
+
+	# Aircraft cards shrink the same way, so the last card clears the bottom bar.
+	var aircraft_card_h: float = minf(76.0,
+			(fly_top - top - 40.0 - 3.0 * 12.0 - 10.0) / float(maxi(_aircraft.size(), 1)))
+	var aircraft_gap: float = 12.0
+
+	var scene_block: float = scene_thumb_h + 21.0 + float(scene_name_size) \
+			+ 8.0 + 15.0 + 14.0
+	var weather_y: float = top + 40.0 + scene_block + 34.0
+
+	return {
+		"top": top,
+		"aircraft_w": aircraft_w,
+		"aircraft_card_h": aircraft_card_h,
+		"aircraft_gap": aircraft_gap,
+		"right_x": right_x,
+		"scene_gap": scene_gap,
+		"scene_w": scene_w,
+		"scene_thumb_h": scene_thumb_h,
+		"scene_y": top + 40.0,
+		"scene_name_size": scene_name_size,
+		"weather_y": weather_y,
+		"weather_thumb_h": weather_thumb_h,
+	}
+
+
+func _widest_name(entries: Array[Dictionary]) -> String:
+	var widest: String = ""
+	for entry in entries:
+		if UITheme.text_width(entry["name"], UITheme.SIZE_TITLE) \
+				> UITheme.text_width(widest, UITheme.SIZE_TITLE):
+			widest = entry["name"]
+	return widest
 
 
 ## Load a preview for the menu, or null to draw a placeholder instead.
@@ -335,10 +396,10 @@ func _draw_header(size: Vector2, shift: Vector2) -> void:
 	UITheme.draw_text_shadow(_canvas, Vector2(PAD, origin.y + 52.0), "OPENRC",
 							 UITheme.SIZE_DISPLAY, UITheme.TEXT,
 							 Color(0, 0, 0, 0.6))
-	UITheme.draw_label(_canvas, origin + Vector2(5, 92),
+	UITheme.draw_label(_canvas, origin + Vector2(5, 88),
 					  "RC FLIGHT TRAINING SIMULATOR", UITheme.ACCENT, 3.0,
 					  UITheme.SIZE_SECTION)
-	UITheme.draw_rule(_canvas, origin + Vector2(0, 112), 340.0,
+	UITheme.draw_rule(_canvas, origin + Vector2(0, 106), 340.0,
 					  UITheme.STROKE_STRONG, 2.0)
 
 	_draw_transmitter(_transmitter_origin + shift)
@@ -350,7 +411,11 @@ func _draw_header(size: Vector2, shift: Vector2) -> void:
 func _draw_transmitter(origin: Vector2) -> void:
 	var rect := Rect2(origin, Vector2(300, 64))
 	var ready: bool = _input != null and _input.is_connected() and _input.is_fully_bound()
-	var state_colour: Color = UITheme.GOOD if ready else UITheme.WARN
+	var connected: bool = _input != null and _input.is_connected()
+	# Amber is reserved for "needs action". A radio that is simply not plugged
+	# in yet is a neutral state, not an error - paint it dim, not warning.
+	var state_colour: Color = UITheme.GOOD if ready \
+			else (UITheme.WARN if connected else UITheme.TEXT_DIM)
 
 	UITheme.draw_panel(_canvas, rect,
 			Color(state_colour.r, state_colour.g, state_colour.b, 0.10),
@@ -382,7 +447,7 @@ func _draw_transmitter(origin: Vector2) -> void:
 
 
 func _section_heading(pos: Vector2, text: String, count: int, active: bool) -> void:
-	UITheme.draw_label(_canvas, pos, "%s   %d" % [text, count],
+	UITheme.draw_label(_canvas, pos, text,
 					   UITheme.ACCENT if active else UITheme.TEXT_DIM, 2.6,
 					   UITheme.SIZE_SECTION)
 	var y: float = pos.y + 22.0
@@ -391,13 +456,14 @@ func _section_heading(pos: Vector2, text: String, count: int, active: bool) -> v
 
 
 func _draw_aircraft(size: Vector2, shift: Vector2) -> void:
-	var top: float = 122.0
+	var g: Dictionary = _geometry(size)
+	var top: float = g["top"]
 	_section_heading(Vector2(PAD, top) + shift, "AIRCRAFT", _aircraft.size(),
 					 _focus == 0)
 
-	var card_h: float = 76.0
-	var gap: float = 12.0
-	var aircraft_w: float = minf(400.0, size.x * 0.32)
+	var card_h: float = g["aircraft_card_h"]
+	var gap: float = g["aircraft_gap"]
+	var aircraft_w: float = g["aircraft_w"]
 	for i in _aircraft.size():
 		var rect := Rect2(PAD, top + 40.0 + float(i) * (card_h + gap),
 						  aircraft_w, card_h)
@@ -416,23 +482,45 @@ func _draw_aircraft(size: Vector2, shift: Vector2) -> void:
 		UITheme.draw_text(_canvas, Vector2(x, rect.position.y + 55.0),
 						  specs, UITheme.SIZE_LABEL, UITheme.TEXT_DIM)
 
+	# The space below the roster belongs to the aeroplane that is actually
+	# selected: what it is, and the two numbers that say how it flies. This is
+	# the brief. It is drawn only when it fits above the bottom bar - on a
+	# short window the roster shrinks and the brief yields rather than sliding
+	# under the FLY button - and its text is clipped to the column so it can
+	# never reach across into the button's space.
+	if not _aircraft.is_empty():
+		var card: Dictionary = _aircraft[_aircraft_index]
+		var y: float = top + 40.0 + float(_aircraft.size()) * (card_h + gap) + 10.0
+		var max_y: float = size.y - 104.0
+		var text_w: float = aircraft_w - 24.0
+		if y + 96.0 < max_y:
+			UITheme.draw_label(_canvas, Vector2(PAD, y), "briefing",
+							   UITheme.ACCENT, 2.6, UITheme.SIZE_SECTION)
+			y += 26.0
+			var detail: String = "%.0f N/m2 loading   %.0f W/kg   app %.0f m/s" % [
+				card["loading"], card["pw"], card["approach"]]
+			UITheme.draw_text(_canvas, Vector2(PAD, y),
+							  _clip(detail, text_w, UITheme.SIZE_LABEL),
+							  UITheme.SIZE_LABEL, UITheme.TEXT_DIM)
+			y += 22.0
+			for line in _wrap(_clip(card["description"], text_w, UITheme.SIZE_LABEL), 40):
+				if y + 18.0 > max_y:
+					break
+				UITheme.draw_text(_canvas, Vector2(PAD, y), line,
+								  UITheme.SIZE_LABEL, UITheme.TEXT_DIM)
+				y += 18.0
+
 
 func _draw_scenes(size: Vector2, shift: Vector2) -> void:
-	var aircraft_w: float = minf(400.0, size.x * 0.32)
-	var right_x: float = PAD + aircraft_w + 36.0
-	var right_w: float = maxf(size.x - right_x - PAD, 200.0)
-	var top: float = 122.0
+	var g: Dictionary = _geometry(size)
+	var right_x: float = g["right_x"]
 
-	_section_heading(Vector2(right_x, top) + shift, "LOCATION", _scenes.size(),
+	_section_heading(Vector2(right_x, g["top"]) + shift, "LOCATION", _scenes.size(),
 					 _focus == 1)
 
-	var scene_gap: float = 14.0
-	var scene_w: float = (right_w - scene_gap * float(_scenes.size() - 1)) / float(_scenes.size())
-	var thumb_h: float = scene_w * 9.0 / 16.0
-
 	for i in _scenes.size():
-		var rect := Rect2(right_x + float(i) * (scene_w + scene_gap),
-						  top + 40.0, scene_w, thumb_h)
+		var rect := Rect2(right_x + float(i) * (g["scene_w"] + g["scene_gap"]),
+						  g["scene_y"], g["scene_w"], g["scene_thumb_h"])
 		var selected: bool = i == _scene_index
 		var hovered: bool = _hover.get("kind", "") == "scene" \
 				and int(_hover.get("index", -1)) == i
@@ -440,29 +528,27 @@ func _draw_scenes(size: Vector2, shift: Vector2) -> void:
 		if _thumb_textures.get("scene:%s" % _scenes[i]["id"]) == null:
 			_draw_placeholder(rect, _scenes[i]["name"], UITheme.ACCENT)
 		_draw_card(rect, selected, hovered, _focus == 1)
-		# The name hangs below the preview, so it never covers it.
+		# One size for every name in the row, chosen for the widest - a row
+		# where one card's label silently shrinks reads as a rendering bug.
+		# The name is all the card carries: a description line truncated to fit
+		# a narrow card reads as broken text, so the description lives on the
+		# selected card only (the aircraft column's brief) and in the world.
 		var name_y: float = rect.end.y + 21.0
 		UITheme.draw_text(_canvas, Vector2(rect.position.x, name_y),
-						  _scenes[i]["name"], UITheme.SIZE_TITLE,
+						  _scenes[i]["name"], g["scene_name_size"],
 						  UITheme.TEXT if selected else UITheme.TEXT_DIM)
 
 
 func _draw_weather(size: Vector2, shift: Vector2) -> void:
-	var aircraft_w: float = minf(400.0, size.x * 0.32)
-	var right_x: float = PAD + aircraft_w + 36.0
-	var right_w: float = maxf(size.x - right_x - PAD, 200.0)
-	var scene_gap: float = 14.0
-	var scene_w: float = (right_w - scene_gap * float(_scenes.size() - 1)) / float(_scenes.size())
-	var scene_thumb_h: float = scene_w * 9.0 / 16.0
-	var weather_y: float = 122.0 + 40.0 + scene_thumb_h + 30.0
+	var g: Dictionary = _geometry(size)
+	var right_x: float = g["right_x"]
 
-	_section_heading(Vector2(right_x, weather_y - 40.0) + shift, "WEATHER",
+	_section_heading(Vector2(right_x, g["weather_y"] - 40.0) + shift, "WEATHER",
 					 _weathers.size(), _focus == 2)
 
-	var thumb_h: float = minf(scene_thumb_h * 0.62, 84.0)
 	for i in _weathers.size():
-		var rect := Rect2(right_x + float(i) * (scene_w + scene_gap),
-						  weather_y, scene_w, thumb_h)
+		var rect := Rect2(right_x + float(i) * (g["scene_w"] + g["scene_gap"]),
+						  g["weather_y"], g["scene_w"], g["weather_thumb_h"])
 		var selected: bool = i == _weather_index
 		var hovered: bool = _hover.get("kind", "") == "weather" \
 				and int(_hover.get("index", -1)) == i
@@ -477,8 +563,25 @@ func _draw_weather(size: Vector2, shift: Vector2) -> void:
 						  UITheme.SIZE_VALUE,
 						  UITheme.TEXT if selected else UITheme.TEXT_DIM)
 		var wind: String = "%.1f m/s" % _weathers[i]["wind_mps"]
-		UITheme.draw_text(_canvas, Vector2(x, name_y + 21.0), wind,
-						  UITheme.SIZE_LABEL, UITheme.ACCENT if selected else UITheme.TEXT_FAINT)
+		UITheme.draw_text(_canvas, Vector2(x, name_y + 25.0), wind,
+						  UITheme.SIZE_LABEL, UITheme.ACCENT if selected else UITheme.TEXT_DIM)
+
+
+## The largest of the card title sizes that fits `text` in `width` pixels.
+func _fit_size(text: String, width: float) -> int:
+	for size in [UITheme.SIZE_TITLE, UITheme.SIZE_VALUE, UITheme.SIZE_LABEL]:
+		if UITheme.text_width(text, size) <= width:
+			return size
+	return UITheme.SIZE_LABEL
+
+
+func _clip(text: String, width: float, size: int) -> String:
+	if UITheme.text_width(text, size) <= width:
+		return text
+	var out: String = text.strip_edges()
+	while not out.is_empty() and UITheme.text_width(out + "…", size) > width:
+		out = out.substr(0, out.length() - 1).strip_edges()
+	return out + "…"
 
 
 ## One card: a translucent panel, an accent edge when selected, a brightened
@@ -536,9 +639,26 @@ func _draw_footer(size: Vector2) -> void:
 		_weathers[_weather_index]["name"],
 		_weathers[_weather_index]["wind_mps"]]
 	UITheme.draw_text(_canvas, Vector2(size.x * 0.5, size.y - 106.0), summary,
-					  UITheme.SIZE_SECTION, UITheme.TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER)
+					  UITheme.SIZE_SECTION, UITheme.TEXT, HORIZONTAL_ALIGNMENT_CENTER,
+					  size.x - 80.0)
 
-	UITheme.draw_text(_canvas, Vector2(size.x - PAD, size.y - 20.0),
+	UITheme.draw_text(_canvas, Vector2(size.x - PAD, size.y - 24.0),
 					  "arrows choose   tab section   enter fly   esc %s" %
 					  ("quit" if start_screen else "back"),
-					  UITheme.SIZE_MICRO, UITheme.TEXT_FAINT, HORIZONTAL_ALIGNMENT_RIGHT)
+					  UITheme.SIZE_LABEL, UITheme.TEXT_DIM, HORIZONTAL_ALIGNMENT_RIGHT)
+
+
+static func _wrap(text: String, columns: int) -> PackedStringArray:
+	var lines := PackedStringArray()
+	var current := ""
+	for word in text.split(" ", false):
+		if current.is_empty():
+			current = word
+		elif current.length() + 1 + word.length() <= columns:
+			current += " " + word
+		else:
+			lines.append(current)
+			current = word
+	if not current.is_empty():
+		lines.append(current)
+	return lines

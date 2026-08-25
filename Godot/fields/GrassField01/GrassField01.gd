@@ -245,9 +245,9 @@ func _build_environment() -> void:
 	# aerial perspective term and the volumetric fog - and together they turned
 	# a clear afternoon into a permanent overcast. Aerial perspective on its own
 	# is enough to give distance a cue.
-	environment.fog_density = 0.0000075
+	environment.fog_density = 0.00007
 	environment.fog_sky_affect = 0.0
-	environment.fog_aerial_perspective = 0.22
+	environment.fog_aerial_perspective = 0.45
 
 	# Volumetric fog, on top of the depth fog.
 	#
@@ -555,7 +555,11 @@ func _build_grass() -> void:
 	instance.material_override = _grass_material
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# Grass past this is a shimmer, not detail, and it is where the overdraw is.
-	instance.visibility_range_end = 135.0
+	# The cutoff used to sit at 135 m with no fade, which read as a hard band
+	# across the field where the crops stopped being crops. Pushed out to where
+	# the distance haze hides the edge. (Fade modes need a dithered material;
+	# this one is alpha-cut, so the cutoff stays hard but far away.)
+	instance.visibility_range_end = 240.0
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	add_child(instance)
 

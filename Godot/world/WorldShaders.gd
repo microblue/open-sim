@@ -50,7 +50,7 @@ uniform float beach_height = 5.0;
  *  noise gave it and came out as dry steppe - which is a fine landscape and the
  *  wrong one to land a trainer on. */
 uniform float field_radius = 300.0;
-uniform float field_blend = 420.0;
+uniform float field_blend = 900.0;
 
 /** Metres per tile of the detail sample, and of the macro sample that breaks
  *  its repeat. */
@@ -232,7 +232,7 @@ void fragment() {
 		// Whitened at range: relief finer than a pixel is noise, and noise in
 		// the normal makes a distant hillside sparkle under a moving camera.
 		float range = length(world_position - CAMERA_POSITION_WORLD);
-		float relief = 1.0 - smoothstep(180.0, 2600.0, range);
+		float relief = 1.0 - smoothstep(400.0, 5200.0, range);
 		vec3 tangent_normal = normalize(packed * 2.0 - 1.0);
 		NORMAL_MAP = mix(vec3(0.5, 0.5, 1.0), tangent_normal * 0.5 + 0.5, relief);
 		NORMAL_MAP_DEPTH = 1.6;
