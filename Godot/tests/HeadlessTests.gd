@@ -498,6 +498,8 @@ func _finish_tree() -> void:
 	_sim.clear_manual_channels()
 	_sim.set_tree_obstacles(PackedFloat32Array())
 
+	_test_failures()
+
 	# Last, because by now the recorder holds a whole flight with a crash in it,
 	# which is exactly what a replay has to be able to show.
 	_test_replay()
@@ -506,6 +508,80 @@ func _finish_tree() -> void:
 	if _failures == 0:
 		print("in-engine tests passed")
 	quit(1 if _failures > 0 else 0)
+
+
+## Failures, through the whole stack rather than in isolation: the unit tests
+## say the model breaks the right channel, this says the aeroplane behaves
+## accordingly - that a dead stick leaves a controllable glider, and that a
+## jammed aileron actually keeps rolling it.
+func _test_failures() -> void:
+	print("\n  failures")
+
+	_sim.clear_failures()
+	_sim.spawn_mode = RCSimulationNode.SPAWN_AIR
+	_sim.spawn_altitude_m = 120.0
+	_sim.reset_state()
+	_sim.set_manual_channel(RCInputNode.CHANNEL_THROTTLE, 0.85)
+
+	# Under power it climbs or holds height.
+	run_for(1.5)
+	var powered_rpm: float = _sim.get_rpm()
+	_check(powered_rpm > 1000.0, "the motor is running (%.0f rpm)" % powered_rpm)
+
+	# Dead stick.
+	_sim.induce_failure(1, 0)
+	_check(_sim.has_failure(), "the failure takes")
+	_check(_sim.get_failure_text().find("DEAD STICK") >= 0,
+		"the pilot is told what went wrong")
+
+	run_for(0.6)
+	_check(_sim.get_rpm() < powered_rpm * 0.5,
+		"the motor stops (%.0f rpm)" % _sim.get_rpm())
+	_check(_sim.get_thrust_n() < 0.5, "and the thrust with it (%.2f N)" % _sim.get_thrust_n())
+
+	# But the controls still work, which is the whole point of a dead stick.
+	_sim.set_manual_channel(RCInputNode.CHANNEL_AILERON, 1.0)
+	var roll_before: float = _sim.get_attitude_degrees().x
+	run_for(0.8)
+	var rolled: float = _sim.get_attitude_degrees().x - roll_before
+	_check(absf(rolled) > 3.0,
+		"the controls still answer with the motor dead (%.1f deg)" % rolled)
+
+	# Jammed aileron: centring the stick does nothing and it keeps rolling.
+	_sim.clear_failures()
+	_sim.reset_state()
+	_sim.set_manual_channel(RCInputNode.CHANNEL_AILERON, 0.8)
+	run_for(0.5)
+	_sim.induce_failure(2, 0)          # jam the aileron where it is
+	_sim.set_manual_channel(RCInputNode.CHANNEL_AILERON, 0.0)   # pilot centres it
+	var jam_before: float = _sim.get_attitude_degrees().x
+	run_for(0.8)
+	var still_rolling: float = _sim.get_attitude_degrees().x - jam_before
+	_check(absf(still_rolling) > 3.0,
+		"a jammed aileron keeps rolling with the stick centred (%.1f deg)" % still_rolling)
+
+	_sim.clear_failures()
+	_sim.clear_manual_channels()
+	_sim.reset_state()
+
+	# Leave a flight in the recorder for the replay test that follows. The
+	# resets above cleared it, deliberately - a replay must not run across one.
+	_sim.spawn_mode = RCSimulationNode.SPAWN_AIR
+	_sim.spawn_altitude_m = 200.0
+	_sim.reset_state()
+	run_for(14.0)
+
+
+## Run the simulation forward, synchronously.
+##
+## These tests are called from _process, so they cannot yield to let the scene
+## tree step the physics. RCSimulationNode.advance() is what _process itself
+## calls, so this is the same code path at the same fixed rate.
+func run_for(seconds: float) -> void:
+	var step: float = 1.0 / 60.0
+	var steps: int = int(seconds / step)
+	for i in steps:
+		_sim.advance(step)
 
 
 ## The recorder has been running through every phase above, so by now it holds

@@ -137,6 +137,8 @@ OpenRC Simulator
   F4          tuning panel (wind, weather, physics rate)
   M           menu       H   hangar (aircraft)   W  world (place, weather)
   Tab         replay the last two minutes
+  4 5 6 7 8   dead stick / jammed aileron / elevator linkage / radio loss / brownout
+  9           clear the failure
   F3          transmitter setup wizard
   F5          reload the aircraft definition  F6  cycle spawn mode
   Esc         quit
@@ -174,6 +176,21 @@ func _unhandled_input(event: InputEvent) -> void:
 			_open_world_screen()
 		KEY_TAB:
 			_toggle_replay()
+		# Failures, on the number row. A pilot practising dead-stick landings
+		# wants one key, not a menu - the whole exercise is what you do in the
+		# next four seconds.
+		KEY_4:
+			aircraft.induce_failure(1, 0)      # dead stick
+		KEY_5:
+			aircraft.induce_failure(2, 0)      # jammed aileron
+		KEY_6:
+			aircraft.induce_failure(3, 1)      # elevator linkage gone
+		KEY_7:
+			aircraft.induce_failure(4, 0)      # radio loss
+		KEY_8:
+			aircraft.induce_failure(5, 0)      # brownout
+		KEY_9:
+			aircraft.clear_failures()
 		KEY_ESCAPE:
 			get_tree().quit()
 

@@ -23,6 +23,7 @@
 #include "RCPhysics/Physics/Ground/GroundContact.h"
 #include "RCPhysics/Physics/Ground/LandingGear.h"
 #include "RCPhysics/Physics/Ground/TerrainField.h"
+#include "RCPhysics/Aircraft/FailureModel.h"
 #include "RCPhysics/Core/FlightRecorder.h"
 #include "RCPhysics/Physics/Environment/LiftField.h"
 #include "RCPhysics/Physics/Ground/TerrainScatter.h"
@@ -103,6 +104,35 @@ public:
     double get_surface_height_at(double x, double z) const;
     int  get_terrain_seed() const;
 
+    // ------------------------------------------------------------ failures --
+    //
+    // The part a toy does not have, and where most of the training value is.
+    // Nobody needs practice at flying a model that works.
+
+    /** Break something now. `kind` matches rc::FailureKind; `channel` matches
+     *  RCInputNode's channel constants and is used only by the surface
+     *  failures. */
+    void induce_failure(int kind, int channel);
+
+    /** Everything works again. Also called by reset. */
+    void clear_failures();
+
+    /** What is wrong, as a sentence a pilot can read, or empty. */
+    godot::String get_failure_text() const;
+    int  get_failure_kind() const;
+    bool has_failure() const;
+
+    /** Chance per minute of a random failure. Zero - the default - means
+     *  failures only happen when asked for, which is how a lesson uses them. */
+    void set_failure_rate_per_minute(double rate);
+    double get_failure_rate_per_minute() const;
+
+    /** What the receiver does when the link goes: 0 holds the last commands,
+     *  1 centres everything. Both are configurations people fly, and they fail
+     *  very differently. */
+    void set_failsafe_mode(int mode);
+    int  get_failsafe_mode() const;
+
     // -------------------------------------------------------------- replay --
     //
     // The most useful thing a simulator can give a learner is the chance to see
@@ -129,6 +159,12 @@ public:
      *  aircraft from it. The frame loop calls this; a tool or a test that
      *  drives the simulation itself can call it directly. */
     void advance_replay(double delta);
+
+    /** Run the simulation forward by `delta` seconds, exactly as the frame loop
+     *  does. _process calls this; a tool or a test that drives the simulation
+     *  itself calls it directly rather than trying to make the scene tree run
+     *  frames on demand. */
+    void advance(double delta);
 
     /** Playback rate. Negative runs it backwards; zero holds a frame. */
     void set_replay_speed(double speed);
@@ -386,6 +422,7 @@ private:
 
     /** Always running. By the time a pilot knows they want the last thirty
      *  seconds, those seconds have happened. */
+    rc::FailureModel    Failures;
     rc::FlightRecorder  Recorder;
     bool                Replaying = false;
     double              ReplayTime = 0.0;
@@ -400,6 +437,10 @@ private:
     rc::ContactSettings ContactTuning;
     rc::ChannelValues   Channels;
     rc::ChannelValues   ManualChannels;
+    /** What the pilot asked for, before any failure was applied. The telemetry
+     *  and the replay show this - a jammed servo should not make the stick
+     *  display lie about where the stick is. */
+    rc::ChannelValues   CommandedChannels;
     rc::AircraftForces  LastForces;
 
     godot::String AircraftPath = "Data/Aircraft/Trainer1500.json";

@@ -373,7 +373,14 @@ func _draw_alerts(centre: Vector2) -> void:
 	# ground is noise, and noise is how a warning stops being read.
 	var flying: bool = not _sim.is_on_ground() or _sim.get_airspeed_mps() > 6.0
 
-	if _sim.has_crashed():
+	if _sim.has_failure():
+		# Above everything else, including the crash banner. A pilot with a
+		# jammed servo needs to know that before they need to know they are
+		# approaching the stall: the stall is a consequence they can still fly
+		# out of, and the servo is not.
+		text = _sim.get_failure_text()
+		colour = UITheme.DANGER
+	elif _sim.has_crashed():
 		text = "CRASHED   -   PRESS R TO RESET"
 		colour = UITheme.DANGER
 	elif flying and _stall > 0.30:

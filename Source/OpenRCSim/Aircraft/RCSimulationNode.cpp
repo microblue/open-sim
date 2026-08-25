@@ -50,6 +50,11 @@ void RCSimulationNode::_process(double deltaSeconds)
     {
         return;
     }
+    advance(deltaSeconds);
+}
+
+void RCSimulationNode::advance(double deltaSeconds)
+{
 
     // In replay the physics does not advance. The aircraft is posed from the
     // recording instead, and everything around it - the wind in the grass, the
@@ -76,6 +81,14 @@ void RCSimulationNode::_process(double deltaSeconds)
         // node and a manual command still means sticks centred, motor stopped.
         Channels = ManualChannels;
     }
+
+    // Failures sit between the transmitter and the flight model. Nothing
+    // downstream knows one has happened, which is the point: the aerodynamics
+    // does not need a special case for a jammed aileron, it just gets an
+    // aileron that does not move.
+    Failures.Update(deltaSeconds, Channels);
+    CommandedChannels = Channels;
+    Channels = Failures.Apply(Channels);
 
     Clock.AddFrameTime(deltaSeconds);
 
@@ -144,7 +157,12 @@ rc::PropulsionOutput RCSimulationNode::StepPropulsion(rc::Real dt)
     const rc::Vec3 airVelocityBody = State.Orientation.RotateInverse(
         State.VelocityWorld - Wind.SampleWorld(State.PositionWorld));
 
-    Power.Step(Channels.Throttle(), rc::Dot(airVelocityBody, axis), sample.Density, dt);
+    // A dead stick is a failure of the power system, not of the pilot's
+    // command: the sticks still work and the telemetry should still show the
+    // throttle they are holding. So the authority multiplies here rather than
+    // zeroing the channel.
+    const rc::Real throttle = Channels.Throttle() * Failures.ThrottleAuthority();
+    Power.Step(throttle, rc::Dot(airVelocityBody, axis), sample.Density, dt);
 
     const rc::PowerSystemState& state = Power.State();
     rc::PropulsionOutput output;
@@ -454,6 +472,57 @@ void RCSimulationNode::set_lift_enabled(bool enabled)
 
 bool RCSimulationNode::get_lift_enabled() const { return Lift.Settings().Enabled; }
 
+void RCSimulationNode::induce_failure(int kind, int channel)
+{
+    if (kind <= 0 || kind >= static_cast<int>(rc::FailureKind::Count))
+    {
+        Failures.ClearAll();
+        return;
+    }
+    const int clamped = std::max(0, std::min(channel, static_cast<int>(rc::kChannelCount) - 1));
+    Failures.Induce(static_cast<rc::FailureKind>(kind),
+                    static_cast<rc::RCChannel>(clamped));
+    RC_LOG(Physics, Warning, "%s", Failures.Describe().c_str());
+}
+
+void RCSimulationNode::clear_failures() { Failures.ClearAll(); }
+
+String RCSimulationNode::get_failure_text() const
+{
+    return String(Failures.Describe().c_str());
+}
+
+int RCSimulationNode::get_failure_kind() const
+{
+    return static_cast<int>(Failures.State().Kind);
+}
+
+bool RCSimulationNode::has_failure() const { return Failures.State().Active(); }
+
+void RCSimulationNode::set_failure_rate_per_minute(double rate)
+{
+    rc::FailureSettings config = Failures.Settings();
+    config.RatePerMinute = std::max(rate, 0.0);
+    Failures.Configure(config);
+}
+
+double RCSimulationNode::get_failure_rate_per_minute() const
+{
+    return Failures.Settings().RatePerMinute;
+}
+
+void RCSimulationNode::set_failsafe_mode(int mode)
+{
+    rc::FailureSettings config = Failures.Settings();
+    config.Failsafe = (mode == 0) ? rc::FailsafeMode::HoldLast : rc::FailsafeMode::Neutral;
+    Failures.Configure(config);
+}
+
+int RCSimulationNode::get_failsafe_mode() const
+{
+    return Failures.Settings().Failsafe == rc::FailsafeMode::HoldLast ? 0 : 1;
+}
+
 void RCSimulationNode::RecordFrame()
 {
     if (!AircraftLoaded) { return; }
@@ -473,7 +542,7 @@ void RCSimulationNode::RecordFrame()
     frame.BatteryCharge = Power.State().StateOfCharge;
     frame.VerticalAirSpeed = get_air_vertical_speed_mps();
 
-    frame.Controls = Channels;
+    frame.Controls = CommandedChannels;
     frame.OnGround = LastForces.OnGround;
     frame.Crashed = Crash.Crashed;
 
@@ -867,6 +936,7 @@ void RCSimulationNode::ResetPhysicsState()
     Plane.ResetAeroState();
     Power.Reset();
     Crash = rc::CrashResult{};
+    Failures.ClearAll();
     // The lift field lives on the wind, so rising air reaches the aerodynamics
     // through the same per-section sampling the wind does.
     Wind.SetLiftField(Lift.Settings().Enabled ? &Lift : nullptr);
@@ -1283,12 +1353,23 @@ void RCSimulationNode::_bind_methods()
     OPENRC_BIND(get_terrain_seed);
     OPENRC_BIND1(configure_terrain, "settings");
     OPENRC_BIND(get_terrain_settings);
+    ClassDB::bind_method(D_METHOD("induce_failure", "kind", "channel"),
+                         &RCSimulationNode::induce_failure);
+    OPENRC_BIND(clear_failures);
+    OPENRC_BIND(get_failure_text);
+    OPENRC_BIND(get_failure_kind);
+    OPENRC_BIND(has_failure);
+    OPENRC_BIND1(set_failure_rate_per_minute, "rate");
+    OPENRC_BIND(get_failure_rate_per_minute);
+    OPENRC_BIND1(set_failsafe_mode, "mode");
+    OPENRC_BIND(get_failsafe_mode);
     OPENRC_BIND(get_replay_duration);
     OPENRC_BIND(get_replay_earliest);
     OPENRC_BIND(get_replay_latest);
     OPENRC_BIND1(set_replaying, "replaying");
     OPENRC_BIND(get_replaying);
     OPENRC_BIND1(advance_replay, "delta");
+    OPENRC_BIND1(advance, "delta");
     OPENRC_BIND1(set_replay_time, "seconds");
     OPENRC_BIND(get_replay_time);
     OPENRC_BIND1(set_replay_speed, "speed");
