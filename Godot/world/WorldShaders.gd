@@ -58,6 +58,12 @@ uniform float detail_scale = 1.7;
 uniform float macro_scale = 34.0;
 
 uniform vec3 wind_vector = vec3(0.0, 0.0, 0.0);
+/** Weather on the ground: 0..1 snow cover and 0..1 wetness. Snow whitens the
+ *  ground patchily and wipes the mown strip; wet darkens it and turns it
+ *  glossy. Set from the weather state so a snow day is a snow day to land on,
+ *  not just to look at. */
+uniform float weather_snow = 0.0;
+uniform float weather_wet = 0.0;
 
 // Layer indices, matching WorldTextures.LAYERS.
 const float L_GRASS  = 0.0;
@@ -225,9 +231,39 @@ void fragment() {
 		// Softened, and over a long distance. A hard-edged green disc is worse
 		// than no mown strip at all - it reads as a decal on the landscape.
 		albedo = mix(albedo, albedo * vec3(0.70, 1.28, 0.55), mown * 0.62);
+
+		// Painted markings on the strip: a dashed centreline and threshold
+		// bars at each end. (They live here, on the terrain that actually
+		// renders the field - the field's own ground shader is not built, and
+		// a marking nobody can see is no marking at all.)
+		vec2 strip_centre = vec2(-16.0, -30.0);
+		vec2 half_size = vec2(4.5, 35.0);
+		vec2 p = world_position.xz - strip_centre;
+		float in_strip = 1.0 - smoothstep(0.90, 1.02,
+			max(abs(p.x) / half_size.x, abs(p.y) / half_size.y));
+		float dash = step(fract(abs(p.y) / 6.0), 0.42);
+		float centre = 1.0 - smoothstep(0.14, 0.24, abs(p.x));
+		float line = centre * dash * in_strip;
+		float bar = (1.0 - smoothstep(0.35, 0.55, abs(abs(p.y) - half_size.y)))
+					* (1.0 - smoothstep(half_size.x - 0.6, half_size.x - 0.25, abs(p.x)))
+					* in_strip;
+		float paint = clamp(line + bar, 0.0, 1.0);
+		vec3 paint_colour = vec3(0.72, 0.72, 0.70);
+		paint *= 0.50 + 0.50 * value_noise(world_position.xz * 6.3);
+		albedo = mix(albedo, paint_colour, paint * 0.85);
+
+		// Weather on the ground. Snow falls patchily - drifts in the noise
+		// hollows - and it covers the strip like everything else; wet ground
+		// is darker and glossier, which is what a wet strip does to a wheel.
+		float snow_patch = fbm(world_position.xz * 0.045 + vec2(3.1, 7.7), 3);
+		float snow_amount = weather_snow * (0.45 + 0.55 * snow_patch);
+		albedo = mix(albedo, vec3(0.66, 0.69, 0.73), snow_amount);
+		float wet_amount = weather_wet;
+		albedo = mix(albedo, albedo * 0.62, wet_amount * 0.9);
+
 		ALBEDO = albedo;
-		ROUGHNESS = clamp(rough.r * 1.15, 0.25, 1.0);
-		SPECULAR = 0.30;
+		ROUGHNESS = mix(clamp(rough.r * 1.15, 0.25, 1.0), 0.32, wet_amount);
+		SPECULAR = mix(0.30, 0.60, wet_amount);
 
 		// Whitened at range: relief finer than a pixel is noise, and noise in
 		// the normal makes a distant hillside sparkle under a moving camera.

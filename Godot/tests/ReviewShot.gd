@@ -63,6 +63,14 @@ func _process(_d: float) -> bool:
 				director.call("apply_scene", "alpine")
 				camera.global_position = Vector3(0.0, 300.0, 700.0)
 				camera.global_rotation = Vector3(deg_to_rad(-11.0), deg_to_rad(5.0), 0.0)
+			"snow":
+				director.call("apply_weather", "snow")
+				camera.global_position = Vector3(-16.0, 1.7, 24.0)
+				camera.global_rotation = Vector3(deg_to_rad(-5.0), deg_to_rad(10.0), 0.0)
+			"rain":
+				director.call("apply_weather", "rain")
+				camera.global_position = Vector3(-16.0, 1.7, 24.0)
+				camera.global_rotation = Vector3(deg_to_rad(-5.0), deg_to_rad(10.0), 0.0)
 			"aircraft":
 				# Chase view: the model fills the frame, parked on the strip.
 				var aircraft: RCSimulationNode = scene.get_node_or_null("Aircraft") as RCSimulationNode

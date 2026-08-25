@@ -61,10 +61,13 @@ static func all() -> Array[Dictionary]:
 					+ "hard to see, and water on a foam wing is weight you did "
 					+ "not plan for.",
 			"wind_mps": 7.5, "gust": 0.55, "turbulence": 2.6,
-			"fog_density": 0.00016, "aerial": 0.70,
+			"fog_density": 0.00006, "aerial": 0.35,
 			"light_scale": 0.30, "sky_scale": 0.55,
-			"volumetric": 0.010,
-			"precipitation": "rain", "rate": 2600.0,
+			# Volumetric fog was on here (0.010) and it whitened the whole
+			# view: the sun lights the medium, and over an open field there is
+			# nothing to occlude it. Depth fog carries the rain's mood.
+			"volumetric": 0.0,
+			"precipitation": "rain", "rate": 6000.0,
 			"ground_grip": 0.55,
 		},
 		{
@@ -74,10 +77,10 @@ static func all() -> Array[Dictionary]:
 					+ "model against a white sky over white ground is most of "
 					+ "the difficulty.",
 			"wind_mps": 2.5, "gust": 0.20, "turbulence": 0.8,
-			"fog_density": 0.00022, "aerial": 0.78,
+			"fog_density": 0.00008, "aerial": 0.38,
 			"light_scale": 0.46, "sky_scale": 0.80,
-			"volumetric": 0.014,
-			"precipitation": "snow", "rate": 1400.0,
+			"volumetric": 0.0,
+			"precipitation": "snow", "rate": 4200.0,
 			"ground_grip": 0.42,
 		},
 	]
@@ -103,6 +106,14 @@ static func build_precipitation(kind: String, rate: float) -> GPUParticles3D:
 	var extent: float = 26.0 if raining else 22.0
 	var height: float = 22.0
 
+	# A soft sprite for the card. The first version drew a plain white quad and
+	# a snowflake is exactly as square as the quad it is printed on - a field
+	# of visible squares is the fastest way to read precipitation as fake. The
+	# sprite is generated here, a radial falloff cut into an image, so it stays
+	# round at any size and the repository stays text. Rain gets the same dot
+	# stretched along its fall, which turns the streak's hard bar ends soft.
+	var sprite := _soft_sprite(5.0, 3.2 if raining else 1.0)
+
 	var material := ParticleProcessMaterial.new()
 	material.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
 	material.emission_box_extents = Vector3(extent, 1.0, extent)
@@ -120,9 +131,11 @@ static func build_precipitation(kind: String, rate: float) -> GPUParticles3D:
 	material.scale_max = 1.4
 
 	var mesh := QuadMesh.new()
-	# A long thin streak for rain, a small square for a flake. The streak is
-	# what reads as speed; a round raindrop reads as a bubble.
-	mesh.size = Vector2(0.012, 0.34) if raining else Vector2(0.045, 0.045)
+	# A long thin streak for rain, a small square for a flake (the sprite
+	# makes the square read as a dot). The streak is what reads as speed; a
+	# round raindrop reads as a bubble. Sized up from the first attempt, which
+	# rendered as one-pixel specks at the pilot's distance.
+	mesh.size = Vector2(0.016, 0.46) if raining else Vector2(0.065, 0.065)
 
 	var surface := StandardMaterial3D.new()
 	surface.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -130,8 +143,9 @@ static func build_precipitation(kind: String, rate: float) -> GPUParticles3D:
 	surface.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	surface.billboard_keep_scale = true
 	surface.vertex_color_use_as_albedo = false
-	surface.albedo_color = Color(0.72, 0.80, 0.92, 0.36) if raining \
-			else Color(0.97, 0.98, 1.0, 0.85)
+	surface.albedo_texture = sprite
+	surface.albedo_color = Color(0.80, 0.86, 0.96, 0.90) if raining \
+			else Color(1.0, 1.0, 1.0, 1.0)
 	surface.disable_receive_shadows = true
 	mesh.material = surface
 
@@ -147,3 +161,21 @@ static func build_precipitation(kind: String, rate: float) -> GPUParticles3D:
 									 Vector3(extent * 2.0, height * 2.0, extent * 2.0))
 	particles.position = Vector3(0.0, height * 0.5, 0.0)
 	return particles
+
+
+## A soft dot with a smooth alpha falloff, stretched for a rain streak. The
+## texture is generated once per call - it is tiny, and the particles are
+## unshaded so there is no lighting to fight the falloff.
+static func _soft_sprite(radius: float, stretch: float) -> ImageTexture:
+	var size: int = 64
+	var image := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var half: float = float(size) * 0.5
+	for y in size:
+		for x in size:
+			var dx: float = (float(x) + 0.5 - half) / half
+			var dy: float = (float(y) + 0.5 - half) / half * stretch
+			var d: float = sqrt(dx * dx + dy * dy)
+			var a: float = clampf(1.0 - d / 1.0, 0.0, 1.0)
+			a = a * a * (3.0 - 2.0 * a)
+			image.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
+	return ImageTexture.create_from_image(image)

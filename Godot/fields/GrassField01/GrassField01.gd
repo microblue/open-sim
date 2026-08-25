@@ -53,9 +53,11 @@ var _grass_material: ShaderMaterial
 var _foliage_material: ShaderMaterial
 var _sky_material: ShaderMaterial
 var _sky_panorama: PanoramaSkyMaterial
+var _scene_sky: Sky
 var _environment: Environment
 var _sun: DirectionalLight3D
 var _base_sun_energy: float = 6.5
+var _scene_hdri: String = "kloofendal_48d_partly_cloudy_puresky"
 var _rng_unused: int = 0
 var _windsock: Node3D
 var _rng := RandomNumberGenerator.new()
@@ -117,6 +119,7 @@ func apply_sky(hdri_name: String, sun_angles: Vector3, sun_energy: float) -> voi
 	var panorama: Texture2D = _load_hdri("%s/%s.hdr" % [HDRI_DIR, hdri_name])
 	if panorama != null and _sky_panorama != null:
 		_sky_panorama.panorama = panorama
+		_scene_hdri = hdri_name
 	if _sun != null:
 		_sun.rotation_degrees = sun_angles
 		_sun.light_energy = sun_energy
@@ -129,6 +132,30 @@ func apply_sky(hdri_name: String, sun_angles: Vector3, sun_energy: float) -> voi
 func apply_weather(state: Dictionary) -> void:
 	if _environment == null:
 		return
+	# A snow day buries the grass: a field of green tufts standing in white
+	# reads as two seasons at once, and the tufts would be the only thing not
+	# covered. They come back when the snow goes. The trees get a snow cover
+	# in their shader instead, so they stay put.
+	var grass: Node = get_node_or_null("Grass")
+	if grass != null:
+		grass.visible = state.get("precipitation", "") != "snow"
+	var snow: float = 1.0 if state.get("precipitation", "") == "snow" else 0.0
+	if _foliage_material != null:
+		_foliage_material.set_shader_parameter("weather_snow", snow)
+
+	# Rain and snow are not blue-sky days. The scene preset chooses an HDRI;
+	# precipitation swaps the sky for a procedural grey overcast, and anything
+	# else restores the scene's own capture. The overcast HDR was tried first
+	# and it is a wall of bright white cloud - at any dimming it tonemapped to
+	# flat white, which reads as fog, and the flakes disappeared into it. A
+	# grey gradient with a uniform deck is controllable, and it is what makes
+	# the precipitation visible against the sky.
+	var falling: String = state.get("precipitation", "")
+	if falling != "":
+		_set_overcast_sky()
+	elif _scene_sky != null:
+		_scene_sky.sky_material = _sky_panorama
+
 	_environment.fog_density = state["fog_density"]
 	_environment.fog_aerial_perspective = state["aerial"]
 	_environment.volumetric_fog_enabled = float(state["volumetric"]) > 0.0
@@ -138,8 +165,49 @@ func apply_weather(state: Dictionary) -> void:
 	_environment.ambient_light_energy = float(state["sky_scale"])
 	if _sun != null:
 		_sun.light_energy = _base_sun_energy * float(state["light_scale"])
-	if _sky_panorama != null:
-		_sky_panorama.energy_multiplier = float(state["sky_scale"])
+	# The sky's own brightness was already set in the swap above (dimmed for
+	# precipitation so it reads as grey rather than whiteout); do not clobber
+	# it back here.
+
+
+## A grey overcast for precipitation: a soft gradient with subtle noise and
+## nothing else. The field's own sky shader was tried first - its cloud deck
+## tonemapped to flat white whatever its cover - so this one is deliberately
+## minimal: no deck, no sun halo, no disc. A sky that renders as grey is the
+## whole job; the flakes are what need contrast against it.
+func _set_overcast_sky() -> void:
+	if _scene_sky == null:
+		return
+	var shader := Shader.new()
+	shader.code = """
+shader_type sky;
+
+uniform vec3 zenith_colour : source_color = vec3(0.29, 0.31, 0.35);
+uniform vec3 horizon_colour : source_color = vec3(0.50, 0.52, 0.56);
+uniform vec3 ground_colour : source_color = vec3(0.26, 0.27, 0.29);
+
+float hash(vec2 p) {
+	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+void sky() {
+	vec3 dir = EYEDIR;
+	float up = clamp(dir.y, -1.0, 1.0);
+	// The overcast gradient: darker above, lighter at the horizon - the
+	// opposite of a clear day, and the light that makes precipitation show.
+	vec3 colour = mix(horizon_colour, zenith_colour,
+					  pow(clamp(up, 0.0, 1.0), 0.6));
+	colour = mix(colour, ground_colour, clamp(-up * 5.0, 0.0, 1.0));
+	// A faint sheet noise, so the overcast is weather rather than a painted
+	// wall - just enough variation to stop the eye treating it as flat.
+	float sheet = hash(floor(dir.xz * 40.0 + vec2(TIME * 0.02)));
+	colour *= 0.955 + 0.045 * sheet;
+	COLOR = colour;
+}
+"""
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	_scene_sky.sky_material = material
 
 
 ## Load an HDRI from the asset directory, or null if the assets have not been
@@ -188,6 +256,7 @@ func _build_environment() -> void:
 	# is computed once and decides the colour of every shaded surface below it.
 	sky.radiance_size = Sky.RADIANCE_SIZE_256
 	sky.process_mode = Sky.PROCESS_MODE_QUALITY
+	_scene_sky = sky
 
 	var environment := Environment.new()
 	environment.background_mode = Environment.BG_SKY

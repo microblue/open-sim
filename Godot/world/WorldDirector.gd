@@ -17,6 +17,7 @@ signal world_changed(scene_id: String, weather_id: String)
 
 var _sim: RCSimulationNode
 var _field: Node3D
+var _field_script: Node
 var _camera: Node3D
 var _precipitation: GPUParticles3D
 
@@ -27,6 +28,15 @@ var weather_id: String = "clear"
 func _ready() -> void:
 	_sim = get_node_or_null(simulation_path) as RCSimulationNode
 	_field = get_node_or_null(field_path) as Node3D
+	# Flight adds the field script as a CHILD of the Field container (which
+	# also holds World and Detail). The script node is the one that owns the
+	# sky, the grass and the trees - the container is just a staging node -
+	# and pointing the weather at the container made every field-side weather
+	# change dead code: fog, light, the sky swap, the grass hiding under snow.
+	if _field != null:
+		_field_script = _field.get_node_or_null("GrassField01")
+		if _field_script == null:
+			_field_script = _field
 
 
 func current_scene() -> Dictionary:
@@ -47,8 +57,8 @@ func apply_scene(id: String) -> void:
 	if _sim != null:
 		_sim.configure_terrain(preset["terrain"])
 
-	if _field != null and _field.has_method("apply_sky"):
-		_field.apply_sky(preset["sky"], preset["sun_angles"], preset["sun_energy"])
+	if _field_script != null and _field_script.has_method("apply_sky"):
+		_field_script.apply_sky(preset["sky"], preset["sun_angles"], preset["sun_energy"])
 
 	_rebuild_world()
 	apply_weather(preset.get("weather", weather_id))
@@ -66,8 +76,20 @@ func apply_weather(id: String) -> void:
 		_sim.gust_amplitude_mps = state["wind_mps"] * float(state["gust"])
 		_sim.turbulence_mps = state["turbulence"]
 
-	if _field != null and _field.has_method("apply_weather"):
-		_field.apply_weather(state)
+	if _field_script != null and _field_script.has_method("apply_weather"):
+		_field_script.apply_weather(state)
+
+	# The ground reads the weather too - snow is a white field to land on,
+	# rain is a wet one - so a weather state is what the pilot sees, feels and
+	# lands on at once.
+	var snow: float = 1.0 if state.get("precipitation", "") == "snow" else 0.0
+	var wet: float = 1.0 if state.get("precipitation", "") == "rain" else 0.0
+	var ground: Node = _field.get_node_or_null("World") if _field != null else null
+	if ground != null and ground.has_method("apply_weather_ground"):
+		ground.apply_weather_ground(snow, wet)
+	var detail: Node = _field.get_node_or_null("Detail") if _field != null else null
+	if detail != null and detail.has_method("apply_weather_ground"):
+		detail.apply_weather_ground(snow, wet)
 
 	_rebuild_precipitation(state)
 	world_changed.emit(scene_id, weather_id)

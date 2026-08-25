@@ -98,6 +98,15 @@ func _ready() -> void:
 
 ## Throw away every chunk and let them build again from the current terrain
 ## settings. Called when a scene preset changes the world's shape.
+## The ground reads the weather: snow covers it, rain wets it. Called by the
+## world director whenever the weather state changes.
+func apply_weather_ground(snow: float, wet: float) -> void:
+	if _terrain_material == null:
+		return
+	_terrain_material.set_shader_parameter("weather_snow", snow)
+	_terrain_material.set_shader_parameter("weather_wet", wet)
+
+
 func rebuild() -> void:
 	for level in _levels:
 		for child in (level["holder"] as Node3D).get_children():

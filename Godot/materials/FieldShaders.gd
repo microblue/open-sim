@@ -302,6 +302,9 @@ uniform vec3 wind_vector = vec3(0.0, 0.0, 0.0);
 uniform float gust = 0.0;
 uniform vec3 leaf_colour : source_color = vec3(0.050, 0.098, 0.030);
 uniform vec3 trunk_colour : source_color = vec3(0.085, 0.062, 0.042);
+/** Snow lying on the canopy, 0..1 from the weather state. A snow day has no
+ *  green trees standing in the white. */
+uniform float weather_snow = 0.0;
 
 varying float canopy;
 varying vec3 instance_tint;
@@ -338,7 +341,11 @@ void vertex() {
 void fragment() {
 	// Trunk below the canopy, leaves above. Both need to be light enough to
 	// read as green rather than as a black silhouette against a bright sky.
-	ALBEDO = mix(trunk_colour, leaf_colour * instance_tint, canopy);
+	vec3 colour = mix(trunk_colour, leaf_colour * instance_tint, canopy);
+	// Snow loads onto the canopy first, and the trunk last of all.
+	float load = weather_snow * mix(0.35, 1.0, canopy);
+	colour = mix(colour, vec3(0.74, 0.76, 0.79), load);
+	ALBEDO = colour;
 	ROUGHNESS = 1.0;
 }
 """

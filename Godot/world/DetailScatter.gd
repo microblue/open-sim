@@ -132,6 +132,13 @@ func _ready() -> void:
 ## Throw away every scattered cell and regenerate the circuit. Called when a
 ## scene preset changes the world underneath them - vegetation placed by the old
 ## climate is standing in the wrong place, or in the sea.
+## The scatter's vegetation reads the weather: snow covers the canopies.
+func apply_weather_ground(snow: float, _wet: float = 0.0) -> void:
+	for material in _materials:
+		if material != null:
+			material.set_shader_parameter("weather_snow", snow)
+
+
 func rebuild() -> void:
 	Obstacles.clear_scatter()
 	for key in _cells:

@@ -66,6 +66,8 @@ uniform vec3 tip_colour : source_color = vec3(0.075, 0.130, 0.040);
 uniform vec3 wind_vector = vec3(0.0, 0.0, 0.0);
 uniform float gust = 0.0;
 uniform float sway = 0.03;
+/** Snow lying on the canopy, 0..1 from the weather state. */
+uniform float weather_snow = 0.0;
 /** Height of this kind's mesh, in metres. Set from the mesh's own bounds when
  *  the material is built - it used to default to one metre for everything, so
  *  on a tree eight metres tall every vertex above a metre clamped to full sway
@@ -105,6 +107,10 @@ void fragment() {
 	vec3 colour = mix(base_colour, tip_colour, height_fraction);
 	// Per-instance tint. Without it a hillside of one species is a stamp.
 	colour *= instance_tint;
+	// Snow sits on the tops; the low canopy of a bush catches less than a
+	// tall tree does.
+	colour = mix(colour, vec3(0.74, 0.76, 0.79),
+				 weather_snow * (0.35 + 0.65 * height_fraction));
 	ALBEDO = colour;
 	ROUGHNESS = 0.95;
 
