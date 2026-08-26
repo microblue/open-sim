@@ -240,6 +240,12 @@ public:
     double get_cruise_speed_mps() const;
     double get_approach_speed_mps() const;
 
+    /** True when the aeroplane is thrown rather than rolled: its propeller
+     *  would strike the ground on its own gear. The brief says so, because a
+     *  player who is handed a glider and told to take off will sit there with
+     *  the throttle open wondering what is wrong. */
+    bool is_hand_launched() const;
+
     /** Where the fuselage runs, in Godot axes: the nose and the tail, relative
      *  to the centre of gravity.
      *
@@ -421,6 +427,8 @@ protected:
 
 private:
     void ResetPhysicsState();
+    double StandingHeight() const;
+    bool   CanTakeOffFromGround() const;
     void PublishTransform();
     void ApplyEnvironment();
     godot::String ResolveAircraftPath() const;

@@ -266,64 +266,73 @@ func _build() -> void:
 	var nose_z: float = 0.0
 	var tail_z: float = 0.0
 
+	# Sections, gathered and grouped by the surface they belong to.
+	#
+	# They used to be drawn one at a time, each a closed body at its own angle
+	# and its own height. A wing of four such panels is a staircase: the
+	# dihedral steps, the washout steps, and eleven flat end caps sit buried
+	# inside their neighbours shading against them. It read as a stack of
+	# plates because that is what it was. A wing is one surface, so it is
+	# lofted as one - through a station at every section boundary, twisting as
+	# it goes - and only breaks where the colour scheme breaks.
+	var groups: Dictionary = {}
 	for i in _sim.get_section_count():
-		# Section positions come back already in Godot axes.
 		var centre: Vector3 = _sim.get_section_position(i)
 		var name_hint: String = _sim.get_section_name(i)
-
 		var is_fin: bool = name_hint.begins_with("vtail")
-		var span_axis: Vector3 = Vector3.UP if is_fin else Vector3.RIGHT
-		var span: float = _sim.get_section_span_m(i)
-		var chord: float = _sim.get_section_chord_m(i)
-		var incidence: float = deg_to_rad(_sim.get_section_incidence_deg(i))
 
-		# Dihedral tilts each panel outward-and-up, taken from the same angle the
-		# aerodynamics uses. Without it the wing draws flat while the physics
-		# flies it with dihedral, and the two disagree about the aircraft.
+		var axis: Vector3 = Vector3.UP
 		if not is_fin:
 			var side: float = signf(centre.x) if absf(centre.x) > 1e-4 else 1.0
 			var dihedral: float = deg_to_rad(_sim.get_section_dihedral_deg(i))
-			span_axis = Vector3(side * cos(dihedral), sin(dihedral), 0.0)
+			axis = Vector3(side * cos(dihedral), sin(dihedral), 0.0)
 
-		# The underside of the outer wing panels is the trim colour, which is what
-		# a real trainer does and what makes the aircraft's attitude readable
-		# from a hundred metres away.
+		# The underside of the outer wing panels is the trim colour, which is
+		# what a real trainer does and what makes the aircraft's attitude
+		# readable from a hundred metres away.
 		var outer: bool = name_hint.find("_3") >= 0 or name_hint.find("_4") >= 0
-		var colour: Color = TRIM_COLOUR if (name_hint.find("tail") >= 0 or outer) \
-			else TRUNK_COLOUR
-		# Only the outermost panel of a surface gets a rounded tip; the inboard
-		# ones butt against their neighbour.
-		var is_tip: bool = name_hint.find("_4") >= 0 or name_hint.find("tail") >= 0
-		# Only the panel that meets the fuselage is closed at its inboard end.
-		var is_root: bool = name_hint.find("_1") >= 0 or name_hint.find("root") >= 0 \
-				or name_hint.find("tail") >= 0
-		_panel(i, centre, span_axis, span, chord, incidence, colour, name_hint,
-			   is_tip, is_root)
+		var section := {
+			"index": i,
+			"centre": centre,
+			"name": name_hint,
+			"axis": axis,
+			"span": _sim.get_section_span_m(i),
+			"chord": _sim.get_section_chord_m(i),
+			"twist": deg_to_rad(_sim.get_section_incidence_deg(i)),
+			"colour": TRIM_COLOUR if (name_hint.find("tail") >= 0 or outer) \
+					else TRUNK_COLOUR,
+			"thickness": 0.09 if name_hint.find("tail") >= 0 else 0.13,
+			"camber": 0.0 if name_hint.find("tail") >= 0 else 0.025,
+			"control": _sim.get_section_has_control(i),
+		}
+		var key: String = _group_key(name_hint)
+		if not groups.has(key):
+			groups[key] = []
+		groups[key].append(section)
 
-		span_total = maxf(span_total, absf(centre.x) + span * 0.5)
+		span_total = maxf(span_total, absf(centre.x) + section["span"] * 0.5)
 		nose_z = minf(nose_z, centre.z)
 		tail_z = maxf(tail_z, centre.z)
 
-	# The fuselage runs where the DEFINITION says it does, not between the
-	# outermost aerodynamic sections. Lofted between the sections, the trainer's
-	# nose landed 9 mm ahead of the CG when the real one is 575 mm ahead, so
-	# the propeller - which is placed from the definition - hung in the air a
-	# third of a metre off the front of the aeroplane. Nothing at flight scale
-	# showed it; the hangar turntable showed it immediately.
+	for key in groups:
+		var list: Array = groups[key]
+		var axis: Vector3 = list[0]["axis"]
+		# Root first. Sorted by how far along the span each section sits, so a
+		# left wing and a right wing both run inboard to outboard.
+		list.sort_custom(func(a, b) -> bool:
+			return (a["centre"] as Vector3).dot(axis) < (b["centre"] as Vector3).dot(axis))
+		_build_surface(list)
+		for section in list:
+			if section["control"]:
+				_control_surface(section)
+
 	# Where the body actually runs.
 	#
 	# Lofted between the outermost AERODYNAMIC sections it started 9 mm ahead
 	# of the CG, so the propeller - placed from the definition - hung a third
-	# of a metre off the front of nothing. Taking the definition's body alone
-	# put the nose 225 mm AHEAD of the propeller and swallowed it whole.
-	#
-	# The definition's body is the only thing that knows where the nose is; the
-	# sections are the only thing that knows where the fin is. The union of the
-	# two is the whole aeroplane.
-	#
-	# Two of the four definitions had their body 150-200 mm too far forward,
-	# which put the nose AHEAD of the propeller and swallowed it. That is a
-	# data bug and it is fixed in the data - the drawing rule stays honest.
+	# of a metre off the front of nothing. The definition's body is the only
+	# thing that knows where the nose is; the sections are the only thing that
+	# knows where the fin is. The union of the two is the whole aeroplane.
 	var extent: Vector2 = _sim.get_fuselage_extent_z()
 	if extent.y > extent.x:
 		nose_z = minf(nose_z, extent.x)
@@ -340,6 +349,130 @@ func _build() -> void:
 		debug_instance.material_override = _material(Color(1, 1, 1), true)
 		debug_instance.top_level = true
 		add_child(debug_instance)
+
+
+## Which surface a section belongs to: "wing_right_1_root" and "wing_right_4_tip"
+## are both the right wing, and have to be lofted as one piece.
+static func _group_key(section_name: String) -> String:
+	var parts: PackedStringArray = section_name.split("_", false)
+	var kept := PackedStringArray()
+	for part in parts:
+		if part.is_valid_int() or part == "root" or part == "tip":
+			continue
+		kept.append(part)
+	return "_".join(kept)
+
+
+## One surface, lofted through every section in it.
+##
+## Broken only where the colour scheme breaks, because one mesh carries one
+## material - and a colour change is a seam that is SUPPOSED to be visible.
+func _build_surface(sections: Array) -> void:
+	var axis: Vector3 = sections[0]["axis"]
+	var root: Vector3 = (sections[0]["centre"] as Vector3) \
+			- axis * float(sections[0]["span"]) * 0.5
+
+	# Where each section starts and ends along the span, from the root.
+	var edges := PackedFloat64Array([0.0])
+	for section in sections:
+		edges.append(edges[edges.size() - 1] + float(section["span"]))
+
+	var run_start: int = 0
+	while run_start < sections.size():
+		var run_end: int = run_start
+		var colour: Color = sections[run_start]["colour"]
+		while run_end + 1 < sections.size() \
+				and (sections[run_end + 1]["colour"] as Color) == colour:
+			run_end += 1
+
+		# The cut is uniform across the run and takes the deepest hinge in it,
+		# so the wing never grows out over a control surface behind it.
+		var cut: float = 1.0
+		for k in range(run_start, run_end + 1):
+			if sections[k]["control"]:
+				cut = minf(cut, 1.0 - _sim.get_section_control_chord_fraction(
+						int(sections[k]["index"])))
+
+		# A station at every boundary in the run, each blending the sections
+		# that meet there: that is what makes the surface continuous instead of
+		# a staircase.
+		var stations: Array = []
+		for k in range(run_start, run_end + 2):
+			var inner: Dictionary = sections[maxi(k - 1, run_start)]
+			var outer: Dictionary = sections[mini(k, run_end)]
+			stations.append({
+				"offset": edges[k] - edges[run_start],
+				"chord": (float(inner["chord"]) + float(outer["chord"])) * 0.5,
+				"thickness": (float(inner["thickness"]) + float(outer["thickness"])) * 0.5,
+				"camber": (float(inner["camber"]) + float(outer["camber"])) * 0.5,
+				"twist": (float(inner["twist"]) + float(outer["twist"])) * 0.5,
+				"cut": cut,
+			})
+
+		var instance := MeshInstance3D.new()
+		instance.name = "surface_%s_%d" % [_group_key(sections[run_start]["name"]), run_start]
+		instance.mesh = AirframeScript.loft_wing(stations, 14,
+				run_end == sections.size() - 1, run_start == 0)
+		instance.material_override = _material(colour)
+		instance.transform = Transform3D(_span_basis(axis),
+										 root + axis * float(edges[run_start]))
+		add_child(instance)
+
+		run_start = run_end + 1
+
+
+## A frame whose X runs along the span and whose Z runs along the chord.
+##
+## No pitch rotation: incidence and washout are per-station twist inside the
+## loft, which is the only way a wing that twists along its span can also be
+## continuous along it.
+static func _span_basis(axis: Vector3) -> Basis:
+	var x_axis: Vector3 = axis.normalized()
+	var z_axis := Vector3(0, 0, 1)
+	var y_axis: Vector3 = z_axis.cross(x_axis).normalized()
+	z_axis = x_axis.cross(y_axis).normalized()
+	return Basis(x_axis, y_axis, z_axis)
+
+
+## The moving part of a section: an aileron, an elevator, a rudder.
+func _control_surface(section: Dictionary) -> void:
+	var index: int = int(section["index"])
+	var centre: Vector3 = section["centre"]
+	var axis: Vector3 = section["axis"]
+	var chord: float = float(section["chord"])
+	var basis: Basis = _span_basis(axis).rotated(axis.normalized(), -float(section["twist"]))
+	var leading_edge: Vector3 = centre - basis.z * (chord * 0.25)
+
+	var moving_chord: float = chord * _sim.get_section_control_chord_fraction(index)
+	var fixed_chord: float = chord - moving_chord
+	var moving_span: float = float(section["span"]) \
+			* _sim.get_section_control_span_fraction(index)
+
+	var pivot := Node3D.new()
+	pivot.name = "hinge_%s" % section["name"]
+	pivot.transform = Transform3D(basis, leading_edge + basis.z * fixed_chord)
+	add_child(pivot)
+
+	var surface := MeshInstance3D.new()
+	surface.name = "surface_%s" % section["name"]
+	# A tapering wedge, thick at the hinge and thin at the trailing edge, which
+	# is what a control surface is. Its thickness matches the wing AT THE HINGE
+	# - about half the section's maximum - so the two meet flush.
+	var moving_span_clear: float = moving_span - SURFACE_GAP
+	var hinge_thickness: float = float(section["thickness"]) * 0.55
+	surface.mesh = AirframeScript.loft_wing([
+		{"offset": -moving_span_clear * 0.5, "chord": moving_chord,
+		 "thickness": hinge_thickness, "camber": 0.0},
+		{"offset":  moving_span_clear * 0.5, "chord": moving_chord,
+		 "thickness": hinge_thickness, "camber": 0.0},
+	], 10, section["name"].find("_4") >= 0 or section["name"].find("tail") >= 0)
+	surface.material_override = _material(SURFACE_COLOUR)
+	# The loft's origin is its quarter chord, so the leading edge lands on the
+	# hinge line rather than a quarter of its own chord behind it.
+	surface.position = Vector3(0.0, 0.0, moving_chord * 0.25)
+	pivot.add_child(surface)
+
+	_surfaces.append({"pivot": pivot, "index": index})
 
 
 func _build_fuselage(nose_z: float, tail_z: float) -> void:
@@ -446,46 +579,77 @@ func _build_canopy(nose_z: float) -> void:
 
 func _build_gear() -> void:
 	for i in _sim.get_wheel_count():
-		var centre: Vector3 = _sim.get_wheel_position(i)
+		var hub: Vector3 = _sim.get_wheel_position(i)
 		var radius: float = _sim.get_wheel_radius_m(i)
+		# A wheel with no lateral offset is the one under the nose; the ones
+		# out on the axles are the mains. Told apart by where they ARE, not by
+		# their index - the old code spatted wheels 0 and 1, which on every
+		# aeroplane in the roster is the nose wheel and the left main.
+		var is_nose: bool = absf(hub.x) < 0.02
 
-		var strut := MeshInstance3D.new()
-		var strut_mesh := BoxMesh.new()
-		strut_mesh.size = Vector3(0.012, absf(centre.y), 0.012)
-		strut.mesh = strut_mesh
-		strut.material_override = _material(DARK_COLOUR)
-		strut.position = Vector3(centre.x, centre.y * 0.5, centre.z)
-		add_child(strut)
+		# The leg. A trainer's main gear is a single wire splayed out from the
+		# belly, so the strut leans; a nose leg drops straight down.
+		var top := Vector3(hub.x * (0.18 if not is_nose else 1.0),
+						   hub.y + radius * 0.6 + (0.10 if not is_nose else 0.11),
+						   hub.z)
+		_strut(top, hub + Vector3(0.0, 0.0, 0.0), 0.0075 if is_nose else 0.006)
 
-		var wheel := MeshInstance3D.new()
-		wheel.name = "Wheel%d" % i
-		var wheel_mesh := CylinderMesh.new()
-		wheel_mesh.top_radius = radius
-		wheel_mesh.bottom_radius = radius
-		wheel_mesh.height = 0.016
-		wheel_mesh.radial_segments = 12
-		wheel.mesh = wheel_mesh
-		wheel.material_override = _material(DARK_COLOUR)
-		wheel.rotation_degrees = Vector3(0, 0, 90)
-		wheel.position = centre
-		add_child(wheel)
+		# The tyre, and a hub inside it. One dark cylinder reads as a puck;
+		# it is the light hub against dark rubber that reads as a wheel.
+		var tyre := MeshInstance3D.new()
+		tyre.name = "Wheel%d" % i
+		var tyre_mesh := CylinderMesh.new()
+		tyre_mesh.top_radius = radius
+		tyre_mesh.bottom_radius = radius
+		tyre_mesh.height = radius * 0.62
+		tyre_mesh.radial_segments = 20
+		tyre.mesh = tyre_mesh
+		tyre.material_override = _tyre_material()
+		tyre.rotation_degrees = Vector3(0, 0, 90)
+		tyre.position = hub
+		add_child(tyre)
 
-		# A spat over each main wheel, so the gear reads as part of the
-		# aeroplane rather than as two rods and a tyre bolted on.
-		if i < 2:
-			var spat := MeshInstance3D.new()
-			spat.name = "Spat%d" % i
-			var spat_mesh := SphereMesh.new()
-			spat_mesh.radius = radius * 1.15
-			spat_mesh.height = radius * 2.3
-			spat_mesh.radial_segments = 12
-			spat_mesh.rings = 8
-			spat.mesh = spat_mesh
-			spat.material_override = _material(TRIM_COLOUR)
-			spat.position = centre + Vector3(0.0, radius * 0.15, 0.0)
-			# Long along the axle, slim across it - a wheel pant, not a blob.
-			spat.scale = Vector3(1.35, 0.78, 0.6)
-			add_child(spat)
+		for side in 2:
+			var face := MeshInstance3D.new()
+			face.name = "Hub%d_%d" % [i, side]
+			var face_mesh := CylinderMesh.new()
+			face_mesh.top_radius = radius * 0.52
+			face_mesh.bottom_radius = radius * 0.52
+			face_mesh.height = radius * 0.10
+			face_mesh.radial_segments = 16
+			face.mesh = face_mesh
+			face.material_override = _metal_material(Color(0.72, 0.74, 0.78))
+			face.rotation_degrees = Vector3(0, 0, 90)
+			face.position = hub + Vector3(
+				(radius * 0.34) * (1.0 if side == 0 else -1.0), 0.0, 0.0)
+			add_child(face)
+
+
+## One landing gear leg, as a cylinder running from `top` to `bottom`.
+##
+## The old strut was an axis-aligned box from the centreline down to the hub,
+## which for a splayed main leg is not where the leg is.
+func _strut(top: Vector3, bottom: Vector3, radius: float) -> void:
+	var span: Vector3 = bottom - top
+	var length: float = span.length()
+	if length < 0.005:
+		return
+	var leg := MeshInstance3D.new()
+	leg.name = "Strut"
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius * 0.85
+	mesh.height = length
+	mesh.radial_segments = 10
+	leg.mesh = mesh
+	leg.material_override = _metal_material(Color(0.30, 0.32, 0.36))
+	leg.position = top + span * 0.5
+	# A cylinder stands along its own Y, so the leg is rotated to lie along the
+	# line it has to cover.
+	var axis: Vector3 = Vector3.UP.cross(span.normalized())
+	if axis.length() > 1e-4:
+		leg.rotate(axis.normalized(), Vector3.UP.angle_to(span.normalized()))
+	add_child(leg)
 
 
 ## The propeller and its spinner, at the motor mount the definition gives.
@@ -523,11 +687,17 @@ func _build_propeller() -> void:
 	# makes a parked model look like a sculpture with a spinner on it.
 	# Generous chords: the first attempt was airfoil-thin, and a blade that is
 	# a hairline against the sky is a propeller that does not exist at rest.
+	# Blade chords as a fraction of the diameter, near what a 10x5 sport
+	# propeller actually is. They were 23 % of the diameter at the root, which
+	# is a paddle: broadside on, the pair read as a brown ellipse bolted to the
+	# nose rather than as two blades.
 	var blade_mesh: ArrayMesh = AirframeScript.loft_wing([
-		{"offset": 0.012, "chord": 0.058, "thickness": 0.13, "twist": 0.40},
-		{"offset": diameter * 0.28, "chord": 0.042, "thickness": 0.11, "twist": 0.20},
-		{"offset": diameter * 0.48, "chord": 0.020, "thickness": 0.10, "twist": 0.05},
-	], 6, true)
+		{"offset": 0.012, "chord": diameter * 0.135, "thickness": 0.14, "twist": 0.40},
+		{"offset": diameter * 0.28, "chord": diameter * 0.105, "thickness": 0.12,
+		 "twist": 0.20},
+		{"offset": diameter * 0.48, "chord": diameter * 0.055, "thickness": 0.10,
+		 "twist": 0.05},
+	], 8, true)
 	for blade_index in 2:
 		var blade := MeshInstance3D.new()
 		blade.name = "Blade%d" % blade_index

@@ -211,6 +211,9 @@ func _gather() -> void:
 			# These are flown, not quoted - and they are what actually tells a
 			# pilot how an aeroplane will feel.
 			"performance": _sim.get_performance(),
+			# Thrown, not rolled. A player handed a glider and told to take off
+			# will sit at the end of the strip with the throttle open.
+			"hand_launched": _sim.is_hand_launched(),
 		})
 	_sim.aircraft_definition = restore
 	_sim.reload_aircraft()
@@ -930,6 +933,12 @@ func _draw_aircraft(size: Vector2) -> void:
 					["approach speed", "%.1f m/s" % card["approach"], "approach"]]:
 			by = _brief_row(brief, by, row[0], row[1],
 							_roster_fraction(row[2], float(card[row[2]])))
+
+		if bool(card.get("hand_launched", false)):
+			by += 8.0
+			UITheme.draw_text(_canvas, Vector2(brief.position.x + 24, by),
+							  "Hand launched - it has no undercarriage.",
+							  UITheme.SIZE_BODY, UITheme.WARN)
 
 
 ## Puts the selected aeroplane on the stand and positions the stand.

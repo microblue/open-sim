@@ -62,6 +62,19 @@ else
     fail "in-engine tests"
 fi
 
+step "First ten seconds"
+# The unit tests are each right about their own piece; none of them noticed
+# that the glider was reported crashed before the player had touched a stick.
+# This one flies every aeroplane in the roster off its own spawn.
+LAUNCH="$(godot --headless --path Godot --script res://tests/SpawnCheck.gd 2>&1)"
+LAUNCH_STATUS=$?
+echo "$LAUNCH" | grep -E '^\s*\[|^\s*first ten'
+if [ $LAUNCH_STATUS -eq 0 ]; then
+    pass "every aircraft flies from its own spawn"
+else
+    fail "an aircraft cannot fly from its own spawn"
+fi
+
 step "Rendering"
 if command -v xvfb-run >/dev/null 2>&1; then
     rm -f Godot/shots/0_pilot_ground.png

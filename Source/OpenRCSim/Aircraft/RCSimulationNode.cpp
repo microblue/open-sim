@@ -256,6 +256,11 @@ double RCSimulationNode::get_approach_speed_mps() const
     return AircraftLoaded ? Definition.ApproachSpeed : 0.0;
 }
 
+bool RCSimulationNode::is_hand_launched() const
+{
+    return AircraftLoaded && !CanTakeOffFromGround();
+}
+
 Vector2 RCSimulationNode::get_fuselage_extent_z() const
 {
     if (!AircraftLoaded) { return Vector2(0.0f, 0.0f); }
@@ -903,23 +908,76 @@ String RCSimulationNode::get_aircraft_name() const
 
 // ------------------------------------------------------------------- state --
 
+namespace
+{
+    /** Shoulder height, near enough: where a thrown model leaves the hand. */
+    constexpr double kHandLaunchHeight = 1.75;
+    /** A throw delivers a few degrees nose-up, not a level release. */
+    constexpr double kHandLaunchPitch = 0.09;   // ~5 degrees
+}
+
+/** How high the centre of gravity stands on its own gear. */
+double RCSimulationNode::StandingHeight() const
+{
+    rc::Real standing = 0.0;
+    for (const rc::LandingGearSpec& wheel : Definition.LandingGear)
+    {
+        standing = rc::Max(standing, wheel.PositionBody.z + wheel.Radius);
+    }
+    return standing;
+}
+
+/** Can this aeroplane sit on a runway with its propeller clear of it?
+ *
+ *  Derived, not declared. A flag in the file saying "hand launch me" is a flag
+ *  that goes stale the moment someone changes the gear or the propeller; this
+ *  cannot. Gliders with belly skids and big folding props answer no, and so
+ *  would a warbird given a scale tail-dragger stance and too much propeller. */
+bool RCSimulationNode::CanTakeOffFromGround() const
+{
+    if (!AircraftLoaded || Definition.LandingGear.empty()) { return false; }
+    // Body Z is down: a point higher than the CG has a more negative Z.
+    const double propCentreAboveGround =
+        StandingHeight() - Definition.Propulsion.Mount.PositionBody.z;
+    return propCentreAboveGround > Definition.Propulsion.Propeller.Diameter * 0.5;
+}
+
 void RCSimulationNode::ResetPhysicsState()
 {
     State = rc::RigidBodyState{};
     State.Orientation = rc::Quat::FromEuler(0.0, 0.0, SpawnHeading);
 
-    switch (SpawnModeValue)
+    int mode = SpawnModeValue;
+    if (mode == SPAWN_RUNWAY && !CanTakeOffFromGround())
+    {
+        // A hand launch, because this aeroplane physically cannot roll.
+        //
+        // The 2.4 m glider lands on a belly skid, so it stands 72 mm off the
+        // grass - and its propeller disc is 127 mm in radius, mounted 10 mm
+        // above the centre of gravity. Sat on the strip, half the propeller is
+        // underground: it was reported crashed before the player had touched a
+        // stick, every single time. That is not a bug in the crash model, it
+        // is what would happen. Real electric gliders are thrown, and this one
+        // is thrown now.
+        mode = SPAWN_AIR;
+        State.PositionWorld = rc::Vec3(
+            SpawnOffset.x, SpawnOffset.y,
+            Ground.Sample(SpawnOffset.x, SpawnOffset.y).SurfaceHeight
+                - kHandLaunchHeight);
+        // Out of the hand at a shade over the approach speed, nose up a little,
+        // which is what a throw actually delivers.
+        State.Orientation = rc::Quat::FromEuler(0.0, kHandLaunchPitch, SpawnHeading);
+        State.SetVelocityBody(rc::Vec3(Definition.ApproachSpeed * 1.2, 0.0, 0.0));
+    }
+
+    switch (mode)
     {
         case SPAWN_RUNWAY:
         {
             // Sit the CG at the height its own gear holds it, not at ground
             // level - otherwise the propeller and the wheels start underground
             // and the aircraft is "crashed" before it has moved.
-            rc::Real standingHeight = 0.0;
-            for (const rc::LandingGearSpec& wheel : Definition.LandingGear)
-            {
-                standingHeight = rc::Max(standingHeight, wheel.PositionBody.z + wheel.Radius);
-            }
+            const rc::Real standingHeight = StandingHeight();
             // Relative to the ground under the spawn point, not to sea level.
             // The flying field sits on a plateau above the water line, and
             // spawning at z = -standingHeight put the aircraft a hundred metres
@@ -1424,6 +1482,7 @@ void RCSimulationNode::_bind_methods()
     OPENRC_BIND(get_power_to_weight_w_per_kg);
     OPENRC_BIND(get_cruise_speed_mps);
     OPENRC_BIND(get_approach_speed_mps);
+    OPENRC_BIND(is_hand_launched);
     OPENRC_BIND(get_fuselage_extent_z);
     OPENRC_BIND(get_performance);
     OPENRC_BIND(list_aircraft);
