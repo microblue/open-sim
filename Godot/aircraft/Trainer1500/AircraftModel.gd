@@ -265,6 +265,19 @@ func _update_surfaces() -> void:
 		pivot.rotation = Vector3(deg_to_rad(degrees) * HINGE_SIGN, 0.0, 0.0)
 
 
+## Where the propeller sits along the aeroplane's own fore-and-aft axis, in
+## metres. Negative is forward, because body X maps to Godot -Z.
+##
+## Exposed so a test can assert the aeroplane is not facing backwards. It was,
+## for a whole commit, and the span check could not see it: fitting a model by
+## an axis and then measuring it along the same axis proves only that the two
+## agree, never that the axis is the span.
+func propeller_station_m() -> float:
+	if _propeller == null:
+		return -1.0
+	return to_local(_propeller.global_position).z
+
+
 ## True when the aeroplane on screen came out of a .glb rather than a loft.
 func is_airframe_loaded() -> bool:
 	return _airframe_loaded
@@ -277,9 +290,8 @@ func is_airframe_loaded() -> bool:
 ## the aeroplane. Exposed so a test can hold the two together.
 func drawn_span_m() -> float:
 	# The same vertex percentile the fit itself uses, measured in this node's
-	# own space - which is metres. Merging bounding boxes was tried and gives
-	# the stray-vertex answer; taking the widest single mesh gives one wing.
-	return _vertex_span(self)
+	# own space - which is metres.
+	return _percentile_extent(_vertex_cloud(self), 0)
 
 
 ## Throws away the built aeroplane and builds the one the simulation node is
@@ -344,64 +356,52 @@ func _build_airframe() -> bool:
 			# - which is exactly the measurement it was ruining.
 			(junk as Node3D).visible = false
 
-	# Orientation first, then measure: the span is only the X extent once the
-	# model is the right way round.
-	var euler: Array = config.get("rotation_deg", [0.0, 0.0, 0.0])
-	scene.rotation = Vector3(deg_to_rad(float(euler[0])), deg_to_rad(float(euler[1])),
-							 deg_to_rad(float(euler[2])))
+	_propeller = _find_node(scene, String(config.get("propeller_node", "")))
 
-	# The span, measured from the VERTICES with the outliers discarded.
+	# EVERY ORIENTATION DECISION HAPPENS HERE, BEFORE ANYTHING IS MOVED.
 	#
-	# A bounding box is the wrong tool here. This model's main_gear_left mesh
-	# carries a stray vertex 1100 units out when the whole aeroplane is 683
-	# long; taking the box gave a "span" of 16.3 m on an 11 m aircraft, and the
-	# fitted aeroplane came out three quarters of the size it should be. Nor
-	# does measuring across the named wing nodes fix it - they carry strut and
-	# navigation-light geometry that reaches past the tip.
+	# The order matters and it took a backwards aeroplane to learn why. Turning
+	# the model after it has been centred rotates it about a point that is no
+	# longer its centre, so it does not just face the other way - it swings
+	# somewhere else entirely, and the propeller ends up at neither end.
+	_orient_from_geometry(scene, holder)
+
+	# The span, and the scale that makes it the span the flight model uses.
 	#
-	# So: every visible vertex, sorted, and the span taken between the half-
-	# percentiles. One loose vertex nobody will ever see does not get to decide
-	# how big the aeroplane is, and no per-model configuration is needed for it
-	# not to.
-	# Measured in the HOLDER's space, not the model's.
-	#
-	# Measuring inside `scene` cancels out `scene`'s own rotation - the very
-	# quarter turn applied two lines above - so the "span" came back along the
-	# model's original X, which on both of these files is the FUSELAGE. The
-	# aeroplane was then fitted so its length was the declared span, and came
-	# out a quarter too small.
-	var bounds: AABB = _visual_bounds(holder)
-	var span_measured: float = _vertex_span(holder)
+	# Measured from the VERTICES with the outliers discarded, because a
+	# bounding box does not survive contact with real files: this model's
+	# main_gear_left mesh carries a stray vertex 1100 units out when the whole
+	# aeroplane is 683 long. One loose vertex nobody will ever see does not get
+	# to decide how big the aeroplane is.
+	var span_measured: float = _percentile_extent(_vertex_cloud(holder), 0)
 	if span_measured < 0.001:
-		span_measured = bounds.size.x
-	if OS.has_environment("RC_MODEL_DEBUG"):
-		print("   box span %.3f   vertex span %.3f" % [bounds.size.x, span_measured])
-
+		holder.queue_free()
+		return false
 	var wanted: float = _sim.get_wingspan_m()
 	var scale_factor: float = wanted / span_measured
 	holder.scale = Vector3.ONE * scale_factor
 
-	# Centre it on the centre of gravity, which is where the flight model
-	# thinks the aeroplane is. Without this the model hangs off its own origin,
-	# which for a scanned model is wherever the artist left it.
+	# Only now: centre it on the centre of gravity, which is where the flight
+	# model thinks the aeroplane is. Without this the model hangs off its own
+	# origin, which for a scanned model is wherever the artist left it.
+	var bounds: AABB = _visual_bounds(holder)
 	var centre: Vector3 = bounds.position + bounds.size * 0.5
 	var lift: Array = config.get("offset_m", [0.0, 0.0, 0.0])
 	scene.position -= centre
 	scene.position += Vector3(float(lift[0]), float(lift[1]), float(lift[2])) / scale_factor
 
-	_propeller = _find_node(scene, String(config.get("propeller_node", "")))
 	if _propeller != null:
-		# Which of the propeller node's own axes points down the nose.
-		#
-		# The generated propeller was built facing along Z and spun about Z. A
-		# downloaded one sits wherever the artist left it, and the model root
-		# has just been turned a quarter turn on top of that - so spinning it
-		# about its local Z would have turned the disc about the SPAN.
+		# Which of the propeller node's own axes points down the nose. The
+		# generated propeller was built facing along Z and spun about Z; a
+		# downloaded one sits wherever the artist left it, under a model root
+		# that has just been turned, so spinning it about its local Z would
+		# turn the disc about the SPAN.
 		var nose: Vector3 = holder.global_transform.basis * Vector3(0.0, 0.0, -1.0)
 		_propeller_axis = (_propeller.global_transform.basis.inverse() * nose).normalized()
+
 	_airframe_loaded = true
-	print("[Model] %s: airframe.glb fitted to %.2f m span (x%.4f)"
-		% [stem, wanted, scale_factor])
+	print("[Model] %s: airframe.glb fitted to %.2f m span (x%.4f), propeller at %+.2f m"
+		% [stem, wanted, scale_factor, propeller_station_m()])
 	return true
 
 
@@ -434,10 +434,9 @@ func _visual_bounds(root: Node) -> AABB:
 	return bounds
 
 
-## The width the aeroplane actually occupies, ignoring the furthest half
-## percent of vertices at each end.
-func _vertex_span(root: Node3D) -> float:
-	var across := PackedFloat32Array()
+## Every visible vertex, in `root`'s own space.
+func _vertex_cloud(root: Node3D) -> PackedVector3Array:
+	var points := PackedVector3Array()
 	var to_local: Transform3D = root.global_transform.affine_inverse()
 	for child in root.find_children("*", "MeshInstance3D", true, false):
 		var mesh := child as MeshInstance3D
@@ -445,15 +444,148 @@ func _vertex_span(root: Node3D) -> float:
 			continue
 		var into_root: Transform3D = to_local * mesh.global_transform
 		for point in mesh.mesh.get_faces():
-			across.append((into_root * point).x)
-	if across.size() < 32:
+			points.append(into_root * point)
+	return points
+
+
+## How far the cloud reaches along one axis, ignoring the outermost tenth of a
+## percent at each end.
+##
+## A bounding box was tried first and does not survive contact with real files:
+## the Cessna's main_gear_left mesh carries a stray vertex eleven hundred units
+## out when the whole aeroplane is six hundred and eighty long. One loose vertex
+## nobody will ever see does not get to decide how big the aeroplane is.
+func _percentile_extent(points: PackedVector3Array, axis: int) -> float:
+	if points.size() < 32:
 		return 0.0
-	across.sort()
-	# A tenth of a percent. The stray vertex that started all this is one in
-	# two hundred thousand; a tenth of a percent discards two hundred of them
-	# and still leaves the wingtip where it is.
-	var margin: int = maxi(int(across.size() * 0.001), 1)
-	return across[across.size() - 1 - margin] - across[margin]
+	var along := PackedFloat32Array()
+	along.resize(points.size())
+	for i in points.size():
+		along[i] = points[i][axis]
+	along.sort()
+	var margin: int = maxi(int(along.size() * 0.001), 1)
+	return along[along.size() - 1 - margin] - along[margin]
+
+
+## Turns the model until its nose is down -Z and its fin is up.
+##
+## Measured from the shape: the third of the aeroplane that contains the fin is
+## much taller than the third that contains the nose, and the fin is on the
+## opposite side of the fuselage from the undercarriage.
+func _orient_from_geometry(scene: Node3D, holder: Node3D) -> void:
+	var points: PackedVector3Array = _vertex_cloud(holder)
+	if points.size() < 32:
+		return
+
+	# Span onto X, length onto Z, height onto Y - by size. An aeroplane of this
+	# kind is wider than it is long and longer than it is tall, so sorting the
+	# three extents names the three axes. (A model rocket would defeat this,
+	# and there is not one in the roster.)
+	var extent := [
+		Vector2(_percentile_extent(points, 0), 0.0),
+		Vector2(_percentile_extent(points, 1), 1.0),
+		Vector2(_percentile_extent(points, 2), 2.0),
+	]
+	extent.sort_custom(func(a, b) -> bool: return a.x > b.x)
+	var columns := [Vector3.ZERO, Vector3.ZERO, Vector3.ZERO]
+	columns[int(extent[0].y)] = Vector3.RIGHT     # widest  -> span
+	columns[int(extent[1].y)] = Vector3.BACK      # middle  -> length
+	columns[int(extent[2].y)] = Vector3.UP        # least   -> height
+	var basis := Basis(columns[0], columns[1], columns[2])
+	if basis.determinant() < 0.0:
+		# A mirror, not a rotation. Turning the length round makes it a proper
+		# rotation, and which end is the nose is settled below anyway.
+		columns[int(extent[1].y)] = Vector3.FORWARD
+		basis = Basis(columns[0], columns[1], columns[2])
+	scene.basis = basis * scene.basis
+
+	points = _vertex_cloud(holder)
+	var box := AABB(points[0], Vector3.ZERO)
+	for point in points:
+		box = box.expand(point)
+
+	# The outermost EIGHTH at each end, not the outer third.
+	#
+	# A third was tried and got the Cessna backwards: its front third holds the
+	# high wing and the undercarriage, which between them stand as tall as any
+	# fin. The last eighth is different - at one end there is a spinner and a
+	# cowling, at the other there is a fin, and nothing else is close.
+	var tip: float = box.size.z * 0.125
+	var front_high: float = -INF
+	var front_low: float = INF
+	var back_high: float = -INF
+	var back_low: float = INF
+	for point in points:
+		if point.z < box.position.z + tip:
+			front_high = maxf(front_high, point.y)
+			front_low = minf(front_low, point.y)
+		elif point.z > box.end.z - tip:
+			back_high = maxf(back_high, point.y)
+			back_low = minf(back_low, point.y)
+	if front_high < front_low or back_high < back_low:
+		return
+
+	if OS.has_environment("RC_MODEL_DEBUG"):
+		print("   cloud box ", box.size)
+		print("   nose end %.3f tall, tail end %.3f tall"
+			% [front_high - front_low, back_high - back_low])
+
+	# The fin end is the tall end, and the tail belongs at +Z.
+	if (front_high - front_low) > (back_high - back_low):
+		scene.basis = Basis(Vector3.UP, PI) * scene.basis
+		var swap_high: float = front_high
+		var swap_low: float = front_low
+		front_high = back_high
+		front_low = back_low
+		back_high = swap_high
+		back_low = swap_low
+
+	# And the fin points away from the wheels: at the tail, there is far more
+	# aeroplane above the middle than below it.
+	var middle: float = (box.position.y + box.end.y) * 0.5
+	if (back_high - middle) < (middle - back_low):
+		scene.basis = Basis(Vector3.BACK, PI) * scene.basis
+
+	# Last, and it overrules the fin: if the model says where its propeller is,
+	# that is not an inference at all.
+	#
+	# The fin rule got the Cessna backwards. Its front eighth carries a cowling
+	# and a nose leg and stands 1.9 m tall against the tail's 2.7 m - the right
+	# answer to the wrong question, because both ends of a light aeroplane are
+	# tall and the margin between them is not evidence of anything.
+	if _propeller != null:
+		# Where the propeller's GEOMETRY is, not where its node origin is. The
+		# origin of a glTF node is wherever the exporter left it - on this
+		# model it sits five millimetres from the centre of a nine metre
+		# aeroplane, which is a coin toss, not a measurement.
+		var station: float = _node_centre(holder, _propeller).z
+		if OS.has_environment("RC_MODEL_DEBUG"):
+			print("   propeller sits at z %+.3f before the last turn" % station)
+		if station > 0.0:
+			scene.basis = Basis(Vector3.UP, PI) * scene.basis
+
+
+## The centre of a node's own visible geometry, in `reference`'s space.
+func _node_centre(reference: Node3D, node: Node3D) -> Vector3:
+	var bounds := AABB()
+	var first := true
+	var meshes: Array[Node] = node.find_children("*", "MeshInstance3D", true, false)
+	if node is MeshInstance3D:
+		meshes.append(node)
+	for child in meshes:
+		var mesh := child as MeshInstance3D
+		if not mesh.is_visible_in_tree():
+			continue
+		var box: AABB = reference.global_transform.affine_inverse() \
+				* (mesh.global_transform * mesh.get_aabb())
+		if first:
+			bounds = box
+			first = false
+		else:
+			bounds = bounds.merge(box)
+	if first:
+		return reference.to_local(node.global_position)
+	return bounds.position + bounds.size * 0.5
 
 
 func _find_node(root: Node, node_name: String) -> Node3D:

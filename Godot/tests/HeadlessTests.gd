@@ -238,6 +238,16 @@ func _test_airframe_is_fitted_to_the_definition() -> void:
 	# must not be is the eight-times-too-big the file arrives at.
 	_check(absf(drawn - declared) < declared * 0.10,
 		"the downloaded airframe is drawn at the span the flight model uses")
+
+	# And it must not be facing backwards. The span check cannot see that:
+	# fitting a model along an axis and then measuring it along the same axis
+	# proves the two agree, not that the axis is the span - which is how both
+	# aeroplanes shipped fitted by their fuselage length, flying sideways,
+	# with the check reading 1.500 m against 1.500 m throughout.
+	var station: float = model.call("propeller_station_m")
+	print("       propeller at %+.3f m along the aeroplane" % station)
+	_check(station < -declared * 0.10,
+		"the propeller is at the front of the aeroplane")
 	model.queue_free()
 
 
