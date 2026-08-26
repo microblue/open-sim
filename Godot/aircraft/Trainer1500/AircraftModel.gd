@@ -863,11 +863,17 @@ func _tail_is_forward(holder: Node3D) -> bool:
 		# the middle of a nine metre aeroplane.
 		return _node_centre(holder, _propeller).z > 0.0
 
-	# Failing that: the outermost eighth at one end is a fin and at the other a
-	# spinner, and nothing else on a light aeroplane is close. An outer THIRD
-	# was tried and is not discriminating - the front third of a high-wing
-	# holds the wing and the undercarriage between them.
-	var ends: Vector2 = _end_heights(holder)
+	# Failing that: HOW WIDE the aeroplane is at each end.
+	#
+	# There is a tailplane at one end and a spinner at the other, and nothing
+	# else about a light aeroplane is as lopsided. Two weaker rules were tried
+	# first and both are ambiguous on a warbird: total height at each end (a
+	# cowling above the line and a leg below it can match a fin) and reach
+	# above the midline (the Spitfire's radiator gave 18.2 against its fin's
+	# 16.2, a twelve per cent margin, and it flew backwards).
+	var ends: Vector2 = _end_spans(holder)
+	if OS.has_environment("RC_MODEL_DEBUG"):
+		print("   width at the ends: nose %.3f, tail %.3f" % [ends.x, ends.y])
 	return ends.x > ends.y
 
 
@@ -890,8 +896,9 @@ func _fin_is_below(holder: Node3D) -> bool:
 	return (high - middle) < (middle - low)
 
 
-## How tall the outermost eighth is at each end: x the -Z end, y the +Z end.
-func _end_heights(holder: Node3D) -> Vector2:
+## How wide the aeroplane is across the outermost eighth at each end: x the -Z
+## end, y the +Z end. The end with a tailplane on it wins by a long way.
+func _end_spans(holder: Node3D) -> Vector2:
 	var points: PackedVector3Array = _vertex_cloud(holder)
 	if points.size() < 32:
 		return Vector2.ZERO
@@ -901,9 +908,11 @@ func _end_heights(holder: Node3D) -> Vector2:
 	var back := Vector2(INF, -INF)
 	for point in points:
 		if point.z < box.position.z + tip:
-			front = Vector2(minf(front.x, point.y), maxf(front.y, point.y))
+			front = Vector2(minf(front.x, point.x), maxf(front.y, point.x))
 		elif point.z > box.end.z - tip:
-			back = Vector2(minf(back.x, point.y), maxf(back.y, point.y))
+			back = Vector2(minf(back.x, point.x), maxf(back.y, point.x))
+	if not is_finite(front.x) or not is_finite(back.x):
+		return Vector2.ZERO
 	return Vector2(front.y - front.x, back.y - back.x)
 
 

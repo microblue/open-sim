@@ -492,8 +492,18 @@ func _layout() -> void:
 
 
 func _content_rect(size: Vector2) -> Rect2:
-	# The step tabs are taller now, and the footer buttons are too.
-	return Rect2(PAD, 268.0, size.x - PAD * 2.0, size.y - 268.0 - 160.0)
+	# Below the heading's rule, not on top of it.
+	#
+	# The heading sits 36 px above this rectangle and draws a rule 44 px below
+	# itself, which put the rule 8 px INSIDE the content - so the first
+	# aircraft card covered it. The step tabs and the footer buttons both grew
+	# and this number did not follow them.
+	# The heading block sits entirely ABOVE this rectangle - title, subtitle
+	# and rule - which is what _section_heading's -100 anchor is for. It used
+	# to be -36 with the rule 44 below the title, which put the rule 8 px
+	# INSIDE the content and the first aircraft card straight over the top of
+	# it. Those offsets were set when the type was two thirds this size.
+	return Rect2(PAD, 330.0, size.x - PAD * 2.0, size.y - 330.0 - 160.0)
 
 
 ## The aircraft step is three columns: the roster to choose from, the aeroplane
@@ -506,9 +516,15 @@ const AIRCRAFT_GAP: float = 30.0
 
 
 func _aircraft_card_rect(rect: Rect2, index: int) -> Rect2:
-	var card_h: float = minf(118.0, (rect.size.y - 3.0 * 16.0) / 4.0)
+	# Divided by however many aeroplanes there ARE. It was divided by four,
+	# which was right for as long as there were four: adding a fifth ran the
+	# list off the bottom of the screen.
+	var count: int = maxi(_aircraft.size(), 1)
+	var gap: float = 16.0
+	var card_h: float = minf(118.0,
+			(rect.size.y - gap * float(count - 1)) / float(count))
 	return Rect2(rect.position.x,
-				 rect.position.y + float(index) * (card_h + 16.0),
+				 rect.position.y + float(index) * (card_h + gap),
 				 AIRCRAFT_LIST_W, card_h)
 
 
@@ -852,15 +868,17 @@ func _section_heading(pos: Vector2, text: String, sub: String) -> void:
 		# as a rumour - the line that explains each step was the least
 		# readable thing on the screen. Lifted, and given the heavier shadow
 		# the title gets, because it is competing with the same background.
-		UITheme.draw_text_shadow(_canvas, pos + Vector2(0, 28), sub,
-								 UITheme.SIZE_LABEL, Color(0.76, 0.82, 0.90),
+		UITheme.draw_text_shadow(_canvas, pos + Vector2(0, 36), sub,
+								 UITheme.SIZE_BODY, Color(0.76, 0.82, 0.90),
 								 Color(0, 0, 0, 0.7))
-	UITheme.draw_rule(_canvas, pos + Vector2(0, 44), 320.0, UITheme.ACCENT, 2.0)
+	# Spaced for the type that is actually drawn. At +28 and +44 the subtitle
+	# and the rule were 16 px apart, which is less than the subtitle is tall.
+	UITheme.draw_rule(_canvas, pos + Vector2(0, 66), 320.0, UITheme.ACCENT, 2.0)
 
 
 func _draw_aircraft(size: Vector2) -> void:
 	var rect: Rect2 = _content_rect(size)
-	_section_heading(rect.position - Vector2(0, 36), "Choose your aeroplane",
+	_section_heading(rect.position - Vector2(0, 100), "Choose your aeroplane",
 					 "%d machines, easiest first. Each one is measured, not described."
 					 % _aircraft.size())
 	# The roster down the left. The selected card was a faint tint and a thin
@@ -1047,7 +1065,7 @@ func _roster_fraction(key: String, value: float) -> float:
 
 func _draw_scenes(size: Vector2) -> void:
 	var rect: Rect2 = _content_rect(size)
-	_section_heading(rect.position - Vector2(0, 36), "Where do you want to fly?",
+	_section_heading(rect.position - Vector2(0, 100), "Where do you want to fly?",
 					 "Each place is its own climate and geology. The previews are real frames.")
 	for i in _scenes.size():
 		var r: Rect2 = _picture_rect(rect, i, _scenes.size(), 9.0 / 16.0)
@@ -1068,7 +1086,7 @@ func _draw_scenes(size: Vector2) -> void:
 
 func _draw_weather(size: Vector2) -> void:
 	var rect: Rect2 = _content_rect(size)
-	_section_heading(rect.position - Vector2(0, 36), "What kind of day?",
+	_section_heading(rect.position - Vector2(0, 100), "What kind of day?",
 					 "Weather is not a filter - it changes the air and the ground.")
 	for i in _weathers.size():
 		var r: Rect2 = _picture_rect(rect, i, _weathers.size(), 9.0 / 16.0)
@@ -1104,7 +1122,7 @@ func _draw_weather(size: Vector2) -> void:
 
 func _draw_review(size: Vector2) -> void:
 	var rect: Rect2 = _content_rect(size)
-	_section_heading(rect.position - Vector2(0, 36), "The sortie",
+	_section_heading(rect.position - Vector2(0, 100), "The sortie",
 					 "Everything below is what you are about to fly.")
 	var gap: float = 20.0
 	var card_w: float = (rect.size.x - gap * 2.0) / 3.0

@@ -34,6 +34,9 @@ var _climb: float = 0.0
 var _throttle: float = 0.0
 var _alpha: float = 0.0
 var _stall: float = 0.0
+## True once the player has actually moved a keyboard control. The banner that
+## teaches the keys is then telling someone who is already flying how to fly.
+var _keys_learned: bool = false
 var _fps: float = 0.0
 var _fps_accumulator: float = 0.0
 var _fps_frames: int = 0
@@ -84,6 +87,17 @@ func _process(delta: float) -> void:
 	_climb = lerpf(_climb, _sim.get_velocity_world().y, steady)
 	_alpha = lerpf(_alpha, _sim.get_alpha_degrees(), steady)
 	_stall = lerpf(_stall, _sim.get_stalled_fraction(), quick)
+
+	# Has the keyboard actually been used? Anything off centre counts, and once
+	# it counts it stays counted for the session - a banner that came back
+	# every time the sticks returned to neutral would be worse than one that
+	# never left.
+	if not _keys_learned and _input != null and _input.is_using_keyboard():
+		var channels: PackedFloat64Array = _input.get_channels()
+		for i in channels.size():
+			if absf(channels[i]) > 0.12:
+				_keys_learned = true
+				break
 	_throttle = lerpf(_throttle, _sim.get_channels()[2], quick)
 
 	_alert_phase += delta
@@ -425,17 +439,26 @@ func _draw_alerts(centre: Vector2) -> void:
 		text = _sim.get_failure_text()
 		colour = UITheme.DANGER
 	elif _sim.has_crashed():
-		text = "CRASHED   -   PRESS R TO RESET"
+		# And how to find out WHY. The flight recorder has been running the
+		# whole time and a beginner has no reason to know it exists; the moment
+		# they most want it is the moment they have just put the model in.
+		text = "CRASHED   -   R TO RESET   -   TAB TO SEE WHAT YOU DID"
 		colour = UITheme.DANGER
 	elif flying and _stall > 0.30:
 		text = "STALL"
 		colour = UITheme.DANGER
 	elif flying and _stall > 0.06:
 		text = "APPROACHING THE STALL"
-	elif _input != null and not _input.is_connected():
+	elif _input != null and not _input.is_connected() and not _keys_learned:
 		# The keyboard is flying it. Says what the keys are, because the old
 		# line sent a player with no radio to a wizard that needs one - a dead
 		# end dressed up as a next step.
+		#
+		# And it GOES AWAY once they have been used. A banner across the top of
+		# the frame is the right way to say something the player does not know
+		# yet and the wrong way to say something they have already acted on -
+		# it sat there through every flight, blocking the sky, telling someone
+		# who was already flying on the keyboard how to fly on the keyboard.
 		text = "NO TRANSMITTER - FLYING ON THE KEYBOARD" \
 			+ "   ARROWS ELEVATOR/AILERON   W/S THROTTLE   A/D RUDDER   F3 SET UP A RADIO"
 		colour = UITheme.WARN

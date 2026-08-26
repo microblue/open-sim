@@ -32,6 +32,10 @@ var _engine: AudioStreamPlayer3D
 var _wind: AudioStreamPlayer3D
 var _roll: AudioStreamPlayer3D
 var _impact: AudioStreamPlayer3D
+var _stall: AudioStreamPlayer3D
+## How loudly the warner is sounding, 0 to 1, eased so it does not chatter on
+## and off as the wing brushes the stall.
+var _stall_gain: float = 0.0
 
 var _engine_gain: float = 0.0
 var _wind_gain: float = 0.0
@@ -47,6 +51,12 @@ func _ready() -> void:
 	_roll = _player("GroundRoll", BankScript.ground_roll(), -6.0)
 	_impact = _player("Impact", BankScript.impact(), 2.0)
 	_impact.autoplay = false
+
+	# The stall warner. Mixed in at the aeroplane, not at the pilot's ear, so
+	# it fades with distance like everything else the model does - a warner you
+	# cannot hear at two hundred metres is exactly as much use as a real one.
+	_stall = _player("StallHorn", BankScript.stall_horn(), -40.0)
+	_stall.play()
 
 	# The looping beds run continuously and are mixed with volume, which avoids
 	# the click a start/stop on every throttle movement would produce.
@@ -80,6 +90,21 @@ func _process(delta: float) -> void:
 	var airspeed: float = _sim.get_airspeed_mps()
 	var on_ground: bool = _sim.is_on_ground()
 	var crashed: bool = _sim.has_crashed()
+
+	# --- the stall warner --------------------------------------------------
+	# Sounds while the wing is separating and the aeroplane is actually flying.
+	# Parked in a breeze the relative wind comes from behind the wing, which is
+	# "separated" and is not a stall - a warner that sounds on the ground is a
+	# warner a student learns to ignore.
+	var flying: bool = not on_ground or airspeed > 6.0
+	var separation: float = _sim.get_stalled_fraction()
+	var warn: float = 0.0
+	if flying and not crashed and separation > 0.05:
+		# Full volume by the time a third of the wing has let go, which is
+		# early enough to be a warning rather than an epitaph.
+		warn = clampf((separation - 0.05) / 0.28, 0.0, 1.0)
+	_stall_gain = lerpf(_stall_gain, warn, clampf(delta * 6.0, 0.0, 1.0))
+	_stall.volume_db = _gain_to_db(_stall_gain * 0.9)
 
 	# --- the motor ---------------------------------------------------------
 	# Blade passing frequency, which is what the ear actually tracks.

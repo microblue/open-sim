@@ -226,6 +226,35 @@ static func ui_back() -> AudioStreamWAV:
 		samples[i] = sin(phase) * decay * 0.4
 	return _to_stream(samples, false)
 
+## The stall warner: a reedy, insistent two-tone that is impossible to mistake
+## for the aeroplane.
+##
+## Every real trainer has one, and it is the single most useful thing a student
+## can be given - the stall is the thing that kills model aeroplanes and it
+## arrives quietly. This simulator had a 13-pixel caption reading "STALLED 47%"
+## in the bottom third of the screen, which a student staring at their model a
+## hundred metres away will never see.
+##
+## Deliberately ugly: buzzy rather than musical, and out of tune with the motor
+## so it cuts through instead of blending into it.
+static func stall_horn() -> AudioStreamWAV:
+	var frames: int = int(MIX_RATE * 0.5)
+	var samples := PackedFloat32Array()
+	samples.resize(frames)
+	for i in frames:
+		var t: float = float(i) / float(MIX_RATE)
+		# Two close tones beating against each other, which is what makes a
+		# real reed warner sound like a warning rather than a note.
+		var tone: float = sin(TAU * 830.0 * t) * 0.6 + sin(TAU * 905.0 * t) * 0.4
+		# A square-ish edge, for the reediness.
+		tone = clampf(tone * 1.9, -1.0, 1.0)
+		# Pulsed at four a second: continuous tones stop being heard.
+		var gate: float = 1.0 if fmod(t, 0.25) < 0.16 else 0.0
+		samples[i] = tone * gate * 0.35
+	_crossfade_ends(samples, 200)
+	return _to_stream(samples, true)
+
+
 static func _crossfade_ends(samples: PackedFloat32Array, blend: int) -> void:
 	var count: int = samples.size()
 	if blend <= 0 or blend * 2 >= count:
