@@ -35,6 +35,9 @@ const DirectorScript := preload("res://world/WorldDirector.gd")
 const WorldScreenScript := preload("res://ui/WorldScreen.gd")
 const ReplayScript := preload("res://ui/ReplayBar.gd")
 const ModelScript := preload("res://aircraft/Trainer1500/AircraftModel.gd")
+const LoadingScript := preload("res://ui/LoadingScreen.gd")
+const ScenePresetsLib := preload("res://world/ScenePresets.gd")
+const WeatherLib := preload("res://world/Weather.gd")
 const AudioScript := preload("res://aircraft/Trainer1500/AircraftAudio.gd")
 
 @onready var aircraft: RCSimulationNode = $Aircraft
@@ -45,6 +48,9 @@ var director: Node
 var _autobind_remaining: float = 0.0
 var _autobind_pending: bool = false
 var _last_profile_problem: String = ""
+## True while the world is being built behind the loading screen, so a second
+## Fly cannot start a second build on top of the first.
+var _loading: bool = false
 
 
 func _ready() -> void:
@@ -57,57 +63,24 @@ func _ready() -> void:
 		_autobind_pending = true
 		_autobind_remaining = AUTOBIND_TIMEOUT
 
-	# The field is built in code so the whole scene stays in text files. It
-	# reads the aircraft's wind, so the grass, the trees and the windsock all
-	# agree with what the model is flying in.
-	var field := FieldScript.new()
-	field.name = "GrassField01"
-	field.simulation_path = NodePath("../../Aircraft")
-	$Field.add_child(field)
-
-	# The world beyond the flying field: streamed terrain, generated from the
-	# same height function the aircraft collides with, out to the horizon.
-	var world := WorldScript.new()
-	world.name = "World"
-	world.simulation_path = NodePath("../../Aircraft")
-	world.camera_path = NodePath("../../CameraRig")
-	if not OS.has_environment("RC_NO_TERRAIN"):
-		$Field.add_child(world)
-
-	# What stands on that terrain: grass, scrub, trees, boulders. The circuit is
-	# generated in full before the first frame; beyond it, cells stream.
-	var detail := DetailScript.new()
-	detail.name = "Detail"
-	detail.simulation_path = NodePath("../../Aircraft")
-	detail.camera_path = NodePath("../../CameraRig")
-	if not OS.has_environment("RC_NO_DETAIL"):
-		$Field.add_child(detail)
-
+	# The world is NOT built here.
+	#
+	# Building the field, the terrain and the scatter takes over a second, and
+	# doing it in _ready meant the player watched a black window before the
+	# menu they had not asked to leave yet appeared. Worse, it built a place
+	# and a weather they had not chosen - so the first thing the Fly button did
+	# was throw it away and build another. See _build_world().
+	#
 	# One place that knows how a scene preset and a weather state reach the
-	# terrain, the sky, the light, the air and the ground.
+	# terrain, the sky, the light, the air and the ground. Cheap, and the menu
+	# reads it, so it exists from the start; it simply has nothing to talk to
+	# until the field does.
 	director = DirectorScript.new()
 	director.name = "WorldDirector"
 	director.simulation_path = NodePath("../Aircraft")
 	director.field_path = NodePath("../Field")
 	director.camera_path = NodePath("../CameraRig")
 	add_child(director)
-	# The camera rig asks the field how high the ground is, so it can refuse to
-	# go under it.
-	camera_rig.field_path = camera_rig.get_path_to(field)
-
-	# The visible aircraft is generated from the flight model's own geometry, so
-	# what the pilot sees is what is flying.
-	var model := ModelScript.new()
-	model.name = "Model"
-	model.simulation_path = NodePath("..")
-	aircraft.add_child(model)
-
-	# Parented to the aircraft so distance, stereo placement and Doppler all
-	# come out of how it is actually flying.
-	var audio := AudioScript.new()
-	audio.name = "Audio"
-	audio.simulation_path = NodePath("..")
-	aircraft.add_child(audio)
 
 	var tuning := TuningScript.new()
 	tuning.name = "TuningPanel"
@@ -292,14 +265,127 @@ func _refresh_hud_visibility() -> void:
 	hud.visible = not (has_node("MainMenu") or has_node("ControllerWizard"))
 
 
-## The menu's Fly button: one action, the whole sortie. The aircraft, the place
-## and the weather are applied together, then the state is reset so the model
-## starts on the ground in the world that was just chosen.
+## The menu's Fly button: one action, the whole sortie.
+##
+## The world is built here rather than at startup, a piece at a time, with a
+## loading screen in front of it saying how far along it is. Building it in one
+## frame froze the window for a second and a half - which is indistinguishable
+## from a crash - and built a place the player had not chosen yet.
 func _fly_from_menu(stem: String, scene_id: String, weather_id: String) -> void:
+	if _loading:
+		return
+	_loading = true
+	if has_node("MainMenu"):
+		# Deferred: this runs from inside the menu's own signal emit, and a
+		# node cannot free itself out from under the call that is running.
+		get_node("MainMenu").queue_free()
+
+	var loader := LoadingScript.new()
+	loader.name = "LoadingScreen"
+	loader.scene_id = scene_id
+	loader.sortie = "%s   -   %s, %s" % [
+		_display_name(stem),
+		ScenePresetsLib.by_id(scene_id).get("name", scene_id),
+		WeatherLib.by_id(weather_id).get("name", weather_id)]
+	add_child(loader)
+	await get_tree().process_frame
+
+	await _build_world(loader, stem, scene_id, weather_id)
+
+	loader.report(1.0, "ready")
+	# Long enough for the bar to visibly reach the end. A progress bar that
+	# vanishes at 80% leaves the player sure something went wrong.
+	await get_tree().create_timer(0.35).timeout
+	loader.dismiss()
+	_loading = false
+	_refresh_hud_visibility()
+
+
+## Everything that stands between an empty scene and a sortie, in the order it
+## has to happen, reporting as it goes.
+func _build_world(loader: Node, stem: String, scene_id: String,
+				  weather_id: String) -> void:
+	if not has_node("Field/GrassField01"):
+		loader.report(0.04, "loading the aeroplane")
+		aircraft.aircraft_definition = "Data/Aircraft/%s.json" % stem
+		if not aircraft.reload_aircraft():
+			push_warning("Could not load %s" % stem)
+		await get_tree().process_frame
+
+		loader.report(0.10, "mowing the strip")
+		var field := FieldScript.new()
+		field.name = "GrassField01"
+		field.simulation_path = NodePath("../../Aircraft")
+		$Field.add_child(field)
+		camera_rig.field_path = camera_rig.get_path_to(field)
+		await get_tree().process_frame
+
+		loader.report(0.18, "raising the terrain")
+		if not OS.has_environment("RC_NO_TERRAIN"):
+			var world := WorldScript.new()
+			world.name = "World"
+			world.simulation_path = NodePath("../../Aircraft")
+			world.camera_path = NodePath("../../CameraRig")
+			world.defer_build = true
+			$Field.add_child(world)
+			await _pump_levels(loader, world, 0.18, 0.52)
+
+		loader.report(0.52, "planting the treeline")
+		if not OS.has_environment("RC_NO_DETAIL"):
+			var detail := DetailScript.new()
+			detail.name = "Detail"
+			detail.simulation_path = NodePath("../../Aircraft")
+			detail.camera_path = NodePath("../../CameraRig")
+			detail.defer_build = true
+			$Field.add_child(detail)
+			await _pump_cells(loader, detail, 0.52, 0.88)
+
+		loader.report(0.88, "wiring the aeroplane")
+		var audio := AudioScript.new()
+		audio.name = "Audio"
+		audio.simulation_path = NodePath("..")
+		aircraft.add_child(audio)
+		await get_tree().process_frame
+
+	loader.report(0.92, "setting the weather")
 	if director != null:
+		director.rebind()
 		director.apply_scene(scene_id)
+		await get_tree().process_frame
 		director.apply_weather(weather_id)
+		await get_tree().process_frame
+
+	loader.report(0.97, "walking out to the strip")
 	_fly_aircraft(stem)
+	await get_tree().process_frame
+
+
+## One clipmap level per frame, so the bar moves and the window keeps painting.
+func _pump_levels(loader: Node, world: Node, from: float, to: float) -> void:
+	var total: int = maxi(world.call("pending_levels"), 1)
+	while world.call("pending_levels") > 0:
+		var left: int = world.call("build_next_level")
+		loader.report(lerpf(from, to, 1.0 - float(left) / float(total)),
+					  "raising the terrain")
+		await get_tree().process_frame
+
+
+## Scattered cells in batches. The batch is sized so a frame stays under about
+## a fiftieth of a second: small enough that the window is alive, large enough
+## that the circuit does not take a minute.
+func _pump_cells(loader: Node, detail: Node, from: float, to: float) -> void:
+	var total: int = maxi(detail.call("pending_cells"), 1)
+	while detail.call("pending_cells") > 0:
+		var left: int = detail.call("build_some", 4)
+		loader.report(lerpf(from, to, 1.0 - float(left) / float(total)),
+					  "planting the treeline")
+		await get_tree().process_frame
+
+
+## The aircraft's display name, without loading it: the menu already knows it,
+## but the loading screen is handed only the file stem.
+func _display_name(stem: String) -> String:
+	return stem.capitalize()
 
 
 func _open_tuning() -> void:

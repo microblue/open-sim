@@ -22,6 +22,7 @@ const UITheme := preload("res://ui/UITheme.gd")
 const ScenePresetsLib := preload("res://world/ScenePresets.gd")
 const WeatherLib := preload("res://world/Weather.gd")
 const SoundBank := preload("res://audio/SoundBank.gd")
+const StageScript := preload("res://ui/AircraftStage.gd")
 
 signal fly_requested(aircraft_stem: String, scene_id: String, weather_id: String)
 signal wizard_requested
@@ -78,6 +79,13 @@ var _press: float = 0.0
 var _press_rect: String = ""          # which rect is held down
 var _fade: float = -1.0
 ## Fly progress, 0..1, filling after the fly action before the fade.
+## The turntable on the aircraft step, and the rectangle it is drawn in.
+var _stage: Node
+var _stage_view: TextureRect
+## The picture behind everything: the place currently chosen.
+var _backdrop: TextureRect
+var _backdrop_id: String = ""
+
 var _progress: float = 0.0
 var _progress_active: bool = false
 var _hit: Array[Dictionary] = []
@@ -98,6 +106,20 @@ func _ready() -> void:
 	_sim = get_node_or_null(simulation_path) as RCSimulationNode
 	_director = get_node_or_null(director_path)
 
+	# The backdrop.
+	#
+	# This used to be a frosted pane over the live 3D world, which meant the
+	# world had to exist before the menu could open - a second and a half of
+	# black window on every cold start, spent building a place the player had
+	# not chosen. The menu now stands on a picture of the place instead, which
+	# also means the backdrop changes as they walk down the list.
+	_backdrop = TextureRect.new()
+	_backdrop.name = "Backdrop"
+	_backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_backdrop.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_backdrop.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	_backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_backdrop)
 	add_child(UITheme.make_frosted(0.45, 1.7))
 
 	_music = AudioStreamPlayer.new()
@@ -110,6 +132,12 @@ func _ready() -> void:
 	_sfx = AudioStreamPlayer.new()
 	_sfx.name = "MenuSfx"
 	add_child(_sfx)
+
+	# The aeroplane itself, turning. A chooser that answers "which aeroplane?"
+	# in wing loadings alone is a spreadsheet with a Fly button.
+	_stage = StageScript.new()
+	_stage.name = "Stage"
+	add_child(_stage)
 
 	_canvas = Control.new()
 	_canvas.anchor_right = 1.0
@@ -310,13 +338,17 @@ func _set_step(step: int) -> void:
 	_canvas.queue_redraw()
 
 
+## Hands the sortie over. The menu used to run a two-and-a-half second progress
+## bar of its own, counting nothing - the world was built later, in one frame,
+## with the window frozen. The bar is now on the loading screen, where it is
+## measuring work that is actually happening.
 func _begin_fly() -> void:
 	if _progress_active:
 		return
 	_progress_active = true
-	_progress = 0.0
 	_play(SoundBank.ui_confirm())
 	_canvas.queue_redraw()
+	_complete_fly()
 
 
 func _play(stream: AudioStreamWAV) -> void:
@@ -331,12 +363,6 @@ func _play(stream: AudioStreamWAV) -> void:
 func _process(delta: float) -> void:
 	_appear = minf(_appear + delta * 4.0, 1.0)
 	_press = maxf(_press - delta * 5.0, 0.0)
-	if _progress_active:
-		_progress += delta / 2.4
-		if _progress >= 1.0:
-			_progress = 1.0
-			_fade = 0.0
-			_progress_active = false
 	if _fade >= 0.0:
 		_fade = minf(_fade + delta * 3.0, 1.0)
 		if _fade >= 1.0:
@@ -372,10 +398,13 @@ func _ease_pulses(delta: float) -> void:
 func _complete_fly() -> void:
 	if _aircraft.is_empty():
 		return
+	# The menu does NOT free itself here. The handler on the other end of this
+	# signal is what puts the loading screen up, and it wants the menu gone at
+	# a moment of its choosing - freeing from inside the emit is freeing a
+	# locked object, which Godot refuses and reports.
 	fly_requested.emit(_aircraft[_aircraft_index]["stem"],
 					   _scenes[_scene_index]["id"],
 					   _weathers[_weather_index]["id"])
-	queue_free()
 
 
 ## The layout depends on which step is showing: each step owns its content
@@ -388,6 +417,12 @@ func _layout() -> void:
 		if is_instance_valid(thumb):
 			thumb.queue_free()
 	_thumbs.clear()
+	# The turntable belongs to the aircraft step alone; it is hidden rather
+	# than freed so the aeroplane on it survives a walk to the weather page
+	# and back.
+	if _stage_view != null:
+		_stage_view.visible = _step == STEP_AIRCRAFT
+	_refresh_backdrop()
 
 	var header_y: float = 44.0
 	_transmitter_origin = Vector2(size.x - PAD - 300.0 - 8.0 - 108.0 - 8.0 - 72.0, header_y)
@@ -435,14 +470,33 @@ func _content_rect(size: Vector2) -> Rect2:
 	return Rect2(PAD, 248.0, size.x - PAD * 2.0, size.y - 248.0 - 132.0)
 
 
+## The aircraft step is three columns: the roster to choose from, the aeroplane
+## itself, and its brief. Computed in one place because the layout pass and the
+## draw pass both need it and a card you can click that is not where it is
+## drawn is the worst kind of bug to find.
+const AIRCRAFT_LIST_W: float = 440.0
+const AIRCRAFT_BRIEF_W: float = 480.0
+const AIRCRAFT_GAP: float = 30.0
+
+
+func _aircraft_card_rect(rect: Rect2, index: int) -> Rect2:
+	var card_h: float = minf(118.0, (rect.size.y - 3.0 * 16.0) / 4.0)
+	return Rect2(rect.position.x,
+				 rect.position.y + float(index) * (card_h + 16.0),
+				 AIRCRAFT_LIST_W, card_h)
+
+
+func _aircraft_stage_rect(rect: Rect2) -> Rect2:
+	var x: float = rect.position.x + AIRCRAFT_LIST_W + AIRCRAFT_GAP
+	var w: float = rect.size.x - AIRCRAFT_LIST_W - AIRCRAFT_BRIEF_W - AIRCRAFT_GAP * 2.0
+	return Rect2(x, rect.position.y, maxf(w, 200.0), rect.size.y - 70.0)
+
+
 func _layout_aircraft(size: Vector2) -> void:
 	var rect: Rect2 = _content_rect(size)
-	var card_h: float = minf(104.0, (rect.size.y - 3.0 * 14.0) / 4.0)
 	for i in _aircraft.size():
-		var r := Rect2(rect.position.x + 40.0,
-					   rect.position.y + float(i) * (card_h + 14.0),
-					   rect.size.x * 0.62, card_h)
-		_hit.append({"rect": r, "kind": "aircraft", "index": i, "action": "aircraft"})
+		_hit.append({"rect": _aircraft_card_rect(rect, i), "kind": "aircraft",
+					 "index": i, "action": "aircraft"})
 
 
 func _layout_scenes(size: Vector2) -> void:
@@ -503,6 +557,21 @@ func _layout_review(size: Vector2) -> void:
 				thumb2.position = r.position + Vector2(20, 52)
 				_canvas.add_child(thumb2)
 				_thumbs.append(thumb2)
+
+
+## The backdrop follows the chosen place, dimmed hard enough that the panels
+## and the type keep the screen.
+func _refresh_backdrop() -> void:
+	if _backdrop == null or _scenes.is_empty():
+		return
+	var id: String = String(_scenes[_scene_index]["id"])
+	if id == _backdrop_id:
+		return
+	_backdrop_id = id
+	var path: String = "res://assets/previews/scene_%s.png" % id
+	if ResourceLoader.exists(path):
+		_backdrop.texture = load(path) as Texture2D
+	_backdrop.modulate = Color(0.62, 0.66, 0.72)
 
 
 ## Load a preview for the menu, or null to draw a placeholder instead.
@@ -582,7 +651,10 @@ func _draw_header(size: Vector2, shift: Vector2) -> void:
 			state_colour, 10.0)
 	UITheme.draw_label(_canvas, rect.position + Vector2(14, 18), "transmitter",
 					   state_colour, 2.4)
-	var device: String = "none detected"
+	# Not just "none detected". A player without a radio can still fly, and the
+	# briefing room is where they should learn that rather than discovering it
+	# on the strip.
+	var device: String = "none - keyboard will fly it"
 	if _input != null and _input.is_connected():
 		device = _input.get_device_name().substr(0, 26)
 	var state: String = "READY" if ready else ""
@@ -658,8 +730,7 @@ func _draw_breadcrumb(size: Vector2, shift: Vector2) -> void:
 
 
 func _section_heading(pos: Vector2, text: String, sub: String) -> void:
-	UITheme.draw_text_shadow(_canvas, pos, text, UITheme.SIZE_TITLE, UITheme.TEXT,
-							 Color(0, 0, 0, 0.5))
+	UITheme.draw_display(_canvas, pos, text, UITheme.SIZE_TITLE, UITheme.TEXT)
 	if sub != "":
 		# TEXT_DIM at label size, over sunlit grass, was not a colour so much
 		# as a rumour - the line that explains each step was the least
@@ -675,56 +746,66 @@ func _draw_aircraft(size: Vector2) -> void:
 	var rect: Rect2 = _content_rect(size)
 	_section_heading(rect.position - Vector2(0, 36), "Choose your aeroplane",
 					 "Four machines, each with its own character - pick one and see the brief.")
-	var card_h: float = minf(104.0, (rect.size.y - 3.0 * 14.0) / 4.0)
-
+	# The roster down the left. The selected card was a faint tint and a thin
+	# rule, which at a glance said nothing: four cards, one very slightly
+	# bluer. It is now unmistakable - a filled accent panel, a heavy left bar,
+	# a glow, the name in white and a chevron pointing at the aeroplane the
+	# stage is showing.
 	for i in _aircraft.size():
-		var r := Rect2(rect.position.x + 40.0,
-					   rect.position.y + float(i) * (card_h + 14.0),
-					   rect.size.x * 0.62, card_h)
+		var r: Rect2 = _aircraft_card_rect(rect, i)
 		var selected: bool = i == _aircraft_index
 		var pulse: float = _card_pulse.get("aircraft:%d" % i, 0.0)
 		_draw_card(r, selected, _focus_card(i, "aircraft"), pulse, 2.0)
 
 		var card: Dictionary = _aircraft[i]
-		var x: float = r.position.x + 22.0
-		UITheme.draw_text(_canvas, Vector2(x, r.position.y + 32.0), card["name"],
-						  UITheme.SIZE_TITLE, UITheme.TEXT if selected else UITheme.TEXT_DIM)
-		var specs: String = "%.1f m span   %.2f kg   app %.0f m/s   %.0f N/m2   %.0f W/kg" % [
-			card["span"], card["mass"], card["approach"], card["loading"], card["pw"]]
-		UITheme.draw_text(_canvas, Vector2(x, r.position.y + 60.0), specs,
-						  UITheme.SIZE_LABEL,
+		var x: float = r.position.x + 26.0
+		UITheme.draw_text(_canvas, Vector2(x, r.position.y + 44.0), card["name"],
+						  UITheme.SIZE_TITLE,
 						  UITheme.TEXT if selected else UITheme.TEXT_DIM)
+		var specs: String = "%.1f m   %.2f kg   %.0f N/m2   %.0f W/kg" % [
+			card["span"], card["mass"], card["loading"], card["pw"]]
+		UITheme.draw_text(_canvas, Vector2(x, r.position.y + 76.0), specs,
+						  UITheme.SIZE_LABEL,
+						  UITheme.ACCENT if selected else UITheme.TEXT_FAINT)
 
 		if selected:
-			UITheme.draw_text(_canvas, Vector2(r.end.x - 34.0,
-							  r.position.y + r.size.y * 0.5), "✓",
-							  UITheme.SIZE_LARGE, UITheme.ACCENT)
+			UITheme.draw_text(_canvas, Vector2(r.end.x - 40.0,
+							  r.position.y + r.size.y * 0.5 + 12.0), "▶",
+							  UITheme.SIZE_VALUE, UITheme.ACCENT)
 
-	# The right half is the brief of the aeroplane that is selected: what it
-	# is, and why it flies the way it does. Fills the dead space with the one
-	# thing the pilot actually needs to read before choosing.
+	# The middle column is the aeroplane. Everything else on this screen is a
+	# description of it.
+	if not _aircraft.is_empty():
+		var stage_rect: Rect2 = _aircraft_stage_rect(rect)
+		var chosen: Dictionary = _aircraft[_aircraft_index]
+		_place_stage(stage_rect, String(chosen["stem"]), float(chosen["span"]))
+		UITheme.draw_display(_canvas, Vector2(stage_rect.position.x,
+							 stage_rect.end.y + 50.0), String(chosen["name"]),
+							 UITheme.SIZE_HERO, UITheme.TEXT,
+							 HORIZONTAL_ALIGNMENT_CENTER, stage_rect.size.x)
+
 	if not _aircraft.is_empty():
 		var card: Dictionary = _aircraft[_aircraft_index]
-		var lines: int = _wrap(card["description"], 46).size()
+		var brief_w: float = AIRCRAFT_BRIEF_W
+		var lines: int = UITheme.wrap_text(card["description"], brief_w - 48.0,
+										   UITheme.SIZE_LABEL).size()
 		var perf_rows: int = 0
 		for key in BRIEF_MEASURED:
 			if card.get("performance", {}).has(key[1]):
 				perf_rows += 1
-		var brief_h: float = 76.0 + lines * 19.0 + 16.0 \
-				+ 26.0 + perf_rows * 27.0 + 12.0 + 26.0 + 3 * 27.0
-		var brief := Rect2(rect.position.x + rect.size.x * 0.62 + 60.0,
-						   rect.position.y + 6.0,
-						   rect.size.x * 0.38 - 60.0,
-						   minf(brief_h, rect.size.y - 12.0))
+		var brief_h: float = 92.0 + lines * 24.0 + 18.0 \
+				+ 32.0 + perf_rows * 32.0 + 14.0 + 32.0 + 3 * 32.0
+		var brief := Rect2(rect.end.x - brief_w, rect.position.y,
+						   brief_w, minf(brief_h, rect.size.y))
 		UITheme.draw_panel(_canvas, brief, UITheme.PANEL, UITheme.ACCENT, 12.0)
-		UITheme.draw_label(_canvas, brief.position + Vector2(24, 30), "the brief",
-						   UITheme.ACCENT, 2.6, UITheme.SIZE_SECTION)
-		var by: float = brief.position.y + 60.0
-		for line in _wrap(card["description"], 46):
+		UITheme.draw_label(_canvas, brief.position + Vector2(24, 46), "the brief",
+						   UITheme.ACCENT, 3.0, UITheme.SIZE_SECTION)
+		var by: float = brief.position.y + 92.0
+		for line in UITheme.wrap_text(card["description"], brief.size.x - 48.0, UITheme.SIZE_LABEL):
 			UITheme.draw_text(_canvas, Vector2(brief.position.x + 24, by), line,
 							  UITheme.SIZE_LABEL, UITheme.TEXT_DIM)
-			by += 19.0
-		by += 16.0
+			by += 24.0
+		by += 18.0
 
 		# Everything below is MEASURED - the regression suite flies each of
 		# these and records what it got. Three numbers on a panel this size
@@ -736,26 +817,46 @@ func _draw_aircraft(size: Vector2) -> void:
 		var perf: Dictionary = card.get("performance", {})
 		UITheme.draw_label(_canvas, Vector2(brief.position.x + 24, by),
 						   "measured in flight", UITheme.TEXT_FAINT)
-		UITheme.draw_rule(_canvas, Vector2(brief.position.x + 24, by + 8.0),
+		UITheme.draw_rule(_canvas, Vector2(brief.position.x + 24, by + 10.0),
 						  brief.size.x - 48.0)
-		by += 26.0
+		by += 34.0
 		for row in BRIEF_MEASURED:
 			if not perf.has(row[1]):
 				continue
 			by = _brief_row(brief, by, row[0], row[2] % float(perf[row[1]]),
 							_roster_fraction(row[1], float(perf[row[1]])))
 
-		by += 12.0
+		by += 14.0
 		UITheme.draw_label(_canvas, Vector2(brief.position.x + 24, by),
 						   "on the ground", UITheme.TEXT_FAINT)
-		UITheme.draw_rule(_canvas, Vector2(brief.position.x + 24, by + 8.0),
+		UITheme.draw_rule(_canvas, Vector2(brief.position.x + 24, by + 10.0),
 						  brief.size.x - 48.0)
-		by += 26.0
+		by += 34.0
 		for row in [["wing loading", "%.0f N/m2" % card["loading"], "loading"],
 					["power / weight", "%.0f W/kg" % card["pw"], "pw"],
 					["approach speed", "%.1f m/s" % card["approach"], "approach"]]:
 			by = _brief_row(brief, by, row[0], row[1],
 							_roster_fraction(row[2], float(card[row[2]])))
+
+
+## Puts the selected aeroplane on the stand and positions the stand.
+##
+## The TextureRect is a child of the canvas, so it draws over the panels the
+## canvas paints; it is created once and moved, rather than made each frame.
+func _place_stage(rect: Rect2, stem: String, span: float) -> void:
+	if _stage == null:
+		return
+	if _stage_view == null:
+		_stage_view = TextureRect.new()
+		_stage_view.texture = _stage.call("texture")
+		_stage_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_stage_view.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		_canvas.add_child(_stage_view)
+	_stage_view.visible = true
+	_stage_view.position = rect.position
+	_stage_view.size = rect.size
+	_stage.call("set_stage_size", Vector2i(int(rect.size.x), int(rect.size.y)))
+	_stage.call("show_aircraft", stem, span)
 
 
 ## One line of the brief: name, value, and a bar placing the value against the
@@ -770,10 +871,10 @@ func _brief_row(brief: Rect2, y: float, label: String, value: String,
 	UITheme.draw_text(_canvas, Vector2(brief.position.x + 150, y), value,
 					  UITheme.SIZE_BODY, UITheme.TEXT,
 					  HORIZONTAL_ALIGNMENT_RIGHT, 150.0)
-	var track := Rect2(brief.position.x + 320.0, y - 9.0,
-					   brief.size.x - 344.0, 5.0)
+	var track := Rect2(brief.position.x + 320.0, y - 10.0,
+					   brief.size.x - 344.0, 6.0)
 	UITheme.draw_track(_canvas, track, fraction)
-	return y + 27.0
+	return y + 32.0
 
 
 ## Where `value` sits between the smallest and largest the roster has for the
@@ -870,7 +971,7 @@ func _draw_review(size: Vector2) -> void:
 					  "%.1f m span   %.2f kg" % [aircraft["span"], aircraft["mass"]],
 					  UITheme.SIZE_LABEL, UITheme.TEXT_DIM)
 	var ay: float = 132.0
-	for line in _wrap(aircraft["description"], 40):
+	for line in UITheme.wrap_text(aircraft["description"], 340.0, UITheme.SIZE_LABEL):
 		if ay > r0.end.y - 30.0:
 			break
 		UITheme.draw_text(_canvas, r0.position + Vector2(20, ay), line,

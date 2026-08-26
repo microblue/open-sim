@@ -256,6 +256,17 @@ double RCSimulationNode::get_approach_speed_mps() const
     return AircraftLoaded ? Definition.ApproachSpeed : 0.0;
 }
 
+Vector2 RCSimulationNode::get_fuselage_extent_z() const
+{
+    if (!AircraftLoaded) { return Vector2(0.0f, 0.0f); }
+    const rc::FuselageSpec& spec = Definition.Fuselage;
+    // Body FRD X is forward; Godot Z is aft. The centroid is the middle of the
+    // body, so the nose is half a length ahead of it.
+    const double centre = -spec.PositionBody.x;
+    const double half = spec.Length * 0.5;
+    return Vector2(static_cast<float>(centre - half), static_cast<float>(centre + half));
+}
+
 Dictionary RCSimulationNode::get_performance() const
 {
     Dictionary out;
@@ -1413,6 +1424,7 @@ void RCSimulationNode::_bind_methods()
     OPENRC_BIND(get_power_to_weight_w_per_kg);
     OPENRC_BIND(get_cruise_speed_mps);
     OPENRC_BIND(get_approach_speed_mps);
+    OPENRC_BIND(get_fuselage_extent_z);
     OPENRC_BIND(get_performance);
     OPENRC_BIND(list_aircraft);
 

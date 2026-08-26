@@ -240,6 +240,19 @@ public:
     double get_cruise_speed_mps() const;
     double get_approach_speed_mps() const;
 
+    /** Where the fuselage runs, in Godot axes: the nose and the tail, relative
+     *  to the centre of gravity.
+     *
+     *  The visible model used to loft its fuselage between the most forward
+     *  and most aft AERODYNAMIC sections, which on the trainer meant a nose
+     *  9 mm ahead of the CG when the real one is 575 mm ahead. The propeller
+     *  sits where the definition says it does, so it hung in the air a third
+     *  of a metre off the front of the aeroplane. Invisible at flight scale,
+     *  impossible to miss the moment there is a preview.
+     *
+     *  Returns Vector2(nose, tail) as Godot Z, so nose is the more negative. */
+    godot::Vector2 get_fuselage_extent_z() const;
+
     /** The aircraft's measured performance, as the regression suite recorded
      *  it: glide ratio, stall speed, roll rate and the rest.
      *

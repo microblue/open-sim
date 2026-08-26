@@ -148,7 +148,7 @@ func _draw_column(rect: Rect2, heading: String, entries: Array[Dictionary],
 	y += 24.0
 
 	var chosen_entry: Dictionary = entries[index]
-	for line in _wrap(chosen_entry["description"], int((rect.size.x - 48.0) / 6.6)):
+	for line in UITheme.wrap_text(chosen_entry["description"], rect.size.x - 48.0, UITheme.SIZE_LABEL):
 		UITheme.draw_text(_canvas, Vector2(x, y), line, UITheme.SIZE_LABEL, UITheme.TEXT_DIM)
 		y += 17.0
 

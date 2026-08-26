@@ -40,18 +40,18 @@ const GOOD          := Color(0.35, 0.85, 0.52)
 
 # -------------------------------------------------------------------- type --
 
-const SIZE_MICRO  := 11
-const SIZE_LABEL  := 13
-const SIZE_BODY   := 15
-const SIZE_VALUE  := 19
-const SIZE_LARGE  := 28
-const SIZE_HERO   := 46
+const SIZE_MICRO  := 15
+const SIZE_LABEL  := 18
+const SIZE_BODY   := 21
+const SIZE_VALUE  := 26
+const SIZE_LARGE  := 38
+const SIZE_HERO   := 58
 ## The main menu's wordmark, and the biggest thing on any screen.
-const SIZE_DISPLAY := 60
+const SIZE_DISPLAY := 78
 ## Card titles on the main menu (an aircraft, a place, a weather state).
-const SIZE_TITLE := 26
+const SIZE_TITLE := 36
 ## Section headings on the main menu ("AIRCRAFT", "LOCATION", "WEATHER").
-const SIZE_SECTION := 16
+const SIZE_SECTION := 22
 
 # ----------------------------------------------------------------- spacing --
 
@@ -69,25 +69,39 @@ const HAIRLINE := 1.0
 
 static var _fonts: Dictionary = {}
 
-## Fira Sans, bundled (SIL OFL - see assets/fonts/LICENSE.txt). A game UI needs
-## a real typeface, not the engine's fallback: the fallback renders every glyph
-## at the same weight and reads as an engineering drawing rather than a product.
+## Rajdhani (SIL OFL, bundled - see assets/fonts/OFL-Rajdhani.txt).
+##
+## Fira Sans was here, and Fira Sans is a fine typeface for a document. That is
+## the problem: it made a flight simulator look like documentation. Rajdhani is
+## squared-off and tall-waisted - a technical, instrument face - which is what
+## a cockpit reads like, and its narrow figures let the HUD carry big numbers
+## without eating the view.
+##
+## Medium rather than Regular as the base weight. Regular is a hairline at HUD
+## sizes over a bright sky, and every reading here has to survive being drawn
+## over sunlit grass.
 static func font() -> Font:
-	return _font("res://assets/fonts/FiraSans-Regular.otf")
+	return _font("res://assets/fonts/Rajdhani-Medium.ttf")
 
 
 static func font_bold() -> Font:
-	return _font("res://assets/fonts/FiraSans-Bold.otf")
+	return _font("res://assets/fonts/Rajdhani-Bold.ttf")
 
 
-## Condensed heavy: the wordmark and the section headings. This is the face
-## that makes a heading read as a title rather than as a label.
+## Saira Condensed Black: the wordmark, the headings, the step tabs, and every
+## letterspaced small-caps label. Condensed and very heavy, so a heading reads
+## as a title from across the room rather than as one more line of text.
 static func font_condensed() -> Font:
-	return _font("res://assets/fonts/FiraSansCondensed-Heavy.otf")
+	return _font("res://assets/fonts/SairaCondensed-Black.ttf")
 
 
 static func font_condensed_bold() -> Font:
-	return _font("res://assets/fonts/FiraSansCondensed-Bold.otf")
+	return _font("res://assets/fonts/SairaCondensed-Bold.ttf")
+
+
+## The display face: big, heavy, condensed. Titles and the aircraft names.
+static func font_display() -> Font:
+	return _font("res://assets/fonts/SairaCondensed-Bold.ttf")
 
 
 static func _font(path: String) -> Font:
@@ -177,6 +191,28 @@ static func draw_label(ci: CanvasItem, position: Vector2, text: String,
 		ci.draw_string(f, Vector2(x, position.y), glyph,
 					   HORIZONTAL_ALIGNMENT_LEFT, -1, size, colour)
 		x += f.get_string_size(glyph, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x + spacing
+
+
+## Wraps `text` to fit `width` pixels, measuring the font rather than counting
+## characters.
+##
+## Every caller used to divide the box width by a hand-tuned "average glyph
+## width" - 6.6 here, 7.4 there - which was wrong for the old face and wronger
+## for a narrower one. Measuring costs nothing at these lengths and cannot go
+## stale when the type changes.
+static func wrap_text(text: String, width: float, size: int = SIZE_LABEL) -> PackedStringArray:
+	var lines := PackedStringArray()
+	var line := ""
+	for word in text.split(" ", false):
+		var candidate: String = word if line.is_empty() else line + " " + word
+		if not line.is_empty() and text_width(candidate, size) > width:
+			lines.append(line)
+			line = word
+		else:
+			line = candidate
+	if not line.is_empty():
+		lines.append(line)
+	return lines
 
 
 static func text_width(text: String, size: int) -> float:
@@ -416,6 +452,19 @@ static func draw_glow(ci: CanvasItem, rect: Rect2, colour: Color,
 
 ## Text with a soft dark shadow behind it, so a label stays readable over a
 ## bright thumbnail. Drawn as one extra pass a couple of pixels down and right.
+## Headings, in the display face. A title set in the body font is a sentence
+## that happens to be large; set in the condensed heavy face it reads as a
+## title from across the room, which is the whole job.
+static func draw_display(ci: CanvasItem, position: Vector2, text: String,
+						 size: int = SIZE_TITLE, colour: Color = TEXT,
+						 align: HorizontalAlignment = HORIZONTAL_ALIGNMENT_LEFT,
+						 width: float = -1.0) -> void:
+	var f: Font = font_condensed_bold()
+	ci.draw_string(f, position + Vector2(1.5, 2.0), text, align, width, size,
+				   Color(0, 0, 0, 0.55))
+	ci.draw_string(f, position, text, align, width, size, colour)
+
+
 static func draw_text_shadow(ci: CanvasItem, position: Vector2, text: String,
 							 size: int = SIZE_BODY, colour: Color = TEXT,
 							 shadow: Color = Color(0, 0, 0, 0.55),

@@ -200,8 +200,8 @@ void RCInputNode::PollDevice()
         {
             WarnedNoDevice = true;
             RC_LOG(Input, Warning,
-                   "No transmitter or joystick detected. Sticks will read neutral "
-                   "and the throttle stays closed.");
+                   "No transmitter or joystick detected. Flying on the keyboard: "
+                   "arrows elevator/aileron, W/S throttle, A/D rudder.");
         }
         ActiveDeviceId    = -1;
         RawAxes.Connected = false;

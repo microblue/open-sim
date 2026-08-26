@@ -126,7 +126,7 @@ func _metal_material(colour: Color) -> StandardMaterial3D:
 ## aerodynamics used, not a separate animation off the stick.
 func _panel(index: int, centre: Vector3, span_axis: Vector3, span: float,
 			chord: float, pitch: float, colour: Color, name_hint: String,
-			is_tip: bool = false) -> void:
+			is_tip: bool = false, is_root: bool = false) -> void:
 	# Build a basis whose X runs along the span and whose Z runs along the chord.
 	var x_axis: Vector3 = span_axis.normalized()
 	var z_axis: Vector3 = Vector3(0, 0, 1)
@@ -146,7 +146,7 @@ func _panel(index: int, centre: Vector3, span_axis: Vector3, span: float,
 
 	if not _sim.get_section_has_control(index):
 		_plate(basis, leading_edge, span, chord, colour, "sec_" + name_hint,
-			   is_tip, thickness, camber)
+			   is_tip, thickness, camber, 1.0, is_root)
 		return
 
 	# Hinge line as a fraction of chord back from the leading edge.
@@ -154,8 +154,25 @@ func _panel(index: int, centre: Vector3, span_axis: Vector3, span: float,
 	var fixed_chord: float = chord - moving_chord
 	var moving_span: float = span * _sim.get_section_control_span_fraction(index)
 
-	_plate(basis, leading_edge, span, fixed_chord, colour, "sec_" + name_hint,
-		   is_tip, thickness, camber)
+	# The full-chord section, truncated at the hinge - not a whole aerofoil
+	# squashed into three quarters of the chord, which is what left a sharp
+	# edge where the wing should still have been 8 % thick.
+	var hinge_fraction: float = fixed_chord / chord
+	_plate(basis, leading_edge, span, chord, colour, "sec_" + name_hint,
+		   is_tip, thickness, camber, hinge_fraction, is_root)
+
+	# Where the control surface does not span the whole section, the rest of
+	# the chord has to be wing. Without this the aileron's span was drawn and
+	# the remainder was a hole - a deep scoop bitten out of the trailing edge
+	# just inboard of every aileron, which the turntable made impossible to
+	# miss and flight scale had always hidden.
+	var filler_span: float = span - moving_span
+	if filler_span > 0.004:
+		var filler_centre: Vector3 = leading_edge \
+				+ basis.z * fixed_chord \
+				- basis.x * (span - filler_span) * 0.5
+		_plate(basis, filler_centre, filler_span, moving_chord, colour,
+			   "fill_" + name_hint, false, thickness * 0.8, 0.0)
 
 	var pivot := Node3D.new()
 	pivot.name = "hinge_" + name_hint
@@ -170,14 +187,19 @@ func _panel(index: int, centre: Vector3, span_axis: Vector3, span: float,
 	# is what a control surface is. A slab of constant thickness is visible as
 	# a step every time it deflects.
 	var moving_span_clear: float = moving_span - SURFACE_GAP
+	# Thickness matched to the wing AT THE HINGE, so the two meet flush. The
+	# aerofoil's own thickness at 75 % chord is about half its maximum.
+	var hinge_thickness: float = thickness * 0.55
 	surface.mesh = AirframeScript.loft_wing([
 		{"offset": -moving_span_clear * 0.5, "chord": moving_chord,
-		 "thickness": thickness * 0.8, "camber": 0.0},
+		 "thickness": hinge_thickness, "camber": 0.0},
 		{"offset":  moving_span_clear * 0.5, "chord": moving_chord,
-		 "thickness": thickness * 0.8, "camber": 0.0},
+		 "thickness": hinge_thickness, "camber": 0.0},
 	], 10, is_tip)
 	surface.material_override = _material(SURFACE_COLOUR)
-	surface.position = Vector3(0.0, 0.0, moving_chord * 0.5)
+	# Same quarter-chord origin, so the aileron's leading edge lands on the
+	# hinge line rather than a quarter of its own chord behind it.
+	surface.position = Vector3(0.0, 0.0, moving_chord * 0.25)
 	pivot.add_child(surface)
 
 	_surfaces.append({"pivot": pivot, "index": index})
@@ -191,21 +213,29 @@ func _panel(index: int, centre: Vector3, span_axis: Vector3, span: float,
 ## the outermost panel of a wing or tailplane wants that.
 func _plate(basis: Basis, leading_edge: Vector3, span: float, chord: float,
 			colour: Color, name_hint: String, outboard: bool = false,
-			thickness: float = 0.12, camber: float = 0.02) -> void:
+			thickness: float = 0.12, camber: float = 0.02,
+			cut: float = 1.0, cap_root: bool = true) -> void:
 	# Two stations is enough for a constant-chord panel; the rounded tip adds
 	# its own. Taper would go here if the definition carried it.
 	var stations: Array = [
-		{"offset": -span * 0.5, "chord": chord, "thickness": thickness, "camber": camber},
-		{"offset":  span * 0.5, "chord": chord, "thickness": thickness, "camber": camber},
+		{"offset": -span * 0.5, "chord": chord, "thickness": thickness,
+		 "camber": camber, "cut": cut},
+		{"offset":  span * 0.5, "chord": chord, "thickness": thickness,
+		 "camber": camber, "cut": cut},
 	]
 
 	var instance := MeshInstance3D.new()
 	instance.name = name_hint
-	instance.mesh = AirframeScript.loft_wing(stations, 14, outboard)
+	instance.mesh = AirframeScript.loft_wing(stations, 14, outboard, cap_root)
 	instance.material_override = _material(colour)
-	# The loft is built about its own mid-span with the chord running along +Z
-	# from the leading edge, so it lands at the panel centre.
-	instance.transform = Transform3D(basis, leading_edge + basis.z * (chord * 0.5))
+	# The loft's ORIGIN is its quarter chord, not its leading edge: _ring pivots
+	# the profile about 0.25c so a twisted tip stays where it is rigged from.
+	# Placing it as though the origin were the leading edge slid every panel a
+	# quarter of a chord aft - which put the wing's trailing edge a quarter
+	# chord BEHIND the aileron hinge, so every control surface was buried
+	# inside the wing in front of it and the overlap read as a scoop bitten out
+	# of the trailing edge.
+	instance.transform = Transform3D(basis, leading_edge + basis.z * (chord * 0.25))
 	add_child(instance)
 
 
@@ -264,12 +294,40 @@ func _build() -> void:
 		# Only the outermost panel of a surface gets a rounded tip; the inboard
 		# ones butt against their neighbour.
 		var is_tip: bool = name_hint.find("_4") >= 0 or name_hint.find("tail") >= 0
-		_panel(i, centre, span_axis, span, chord, incidence, colour, name_hint, is_tip)
+		# Only the panel that meets the fuselage is closed at its inboard end.
+		var is_root: bool = name_hint.find("_1") >= 0 or name_hint.find("root") >= 0 \
+				or name_hint.find("tail") >= 0
+		_panel(i, centre, span_axis, span, chord, incidence, colour, name_hint,
+			   is_tip, is_root)
 
 		span_total = maxf(span_total, absf(centre.x) + span * 0.5)
 		nose_z = minf(nose_z, centre.z)
 		tail_z = maxf(tail_z, centre.z)
 
+	# The fuselage runs where the DEFINITION says it does, not between the
+	# outermost aerodynamic sections. Lofted between the sections, the trainer's
+	# nose landed 9 mm ahead of the CG when the real one is 575 mm ahead, so
+	# the propeller - which is placed from the definition - hung in the air a
+	# third of a metre off the front of the aeroplane. Nothing at flight scale
+	# showed it; the hangar turntable showed it immediately.
+	# Where the body actually runs.
+	#
+	# Lofted between the outermost AERODYNAMIC sections it started 9 mm ahead
+	# of the CG, so the propeller - placed from the definition - hung a third
+	# of a metre off the front of nothing. Taking the definition's body alone
+	# put the nose 225 mm AHEAD of the propeller and swallowed it whole.
+	#
+	# The definition's body is the only thing that knows where the nose is; the
+	# sections are the only thing that knows where the fin is. The union of the
+	# two is the whole aeroplane.
+	#
+	# Two of the four definitions had their body 150-200 mm too far forward,
+	# which put the nose AHEAD of the propeller and swallowed it. That is a
+	# data bug and it is fixed in the data - the drawing rule stays honest.
+	var extent: Vector2 = _sim.get_fuselage_extent_z()
+	if extent.y > extent.x:
+		nose_z = minf(nose_z, extent.x)
+		tail_z = maxf(tail_z, extent.y)
 	_build_fuselage(nose_z, tail_z)
 	_build_gear()
 	_build_propeller()
@@ -466,24 +524,24 @@ func _build_propeller() -> void:
 	# Generous chords: the first attempt was airfoil-thin, and a blade that is
 	# a hairline against the sky is a propeller that does not exist at rest.
 	var blade_mesh: ArrayMesh = AirframeScript.loft_wing([
-		{"offset": 0.015, "chord": 0.082, "thickness": 0.12, "twist": 0.40},
-		{"offset": diameter * 0.28, "chord": 0.052, "thickness": 0.11, "twist": 0.20},
-		{"offset": diameter * 0.48, "chord": 0.026, "thickness": 0.10, "twist": 0.05},
+		{"offset": 0.012, "chord": 0.058, "thickness": 0.13, "twist": 0.40},
+		{"offset": diameter * 0.28, "chord": 0.042, "thickness": 0.11, "twist": 0.20},
+		{"offset": diameter * 0.48, "chord": 0.020, "thickness": 0.10, "twist": 0.05},
 	], 6, true)
 	for blade_index in 2:
 		var blade := MeshInstance3D.new()
+		blade.name = "Blade%d" % blade_index
 		blade.mesh = blade_mesh
 		# A warm dark rather than near-black: a dark blade against dark ground
 		# is invisible, and an invisible blade is an antenna with a spinner.
 		blade.material_override = _material(Color(0.30, 0.26, 0.22))
 		blade.layers = PROPELLER_LAYER
-		blade.rotation_degrees = Vector3(0, 0, 180.0 * float(blade_index))
-		blade.position = Vector3(cos(PI * float(blade_index)) * diameter * 0.24,
-								 sin(PI * float(blade_index)) * diameter * 0.24, 0.0)
-		# The loft builds along X; the blade runs radially.
-		blade.rotation_degrees = Vector3(0, 0, 90.0 + 180.0 * float(blade_index))
-		blade.position = Vector3(cos(PI * float(blade_index)) * diameter * 0.24,
-								 sin(PI * float(blade_index)) * diameter * 0.24, 0.0)
+		# The loft already runs from the hub outward along its own X, so the
+		# rotation is the whole placement. It used to also be translated a
+		# quarter of a diameter sideways - along X, while the blade pointed
+		# along Y - so each blade grew out of thin air beside the spinner and
+		# the propeller read as a shark fin bolted to the nose.
+		blade.rotation_degrees = Vector3(0.0, 0.0, 90.0 + 180.0 * float(blade_index))
 		_propeller.add_child(blade)
 
 

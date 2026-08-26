@@ -321,13 +321,16 @@
       "in_propwash": true
     }
   ],
+  // The centroid, 205 mm behind the CG, with the body 1.19 m long: nose just
+  // ahead of the motor, tail at the fin. It was 190 mm further forward, which
+  // drew a nose in front of the propeller.
   "fuselage": {
     "position_m": [
-      -0.128,
+      -0.205,
       0.0,
       0.0
     ],
-    "length_m": 1.344,
+    "length_m": 1.194,
     "frontal_area_m2": 0.011,
     "side_area_m2": 0.055,
     "cd_frontal": 0.35,

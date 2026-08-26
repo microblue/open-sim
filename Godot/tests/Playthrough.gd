@@ -23,30 +23,31 @@ func _initialize() -> void:
 	root.add_child(_scene)
 
 	_plan = [
-		{"id": "01_first_launch", "settle": 90, "do": func() -> void: pass},
+		{"id": "01_first_launch", "settle": 60, "do": func() -> void: pass},
 		{"id": "02_hangar", "settle": 40, "do": func() -> void: _scene.call("_open_hangar")},
-		{"id": "03_hangar_glider", "settle": 20, "do": func() -> void:
+		{"id": "03_hangar_glider", "settle": 30, "do": func() -> void:
 			var h: Node = _scene.get_node_or_null("Hangar")
 			if h: h.set("_index", 0); h.get_node("Canvas").queue_redraw()},
 		{"id": "04_world", "settle": 30, "do": func() -> void:
 			var h: Node = _scene.get_node_or_null("Hangar")
-			if h: h.queue_free()
+			if h: h.free()
 			_scene.call("_open_world_screen")},
-		{"id": "05_flying_pilot", "settle": 60, "do": func() -> void:
-			# The menu opened at launch and was never dismissed - the first
-			# three "flying" frames were the menu with a different sky behind
-			# it, which is exactly the mistake a player never makes and a
-			# script always does.
-			for name in ["WorldScreen", "MainMenu", "Hangar"]:
-				var node: Node = _scene.get_node_or_null(name)
-				if node: node.free()
-			_fly()},
-		{"id": "06_flying_chase", "settle": 30, "do": func() -> void: _rig.set("mode", 1)},
-		{"id": "07_flying_fpv", "settle": 30, "do": func() -> void: _rig.set("mode", 2)},
-		{"id": "08_failure", "settle": 40, "do": func() -> void:
+		# The real path: the menu's own Fly button, which is what builds the
+		# world. Captured part-way through, because a loading screen nobody
+		# has looked at is a loading screen nobody has checked.
+		{"id": "05_loading", "settle": 30, "do": func() -> void:
+			var w: Node = _scene.get_node_or_null("WorldScreen")
+			if w: w.free()
+			var menu: Node = _scene.get_node_or_null("MainMenu")
+			if menu != null:
+				menu.call("_begin_fly")},
+		{"id": "06_flying_pilot", "settle": 240, "do": func() -> void: _fly()},
+		{"id": "07_flying_chase", "settle": 30, "do": func() -> void: _rig.set("mode", 1)},
+		{"id": "08_flying_fpv", "settle": 30, "do": func() -> void: _rig.set("mode", 2)},
+		{"id": "09_failure", "settle": 40, "do": func() -> void:
 			_rig.set("mode", 1)
 			_sim.induce_failure(1, 0)},
-		{"id": "09_replay", "settle": 40, "do": func() -> void:
+		{"id": "10_replay", "settle": 40, "do": func() -> void:
 			_sim.clear_failures()
 			_scene.call("_toggle_replay")},
 	]
@@ -56,10 +57,10 @@ func _fly() -> void:
 	_sim.spawn_mode = RCSimulationNode.SPAWN_AIR
 	_sim.spawn_altitude_m = 45.0
 	_sim.reset_state()
-	# Enough throttle to hold height. At 0.55 the trainer sank at five metres
+	# Enough throttle to hold height: at 0.55 the trainer sank at five metres
 	# a second, so every "in flight" frame was captured mid-dive with the
-	# camera pointed at the grass and no horizon in it - which said nothing
-	# about what the game looks like to fly.
+	# camera pointed at the grass and no horizon in it.
+	#
 	# The manual channels only apply when no input node is wired up: with one
 	# present it wins every frame, so the walkthrough's throttle went nowhere
 	# and every "in flight" frame was a glide with the motor stopped.

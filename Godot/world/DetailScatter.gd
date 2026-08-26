@@ -93,6 +93,11 @@ var _pending: Array = []
 var _last_survey: Vector2 = Vector2(1e12, 1e12)
 
 
+## When true the circuit is queued but not built here, so a loading screen can
+## pump it across frames and show how far along it is.
+@export var defer_build: bool = false
+
+
 func _ready() -> void:
 	_sim = get_node_or_null(simulation_path) as RCSimulationNode
 	if _sim == null:
@@ -117,6 +122,10 @@ func _ready() -> void:
 
 	# The circuit, in full, before anything is rendered.
 	_queue_cells(Vector2.ZERO, PREBUILT_RADIUS)
+	if defer_build:
+		# Queued, not built. The loading screen pumps it, which is the whole
+		# difference between a progress bar and a frozen window.
+		return
 	while not _pending.is_empty():
 		_build_next()
 	var built: int = 0
@@ -127,6 +136,20 @@ func _ready() -> void:
 					built += (kind_node as MultiMeshInstance3D).multimesh.instance_count
 	print("[Detail] circuit pre-generated: %d cells, %d objects on the ground"
 		% [_cells.size(), built])
+
+
+## How many queued cells are left to build, for the loading screen.
+func pending_cells() -> int:
+	return _pending.size()
+
+
+## Builds up to `count` queued cells. Returns how many are still waiting.
+func build_some(count: int) -> int:
+	for _i in count:
+		if _pending.is_empty():
+			break
+		_build_next()
+	return _pending.size()
 
 
 ## Throw away every scattered cell and regenerate the circuit. Called when a

@@ -54,6 +54,11 @@ var _levels: Array[Dictionary] = []
 var _water: MeshInstance3D
 
 
+## When true the clipmap levels are queued but not built, so a loading screen
+## can pump them across frames. See build_next_level().
+@export var defer_build: bool = false
+
+
 func _ready() -> void:
 	_sim = get_node_or_null(simulation_path) as RCSimulationNode
 	if _sim == null:
@@ -92,8 +97,29 @@ func _ready() -> void:
 
 	if not OS.has_environment("RC_NO_WATER"):
 		_build_water()
+	if not defer_build:
+		for level in _levels:
+			_rebuild_level(level, _anchor_for(level, _focus()))
+
+
+## How many clipmap levels are waiting to be built. The loading screen pumps
+## them one at a time so it can say how far along it is; building all of them
+## inside _ready was a second and a half of a frozen black window.
+func pending_levels() -> int:
+	var waiting: int = 0
 	for level in _levels:
-		_rebuild_level(level, _anchor_for(level, _focus()))
+		if level["anchor"].x > 1e11:
+			waiting += 1
+	return waiting
+
+
+## Builds the next unbuilt level. Returns how many are still waiting.
+func build_next_level() -> int:
+	for level in _levels:
+		if level["anchor"].x > 1e11:
+			_rebuild_level(level, _anchor_for(level, _focus()))
+			break
+	return pending_levels()
 
 
 ## Throw away every chunk and let them build again from the current terrain

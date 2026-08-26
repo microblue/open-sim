@@ -33,18 +33,23 @@ func _ready() -> void:
 	# sky, the grass and the trees - the container is just a staging node -
 	# and pointing the weather at the container made every field-side weather
 	# change dead code: fog, light, the sky swap, the grass hiding under snow.
-	if _field != null:
-		_field_script = _field.get_node_or_null("GrassField01")
-		if _field_script == null:
-			_field_script = _field
+	rebind()
 
-	# The declared weather, applied at once. Until now the only thing that ever
-	# applied one was the menu's Fly button, so the world sat in whatever state
-	# the field built for itself - a heavier haze than any of the five presets
-	# asks for, with the sky washed brown. That is what the player saw behind
-	# the menu, and what they got if they closed it without flying.
-	apply_scene(scene_id)
-	apply_weather(weather_id)
+
+## Finds the field again, once there is one.
+##
+## The director now outlives the world: it exists from the first frame so the
+## menu can read it, and the field is not built until the player asks to fly.
+## Without this it kept the null it resolved at startup and every weather
+## change after the first sortie was dead code.
+func rebind() -> void:
+	if _field == null:
+		_field = get_node_or_null(field_path) as Node3D
+	if _field == null:
+		return
+	_field_script = _field.get_node_or_null("GrassField01")
+	if _field_script == null:
+		_field_script = _field
 
 
 func current_scene() -> Dictionary:

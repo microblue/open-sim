@@ -20,7 +20,17 @@ extends RefCounted
 ## A NACA four-digit symmetric thickness distribution, which is close enough to
 ## the flat-bottomed trainer sections this aircraft actually uses and is exactly
 ## right for the tail surfaces.
-static func airfoil_loop(segments: int, thickness: float, camber: float = 0.0) -> PackedVector2Array:
+## `cut` truncates the section at that fraction of the chord, closing it with a
+## flat face of the section's real thickness there.
+##
+## A wing in front of an aileron is not a shorter aerofoil - it is the FRONT of
+## a full one, cut off at the hinge and still 8 % thick there. Scaling a whole
+## aerofoil into 75 % of the chord tapered it to a sharp edge at the hinge, and
+## the control surface behind it started thicker than the wing it hangs off:
+## every aileron on the aeroplane had a scoop bitten out of the wing in front
+## of it. Invisible at flight scale, unmissable on a turntable.
+static func airfoil_loop(segments: int, thickness: float, camber: float = 0.0,
+						 cut: float = 1.0) -> PackedVector2Array:
 	var points := PackedVector2Array()
 
 	# Upper surface, leading edge to trailing edge, then back along the lower.
@@ -42,6 +52,18 @@ static func airfoil_loop(segments: int, thickness: float, camber: float = 0.0) -
 			# Camber lifts the whole section; a flat-bottomed trainer wing is
 			# most of its lift at zero incidence and looks wrong without it.
 			var mean: float = camber * 4.0 * x * (1.0 - x)
+			if x > cut:
+				# Everything aft of the cut collapses onto the cut line, which
+				# closes the stub with a flat face at its true thickness.
+				var half_cut: float = thickness / 0.2 * (
+					0.2969 * sqrt(max(cut, 0.0))
+					- 0.1260 * cut
+					- 0.3516 * cut * cut
+					+ 0.2843 * cut * cut * cut
+					- 0.1015 * cut * cut * cut * cut)
+				var mean_cut: float = camber * 4.0 * cut * (1.0 - cut)
+				points.append(Vector2(cut, mean_cut + sign_y * half_cut))
+				continue
 			points.append(Vector2(x, mean + sign_y * half))
 	return points
 
@@ -53,8 +75,13 @@ static func airfoil_loop(segments: int, thickness: float, camber: float = 0.0) -
 ## rotates it about the quarter chord. The result is in a local frame where X
 ## runs along the span, Z along the chord and Y is thickness - which is the
 ## frame the panel basis already puts things in.
+## `cap_root` closes the inboard end. False for a panel that butts against the
+## next one along the same wing: an interior cap is a flat face buried inside
+## the neighbouring panel, and the pair of them shade against each other as a
+## dark sliver at every section joint - eleven of them down a wing that is
+## supposed to be one surface.
 static func loft_wing(stations: Array, segments: int = 14,
-					  round_tip: bool = true) -> ArrayMesh:
+					  round_tip: bool = true, cap_root: bool = true) -> ArrayMesh:
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
 
@@ -68,7 +95,8 @@ static func loft_wing(stations: Array, segments: int = 14,
 	# Caps. The root butts against the fuselage so it is closed flat; the tip is
 	# rounded, because a wing that ends in a sharp rectangle is the single most
 	# obvious tell that a model was made of boxes.
-	_cap(surface, rings[0], true)
+	if cap_root:
+		_cap(surface, rings[0], true)
 	if round_tip:
 		var tip: Dictionary = stations[stations.size() - 1]
 		_round_tip(surface, rings[rings.size() - 1], tip)
@@ -117,7 +145,8 @@ static func _ring(station: Dictionary, segments: int) -> PackedVector3Array:
 	var offset: float = station.get("offset", 0.0)
 	var sweep: float = station.get("sweep", 0.0)
 
-	var profile: PackedVector2Array = airfoil_loop(segments, thickness, camber)
+	var profile: PackedVector2Array = airfoil_loop(
+			segments, thickness, camber, station.get("cut", 1.0))
 	var ring := PackedVector3Array()
 	# Rotate about the quarter chord, which is where a wing is actually rigged
 	# from and keeps a twisted tip in the right place.
