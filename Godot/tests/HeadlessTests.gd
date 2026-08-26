@@ -245,9 +245,34 @@ func _test_airframe_is_fitted_to_the_definition() -> void:
 	# aeroplanes shipped fitted by their fuselage length, flying sideways,
 	# with the check reading 1.500 m against 1.500 m throughout.
 	var station: float = model.call("propeller_station_m")
-	print("       propeller at %+.3f m along the aeroplane" % station)
-	_check(station < -declared * 0.10,
-		"the propeller is at the front of the aeroplane")
+	if is_finite(station):
+		print("       propeller at %+.3f m along the aeroplane" % station)
+		_check(station < -declared * 0.10,
+			"the propeller is at the front of the aeroplane")
+	else:
+		# Said out loud rather than passed quietly: this aeroplane's model
+		# names no propeller, so the strongest evidence about which way it
+		# faces is not available and the fin rule is on its own.
+		print("       this model names no propeller - nose direction rests on"
+			+ " the fin rule alone")
+
+	# The wing must be above the fuselage on a high-wing trainer, which is the
+	# check that would have caught it flying inverted. Nothing else did: the
+	# span was right, the propeller was at the front, and the aeroplane was
+	# upside down.
+	var wing: float = model.call("wing_height_m")
+	print("       wing sits %+.3f m from the aeroplane's middle" % wing)
+	_check(wing > 0.0, "the wing is above the fuselage, not below it")
+
+	# And each cut aileron must be hinged to a section on ITS OWN side. Both
+	# matched to the first aileron section in the file is a flaperon: it
+	# deflects, it looks alive, and it teaches a student the opposite of what
+	# their stick does.
+	var stations: Vector2 = model.call("aileron_stations_m")
+	print("       ailerons hinged at %+.3f m and %+.3f m spanwise"
+		% [stations.x, stations.y])
+	_check(stations.x < -0.05 and stations.y > 0.05,
+		"each cut aileron is driven by a section on its own side")
 	model.queue_free()
 
 

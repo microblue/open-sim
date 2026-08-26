@@ -13,11 +13,18 @@ Two of them are now real models of real aeroplanes:
 | Aircraft | Model | Author | Licence |
 | --- | --- | --- | --- |
 | Trainer 1500 | [Cessna172](https://sketchfab.com/3d-models/cessna172-d1b15841c29c43d0862667300bad55a4) | [KOG_THORNS](https://sketchfab.com/ioai25312) | CC-BY-4.0 |
-| Glider 2400 | [UNDERPOLY: Free Sailplane Glider](https://sketchfab.com/3d-models/underpoly-free-sailplane-glider-4b1e6ac35d9c4e9a9f9d1a52d1b0ee73) | [UNDERPOLY Project](https://sketchfab.com/underpolyproject) | CC-BY-4.0 |
+| Glider 2400 | UNDERPOLY: Free Sailplane Glider | [UNDERPOLY Project](https://sketchfab.com/underpolyproject) | CC-BY-4.0 |
+| Warbird 1100 | P-51 Mustang | [UlissesVinicios](https://sketchfab.com/UlissesVinicios) | CC-BY-4.0 |
+| Sport 1200 | Soviet trainer spitfire | [Batmanya](https://sketchfab.com/Batmanya) | CC-BY-4.0 |
 
-> This work is based on "Cessna172" by KOG_THORNS, and on "UNDERPOLY: Free
-> Sailplane Glider" by UNDERPOLY Project, both licensed under
+> This work is based on "Cessna172" by KOG_THORNS, "UNDERPOLY: Free Sailplane
+> Glider" by UNDERPOLY Project, "P-51 Mustang" by UlissesVinicios, and "Soviet
+> trainer spitfire" by Batmanya, each licensed under
 > [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+A Spitfire is not what a Sport 1200 is. It is a low-wing single with a lot of
+power and a short span, which is what the definition flies like, and it is what
+could be found under a licence this project can accept.
 
 **The attribution is the licence, not a courtesy.** Each model keeps its own
 `AIRFRAME-LICENSE.txt` next to it in `Godot/aircraft/<Name>/`, and the fetch
@@ -48,20 +55,48 @@ it honest:
 - **Nothing about the flight model changed.** The aerodynamics still integrates
   over the sections in `Data/Aircraft/*.json`. The model is a shell.
 
-What is lost is moving control surfaces. The generated aeroplane hinged every
-aileron, elevator and rudder off the section the flight model was deflecting;
-a downloaded airframe is one mesh and has no separable ones. The propeller
-still turns, where the model names it.
+Nothing is lost, in the end — including the moving control surfaces, which a
+downloaded airframe has no separable geometry for. They are **cut out of the
+mesh at load time**: each surface is a region of the aeroplane (a span band, a
+height band, everything aft of a line, and a hinge at a fraction of the local
+chord in that region) and the triangles inside it are clipped away from the
+ones outside and reparented onto a pivot. Triangles that straddle a boundary
+are split rather than rounded to the nearest side, because on a wing of a few
+hundred triangles a jagged seam is the whole trailing edge.
+
+This is per-vertex work at load time, which is only reasonable because these
+airframes are small: 5 to 23 thousand triangles, one pass over which costs
+under seven milliseconds (`tests/MeshBudget.gd` measures it). It would not be
+reasonable on a film asset — and the alternative, baking the cut offline, would
+mean reimplementing the fit in a second language, which is exactly how a
+sideways aeroplane survived a whole commit.
+
+A band that is described slightly wrong does not fail quietly: it takes the
+back half of the fuselage with it and the aeroplane comes apart the first time
+the stick moves. So a cut claiming more than a quarter of the aeroplane is
+**refused**, with a warning naming the surface and the file to fix. A fixed
+control surface is far better than a broken aeroplane.
 
 ### Fitting a model
 
 Two things have to be told to the loader, in `Godot/aircraft/<Name>/airframe.json`,
 and both are properties of the FILE rather than of the aeroplane:
 
-- `rotation_deg` — which way it faces. Both models here arrive nose-along-+X
-  with their span down Z, and want a quarter turn.
+Which way it faces is **not** one of them, and used to be. It is derived: an
+aeroplane of this kind is wider than it is long and longer than it is tall, so
+sorting the three vertex extents names the three axes; the last eighth at one
+end is a fin and at the other a spinner; the fin points away from the
+undercarriage; and a named propeller overrules all of it.
+
+The two half-turns cannot be decided together, which cost an aeroplane flying
+inverted to learn. The "is the fin above the wheels" test reads the +Z end — if
+the nose test then turns the aeroplane round, the end it read has become the
+nose and its answer is about the wrong half.
 - `hide_nodes` — what came with it that is not the aeroplane. The Cessna ships
   sitting on a museum display plinth.
+- `control_surfaces` — where the ailerons, elevator and rudder are, as regions.
+- `propeller_node` — what to spin, where the model names it. This is also the
+  strongest evidence about which way the aeroplane faces.
 
 The **scale is not configurable**, and deliberately so. It is measured from the
 vertices: every visible vertex, sorted across the span, with the outermost

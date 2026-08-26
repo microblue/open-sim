@@ -19,6 +19,7 @@ const DARK_COLOUR := Color(0.20, 0.22, 0.26)
 ## few millimetres clear of it, so they read as separate surfaces from the
 ## pilot's position rather than as a painted line.
 const AirframeScript := preload("res://aircraft/Trainer1500/AirframeGeometry.gd")
+const RCSurfaceCutter := preload("res://aircraft/Trainer1500/SurfaceCutter.gd")
 const SURFACE_COLOUR := Color(0.30, 0.31, 0.34)
 const SURFACE_GAP: float = 0.006
 ## Render layer the propeller and spinner live on, so the FPV camera can leave
@@ -262,7 +263,12 @@ func _update_surfaces() -> void:
 		var degrees: float = _sim.get_section_control_deflection_deg(entry["index"])
 		# Positive is trailing edge down in the section's own frame, which is the
 		# frame the pivot was built in - so the sign carries straight across.
-		pivot.rotation = Vector3(deg_to_rad(degrees) * HINGE_SIGN, 0.0, 0.0)
+		var angle: float = deg_to_rad(degrees) * HINGE_SIGN
+		# A cut rudder hinges about the vertical; everything else about the span.
+		if String(entry.get("axis", "x")) == "y":
+			pivot.rotation = Vector3(0.0, angle, 0.0)
+		else:
+			pivot.rotation = Vector3(angle, 0.0, 0.0)
 
 
 ## Where the propeller sits along the aeroplane's own fore-and-aft axis, in
@@ -274,8 +280,59 @@ func _update_surfaces() -> void:
 ## agree, never that the axis is the span.
 func propeller_station_m() -> float:
 	if _propeller == null:
-		return -1.0
+		# NAN, not a plausible-looking number. Returning -1.0 here made the
+		# test that asserts "the propeller is at the front" pass for every
+		# aeroplane that has no propeller node - which is the sort of green
+		# tick that is worse than a red one.
+		return NAN
 	return to_local(_propeller.global_position).z
+
+
+## How far the wing sits above (positive) or below the aeroplane's own middle.
+##
+## The check that catches an inverted model. Nothing else does: an upside-down
+## aeroplane has the right span, its propeller is still at the front, and it
+## renders perfectly plausibly until you notice the wheels are in the air.
+func wing_height_m() -> float:
+	var points: PackedVector3Array = _vertex_cloud(self)
+	if points.size() < 32:
+		return 0.0
+	var box: AABB = _percentile_box(points)
+	var middle: float = box.position.y + box.size.y * 0.5
+	# The outer wing only: out where there is nothing else but wing.
+	var inner: float = box.size.x * 0.25
+	var outer: float = box.size.x * 0.45
+	var centre_x: float = box.position.x + box.size.x * 0.5
+	var total: float = 0.0
+	var seen: int = 0
+	for point in points:
+		var offset: float = absf(point.x - centre_x)
+		if offset > inner and offset < outer:
+			total += point.y - middle
+			seen += 1
+	return total / float(seen) if seen > 0 else 0.0
+
+
+## Which side of the aeroplane each cut aileron is hinged to: x for the left
+## one, y for the right, as the spanwise station of the section driving it.
+##
+## Checked as a MAPPING rather than by commanding a roll and measuring the
+## result, because the mapping is the thing that can silently be wrong. Both
+## ailerons matched to the first aileron section in the file is a flaperon: it
+## deflects, it looks alive, and it teaches a student the opposite of what
+## their stick does.
+func aileron_stations_m() -> Vector2:
+	var stations := Vector2.ZERO
+	if _sim == null:
+		return stations
+	for entry in _surfaces:
+		var pivot: Node3D = entry["pivot"]
+		var station: float = _sim.get_section_position(int(entry["index"])).x
+		if String(pivot.name).find("aileron_left") >= 0:
+			stations.x = station
+		elif String(pivot.name).find("aileron_right") >= 0:
+			stations.y = station
+	return stations
 
 
 ## True when the aeroplane on screen came out of a .glb rather than a loft.
@@ -291,7 +348,7 @@ func is_airframe_loaded() -> bool:
 func drawn_span_m() -> float:
 	# The same vertex percentile the fit itself uses, measured in this node's
 	# own space - which is metres.
-	return _percentile_extent(_vertex_cloud(self), 0)
+	return _percentile_box(_vertex_cloud(self)).size.x
 
 
 ## Throws away the built aeroplane and builds the one the simulation node is
@@ -373,7 +430,7 @@ func _build_airframe() -> bool:
 	# main_gear_left mesh carries a stray vertex 1100 units out when the whole
 	# aeroplane is 683 long. One loose vertex nobody will ever see does not get
 	# to decide how big the aeroplane is.
-	var span_measured: float = _percentile_extent(_vertex_cloud(holder), 0)
+	var span_measured: float = _percentile_box(_vertex_cloud(holder)).size.x
 	if span_measured < 0.001:
 		holder.queue_free()
 		return false
@@ -384,8 +441,15 @@ func _build_airframe() -> bool:
 	# Only now: centre it on the centre of gravity, which is where the flight
 	# model thinks the aeroplane is. Without this the model hangs off its own
 	# origin, which for a scanned model is wherever the artist left it.
-	var bounds: AABB = _visual_bounds(holder)
-	var centre: Vector3 = bounds.position + bounds.size * 0.5
+	#
+	# Centred on the TRIMMED extremes, for the same reason the span is measured
+	# that way. A bounding box centre put the Cessna's middle two and a half
+	# metres aft of where it is, because one vertex in its undercarriage sits
+	# eleven hundred units out - which moved the whole aeroplane back far
+	# enough that the propeller ended up behind the origin and every test that
+	# asked "is the propeller at the front" said no.
+	var trimmed: AABB = _percentile_box(_vertex_cloud(holder))
+	var centre: Vector3 = trimmed.position + trimmed.size * 0.5
 	var lift: Array = config.get("offset_m", [0.0, 0.0, 0.0])
 	scene.position -= centre
 	scene.position += Vector3(float(lift[0]), float(lift[1]), float(lift[2])) / scale_factor
@@ -399,10 +463,263 @@ func _build_airframe() -> bool:
 		var nose: Vector3 = holder.global_transform.basis * Vector3(0.0, 0.0, -1.0)
 		_propeller_axis = (_propeller.global_transform.basis.inverse() * nose).normalized()
 
+	if OS.has_environment("RC_MODEL_DEBUG"):
+		print("   station before the cut %+.3f" % propeller_station_m())
+	_cut_control_surfaces(holder, config)
+	if OS.has_environment("RC_MODEL_DEBUG"):
+		print("   station after  the cut %+.3f" % propeller_station_m())
+
 	_airframe_loaded = true
-	print("[Model] %s: airframe.glb fitted to %.2f m span (x%.4f), propeller at %+.2f m"
-		% [stem, wanted, scale_factor, propeller_station_m()])
+	var station: float = propeller_station_m()
+	print("[Model] %s: airframe.glb fitted to %.2f m span (x%.4f), propeller %s"
+		% [stem, wanted, scale_factor,
+		   ("at %+.2f m" % station) if is_finite(station) else "not named"])
 	return true
+
+
+## Cuts the ailerons, elevator and rudder out of a downloaded airframe and
+## hinges them off the flight model.
+##
+## A downloaded model is one solid mesh: the aeroplane looked far better and
+## stopped responding, which in a TRAINING simulator is the wrong trade - a
+## student learning orientation watches the ailerons. So each surface is
+## described as a region of the aeroplane (a span band, a height band, and
+## everything aft of a hinge line) and the triangles inside it are clipped out
+## and reparented onto a pivot. See SurfaceCutter.gd for the clip itself.
+func _cut_control_surfaces(holder: Node3D, config: Dictionary) -> void:
+	var specs: Array = config.get("control_surfaces", [])
+	if specs.is_empty():
+		return
+
+	# The aeroplane's own box FIRST, while it is still visible - gathering the
+	# soups hides the originals, and measuring afterwards left only the
+	# propeller standing, so every band was cut from a box the size of a
+	# propeller. And TRIMMED, or the half span comes out at sixty-five metres
+	# and the bands miss the aeroplane entirely.
+	var box: AABB = _percentile_box(_vertex_cloud(self))
+
+	# Everything visible, as triangle soups in this node's own space - which is
+	# metres, and the frame the region bands are described in.
+	var soups: Array = _gather_soups(holder)
+	if soups.is_empty():
+		return
+
+	var half_span: float = box.size.x * 0.5
+	var half_height: float = box.size.y * 0.5
+	var centre: Vector3 = box.position + box.size * 0.5
+
+	var cut := Node3D.new()
+	cut.name = "CutSurfaces"
+	add_child(cut)
+
+	for spec in specs:
+		var span: Array = spec.get("span", [-1.0, 1.0])
+		var height: Array = spec.get("height", [-1.0, 1.0])
+		var x0: float = centre.x + float(span[0]) * half_span
+		var x1: float = centre.x + float(span[1]) * half_span
+		var y0: float = centre.y + float(height[0]) * half_height
+		var y1: float = centre.y + float(height[1]) * half_height
+
+		# `aft_of` walls off the tail before anything is measured.
+		#
+		# Without it the elevator's band runs the whole length of the fuselage,
+		# so the "local chord" is the aeroplane's length and the hinge lands at
+		# 58 % of THAT - which takes the back half of the fuselage with it. The
+		# tailplane's chord is what a tailplane hinges on.
+		var z_from: float = centre.z + float(spec.get("aft_of", -1.0)) * box.size.z * 0.5
+
+		# The hinge is a fraction of the LOCAL chord - the fore-and-aft extent
+		# of whatever geometry is actually in this band - not a fraction of the
+		# whole aeroplane. A rudder sits at the back of a fin whose chord is
+		# nothing like the aeroplane's length.
+		var chord := Vector2(INF, -INF)
+		for soup in soups:
+			for vertex in soup["vertices"]:
+				var point: Vector3 = vertex[RCSurfaceCutter.POSITION]
+				if point.x >= x0 and point.x <= x1 and point.y >= y0 and point.y <= y1 \
+						and point.z >= z_from:
+					chord = Vector2(minf(chord.x, point.z), maxf(chord.y, point.z))
+		if OS.has_environment("RC_MODEL_DEBUG"):
+			var in_x := Vector2(INF, -INF)
+			var seen: int = 0
+			for soup in soups:
+				for vertex in soup["vertices"]:
+					var q: Vector3 = vertex[RCSurfaceCutter.POSITION]
+					if q.x >= x0 and q.x <= x1:
+						in_x = Vector2(minf(in_x.x, q.y), maxf(in_x.y, q.y))
+						seen += 1
+			print("   %s band x %.3f..%.3f  y %.3f..%.3f | in that x band: %d verts, y %.3f..%.3f"
+				% [spec.get("key", "?"), x0, x1, y0, y1, seen, in_x.x, in_x.y])
+		if not is_finite(chord.x) or chord.y <= chord.x:
+			continue
+		var hinge_z: float = maxf(chord.x + (chord.y - chord.x)
+								  * float(spec.get("hinge", 0.7)), z_from)
+
+		var planes: Array = [
+			[Vector3(-1, 0, 0), -x0], [Vector3(1, 0, 0), x1],
+			[Vector3(0, -1, 0), -y0], [Vector3(0, 1, 0), y1],
+			[Vector3(0, 0, -1), -hinge_z],
+		]
+
+		var pivot := Node3D.new()
+		pivot.name = "ctl_%s" % spec.get("key", "surface")
+		pivot.position = Vector3((x0 + x1) * 0.5, (y0 + y1) * 0.5, hinge_z)
+		cut.add_child(pivot)
+
+		# Cut everything first, then decide whether to keep it.
+		#
+		# A band that is described slightly wrong does not fail quietly - it
+		# takes the back half of the fuselage with it, and the aeroplane comes
+		# apart the first time the stick moves. A control surface is a few per
+		# cent of an aeroplane; anything claiming a quarter of it has been
+		# described wrong, and a fixed surface is far better than a broken one.
+		var cuts: Array = []
+		var moved: int = 0
+		var total: int = 0
+		for soup in soups:
+			var halves: Array = RCSurfaceCutter.split(soup["vertices"], planes)
+			cuts.append(halves)
+			moved += halves[0].size() / 3
+			total += soup["vertices"].size() / 3
+
+		if moved > 0 and moved > int(total * 0.25):
+			push_warning(("[Model] %s claims %d of %d triangles - that is not a "
+				+ "control surface. Left fixed; check its band in airframe.json.")
+				% [pivot.name, moved, total])
+			pivot.queue_free()
+			continue
+
+		for i in soups.size():
+			soups[i]["vertices"] = cuts[i][1]
+			if cuts[i][0].is_empty():
+				continue
+			var piece := MeshInstance3D.new()
+			piece.name = "%s_%d" % [pivot.name, pivot.get_child_count()]
+			piece.mesh = _mesh_from(cuts[i][0], -pivot.position)
+			piece.material_override = soups[i]["material"]
+			pivot.add_child(piece)
+
+		var index: int = _section_for_channel(String(spec.get("channel", "")),
+											  float(spec.get("side", 0.0)))
+		if moved > 0 and index >= 0:
+			_surfaces.append({"pivot": pivot, "index": index,
+							  "axis": String(spec.get("axis", "x"))})
+		if OS.has_environment("RC_MODEL_DEBUG"):
+			print("   %s: %d triangles on channel %s"
+				% [pivot.name, moved, spec.get("channel", "-")])
+
+	# What is left of the aeroplane, rebuilt in one piece.
+	for soup in soups:
+		if soup["vertices"].is_empty():
+			continue
+		var rest := MeshInstance3D.new()
+		rest.name = "airframe_%d" % cut.get_child_count()
+		rest.mesh = _mesh_from(soup["vertices"], Vector3.ZERO)
+		rest.material_override = soup["material"]
+		cut.add_child(rest)
+
+
+## Every visible mesh under `holder`, as triangle soups in this node's space.
+##
+## The originals are hidden rather than freed: the propeller has to keep its own
+## node so it can spin, and anything else the model names stays addressable.
+func _gather_soups(holder: Node3D) -> Array:
+	var soups: Array = []
+	var to_local: Transform3D = global_transform.affine_inverse()
+	for child in holder.find_children("*", "MeshInstance3D", true, false):
+		var mesh := child as MeshInstance3D
+		if mesh.mesh == null or not mesh.is_visible_in_tree():
+			continue
+		if _propeller != null and _propeller.is_ancestor_of(mesh):
+			continue
+		var into: Transform3D = to_local * mesh.global_transform
+		for surface in mesh.mesh.get_surface_count():
+			var arrays: Array = mesh.mesh.surface_get_arrays(surface)
+			var vertices: Array = _soup_from(arrays, into)
+			if vertices.is_empty():
+				continue
+			soups.append({
+				"vertices": vertices,
+				"material": mesh.mesh.surface_get_material(surface),
+			})
+		mesh.visible = false
+	return soups
+
+
+## One surface's arrays, expanded into a triangle soup in `into`'s frame.
+func _soup_from(arrays: Array, into: Transform3D) -> Array:
+	var positions: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	if positions.is_empty():
+		return []
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL] \
+			if arrays[Mesh.ARRAY_NORMAL] != null else PackedVector3Array()
+	var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV] \
+			if arrays[Mesh.ARRAY_TEX_UV] != null else PackedVector2Array()
+	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] \
+			if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+	if indices.is_empty():
+		indices.resize(positions.size())
+		for i in positions.size():
+			indices[i] = i
+
+	# Normals ride the rotation but not the translation.
+	var rotate: Basis = into.basis.orthonormalized()
+	var soup: Array = []
+	soup.resize(indices.size())
+	for i in indices.size():
+		var index: int = indices[i]
+		soup[i] = {
+			RCSurfaceCutter.POSITION: into * positions[index],
+			RCSurfaceCutter.NORMAL: (rotate * (normals[index] if index < normals.size()
+										else Vector3.UP)).normalized(),
+			RCSurfaceCutter.UV: uvs[index] if index < uvs.size() else Vector2.ZERO,
+		}
+	return soup
+
+
+## A triangle soup, back into a mesh, shifted by `offset`.
+func _mesh_from(vertices: Array, offset: Vector3) -> ArrayMesh:
+	var positions := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	positions.resize(vertices.size())
+	normals.resize(vertices.size())
+	uvs.resize(vertices.size())
+	for i in vertices.size():
+		positions[i] = vertices[i][RCSurfaceCutter.POSITION] + offset
+		normals[i] = vertices[i][RCSurfaceCutter.NORMAL]
+		uvs[i] = vertices[i][RCSurfaceCutter.UV]
+
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = positions
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+## An aerodynamic section driven by `channel` on the given side of the
+## aeroplane, so a cut surface can be hinged off the thing the flight model is
+## actually deflecting.
+##
+## The side matters and is not a detail: a roll command sends one aileron up
+## and the other down. Matching both cut ailerons to the first aileron section
+## in the file drove them together, which is a flaperon, and would have taught
+## a student exactly the wrong thing about what their stick does.
+func _section_for_channel(channel: String, side: float) -> int:
+	if channel.is_empty():
+		return -1
+	for i in _sim.get_section_count():
+		if not _sim.get_section_has_control(i):
+			continue
+		if _sim.get_section_control_channel(i) != channel:
+			continue
+		if absf(side) > 0.5 and signf(_sim.get_section_position(i).x) != signf(side):
+			continue
+		return i
+	return -1
 
 
 ## The model's own description: which way it faces, where its nose is. Written
@@ -456,15 +773,36 @@ func _vertex_cloud(root: Node3D) -> PackedVector3Array:
 ## out when the whole aeroplane is six hundred and eighty long. One loose vertex
 ## nobody will ever see does not get to decide how big the aeroplane is.
 func _percentile_extent(points: PackedVector3Array, axis: int) -> float:
+	return _percentile_box(points).size[axis]
+
+
+## The aeroplane's box, ignoring the outermost tenth of a percent of vertices
+## on each axis.
+##
+## THE box - every measurement of the aeroplane comes from here. A bounding box
+## does not survive contact with real files, and this project has now paid for
+## that three separate times with the same single vertex: the Cessna's
+## main_gear_left mesh has one eleven hundred units out when the aeroplane is
+## six hundred and eighty long. It made the span 16.3 m on an 11 m aircraft; it
+## put the aeroplane's middle two and a half metres aft of where it is, far
+## enough that the propeller ended up behind the origin; and it made the
+## half-span sixty-five metres, so every control-surface band was measured
+## against an aeroplane the size of a village and the ailerons came out empty.
+func _percentile_box(points: PackedVector3Array) -> AABB:
 	if points.size() < 32:
-		return 0.0
-	var along := PackedFloat32Array()
-	along.resize(points.size())
-	for i in points.size():
-		along[i] = points[i][axis]
-	along.sort()
-	var margin: int = maxi(int(along.size() * 0.001), 1)
-	return along[along.size() - 1 - margin] - along[margin]
+		return AABB()
+	var low := Vector3.ZERO
+	var high := Vector3.ZERO
+	for axis in 3:
+		var along := PackedFloat32Array()
+		along.resize(points.size())
+		for i in points.size():
+			along[i] = points[i][axis]
+		along.sort()
+		var margin: int = maxi(int(along.size() * 0.001), 1)
+		low[axis] = along[margin]
+		high[axis] = along[along.size() - 1 - margin]
+	return AABB(low, high - low)
 
 
 ## Turns the model until its nose is down -Z and its fin is up.
@@ -477,92 +815,96 @@ func _orient_from_geometry(scene: Node3D, holder: Node3D) -> void:
 	if points.size() < 32:
 		return
 
-	# Span onto X, length onto Z, height onto Y - by size. An aeroplane of this
-	# kind is wider than it is long and longer than it is tall, so sorting the
-	# three extents names the three axes. (A model rocket would defeat this,
-	# and there is not one in the roster.)
-	var extent := [
-		Vector2(_percentile_extent(points, 0), 0.0),
-		Vector2(_percentile_extent(points, 1), 1.0),
-		Vector2(_percentile_extent(points, 2), 2.0),
-	]
+	# ONE: name the axes by size. An aeroplane of this kind is wider than it is
+	# long and longer than it is tall, so sorting the three extents says which
+	# is the span, which the length and which the height. (A model rocket would
+	# defeat this, and there is not one in the roster.)
+	var box: AABB = _percentile_box(points)
+	var extent := [Vector2(box.size.x, 0.0), Vector2(box.size.y, 1.0),
+				   Vector2(box.size.z, 2.0)]
 	extent.sort_custom(func(a, b) -> bool: return a.x > b.x)
 	var columns := [Vector3.ZERO, Vector3.ZERO, Vector3.ZERO]
-	columns[int(extent[0].y)] = Vector3.RIGHT     # widest  -> span
-	columns[int(extent[1].y)] = Vector3.BACK      # middle  -> length
-	columns[int(extent[2].y)] = Vector3.UP        # least   -> height
+	columns[int(extent[0].y)] = Vector3.RIGHT     # widest -> span
+	columns[int(extent[1].y)] = Vector3.BACK      # middle -> length
+	columns[int(extent[2].y)] = Vector3.UP        # least  -> height
 	var basis := Basis(columns[0], columns[1], columns[2])
 	if basis.determinant() < 0.0:
-		# A mirror, not a rotation. Turning the length round makes it a proper
-		# rotation, and which end is the nose is settled below anyway.
+		# A mirror, not a rotation. Turning the length round makes it proper,
+		# and which end is the nose is settled next anyway.
 		columns[int(extent[1].y)] = Vector3.FORWARD
 		basis = Basis(columns[0], columns[1], columns[2])
 	scene.basis = basis * scene.basis
 
-	points = _vertex_cloud(holder)
-	var box := AABB(points[0], Vector3.ZERO)
-	for point in points:
-		box = box.expand(point)
-
-	# The outermost EIGHTH at each end, not the outer third.
-	#
-	# A third was tried and got the Cessna backwards: its front third holds the
-	# high wing and the undercarriage, which between them stand as tall as any
-	# fin. The last eighth is different - at one end there is a spinner and a
-	# cowling, at the other there is a fin, and nothing else is close.
-	var tip: float = box.size.z * 0.125
-	var front_high: float = -INF
-	var front_low: float = INF
-	var back_high: float = -INF
-	var back_low: float = INF
-	for point in points:
-		if point.z < box.position.z + tip:
-			front_high = maxf(front_high, point.y)
-			front_low = minf(front_low, point.y)
-		elif point.z > box.end.z - tip:
-			back_high = maxf(back_high, point.y)
-			back_low = minf(back_low, point.y)
-	if front_high < front_low or back_high < back_low:
-		return
-
-	if OS.has_environment("RC_MODEL_DEBUG"):
-		print("   cloud box ", box.size)
-		print("   nose end %.3f tall, tail end %.3f tall"
-			% [front_high - front_low, back_high - back_low])
-
-	# The fin end is the tall end, and the tail belongs at +Z.
-	if (front_high - front_low) > (back_high - back_low):
+	# TWO: which end is the nose. The tail belongs at +Z.
+	if _tail_is_forward(holder):
 		scene.basis = Basis(Vector3.UP, PI) * scene.basis
-		var swap_high: float = front_high
-		var swap_low: float = front_low
-		front_high = back_high
-		front_low = back_low
-		back_high = swap_high
-		back_low = swap_low
 
-	# And the fin points away from the wheels: at the tail, there is far more
-	# aeroplane above the middle than below it.
-	var middle: float = (box.position.y + box.end.y) * 0.5
-	if (back_high - middle) < (middle - back_low):
+	# THREE: and only now, which way is up.
+	#
+	# These two decisions cannot be made together, which cost an aeroplane
+	# flying inverted to learn. The "is the fin above the wheels" test reads
+	# the +Z end; if the nose test then turns the aeroplane round, the end it
+	# read has become the nose and its answer is about the wrong half.
+	if _fin_is_below(holder):
 		scene.basis = Basis(Vector3.BACK, PI) * scene.basis
 
-	# Last, and it overrules the fin: if the model says where its propeller is,
-	# that is not an inference at all.
-	#
-	# The fin rule got the Cessna backwards. Its front eighth carries a cowling
-	# and a nose leg and stands 1.9 m tall against the tail's 2.7 m - the right
-	# answer to the wrong question, because both ends of a light aeroplane are
-	# tall and the margin between them is not evidence of anything.
+
+## Is the tail at -Z, so the aeroplane needs turning round?
+##
+## Where the model names its propeller that settles it outright - it is not an
+## inference. The fin rule below got the Cessna backwards: its front eighth
+## carries a cowling and a nose leg and stands 1.9 m tall against the tail's
+## 2.7 m, which is the right answer to the wrong question, since both ends of a
+## light aeroplane are tall.
+func _tail_is_forward(holder: Node3D) -> bool:
 	if _propeller != null:
-		# Where the propeller's GEOMETRY is, not where its node origin is. The
-		# origin of a glTF node is wherever the exporter left it - on this
-		# model it sits five millimetres from the centre of a nine metre
-		# aeroplane, which is a coin toss, not a measurement.
-		var station: float = _node_centre(holder, _propeller).z
-		if OS.has_environment("RC_MODEL_DEBUG"):
-			print("   propeller sits at z %+.3f before the last turn" % station)
-		if station > 0.0:
-			scene.basis = Basis(Vector3.UP, PI) * scene.basis
+		# The propeller's GEOMETRY, not its node origin: the origin is wherever
+		# the exporter left it, and on this model that is five millimetres from
+		# the middle of a nine metre aeroplane.
+		return _node_centre(holder, _propeller).z > 0.0
+
+	# Failing that: the outermost eighth at one end is a fin and at the other a
+	# spinner, and nothing else on a light aeroplane is close. An outer THIRD
+	# was tried and is not discriminating - the front third of a high-wing
+	# holds the wing and the undercarriage between them.
+	var ends: Vector2 = _end_heights(holder)
+	return ends.x > ends.y
+
+
+## Is the fin below the fuselage, so the aeroplane is upside down?
+func _fin_is_below(holder: Node3D) -> bool:
+	var points: PackedVector3Array = _vertex_cloud(holder)
+	if points.size() < 32:
+		return false
+	var box: AABB = _percentile_box(points)
+	var tip: float = box.size.z * 0.125
+	var high: float = -INF
+	var low: float = INF
+	for point in points:
+		if point.z > box.end.z - tip:
+			high = maxf(high, point.y)
+			low = minf(low, point.y)
+	if high < low:
+		return false
+	var middle: float = (box.position.y + box.end.y) * 0.5
+	return (high - middle) < (middle - low)
+
+
+## How tall the outermost eighth is at each end: x the -Z end, y the +Z end.
+func _end_heights(holder: Node3D) -> Vector2:
+	var points: PackedVector3Array = _vertex_cloud(holder)
+	if points.size() < 32:
+		return Vector2.ZERO
+	var box: AABB = _percentile_box(points)
+	var tip: float = box.size.z * 0.125
+	var front := Vector2(INF, -INF)
+	var back := Vector2(INF, -INF)
+	for point in points:
+		if point.z < box.position.z + tip:
+			front = Vector2(minf(front.x, point.y), maxf(front.y, point.y))
+		elif point.z > box.end.z - tip:
+			back = Vector2(minf(back.x, point.y), maxf(back.y, point.y))
+	return Vector2(front.y - front.x, back.y - back.x)
 
 
 ## The centre of a node's own visible geometry, in `reference`'s space.

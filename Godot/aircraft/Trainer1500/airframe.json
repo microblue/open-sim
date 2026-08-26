@@ -1,5 +1,5 @@
 {
-  "_comment": "How this model file sits, and what in it is not the aeroplane. Read off the rendered views, not guessed. The model faces +X with its span along Z, so it needs a quarter turn to put the nose down -Z. It also ships sitting on a museum display plinth, which is inside the bounding box and is not part of the aircraft.",
+  "_comment": "How this model file sits. Control surfaces are regions of the aeroplane: a span band as a fraction of the half span, a height band as a fraction of the half height, everything aft of `aft_of` along the length, and a hinge at that fraction of the LOCAL chord in the region. A downloaded airframe is one solid mesh and has no hinges of its own, so they are cut out of it.",
   "rotation_deg": [
     0,
     90,
@@ -13,5 +13,69 @@
     0,
     0
   ],
-  "propeller_node": "propeller"
+  "propeller_node": "propeller",
+  "control_surfaces": [
+    {
+      "key": "aileron_left",
+      "channel": "aileron",
+      "axis": "x",
+      "side": -1,
+      "span": [
+        -1.05,
+        -0.45
+      ],
+      "height": [
+        -0.15,
+        1.0
+      ],
+      "aft_of": -1.0,
+      "hinge": 0.7
+    },
+    {
+      "key": "aileron_right",
+      "channel": "aileron",
+      "axis": "x",
+      "side": 1,
+      "span": [
+        0.45,
+        1.05
+      ],
+      "height": [
+        -0.15,
+        1.0
+      ],
+      "aft_of": -1.0,
+      "hinge": 0.7
+    },
+    {
+      "key": "elevator",
+      "channel": "elevator",
+      "axis": "x",
+      "span": [
+        -0.45,
+        0.45
+      ],
+      "height": [
+        -0.35,
+        0.3
+      ],
+      "aft_of": 0.7,
+      "hinge": 0.55
+    },
+    {
+      "key": "rudder",
+      "channel": "rudder",
+      "axis": "y",
+      "span": [
+        -0.06,
+        0.06
+      ],
+      "height": [
+        0.05,
+        1.0
+      ],
+      "aft_of": 0.7,
+      "hinge": 0.45
+    }
+  ]
 }

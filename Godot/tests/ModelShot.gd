@@ -68,6 +68,20 @@ func _process(_delta: float) -> bool:
 					child.name, aabb.position.y, aabb.end.y,
 					aabb.position.z, aabb.end.z])
 
+	# RC_MODEL_DEFLECT throws every cut control surface hard over, so the shape
+	# that moves can be SEEN. A surface hinged to the wrong geometry looks
+	# perfectly correct until it deflects and takes half the fuselage with it.
+	if OS.has_environment("RC_MODEL_DEFLECT"):
+		var model: Node = _stage.get_node_or_null("Stage/Turntable/Model")
+		if model != null:
+			for pivot in model.find_children("ctl_*", "Node3D", true, false):
+				var angle: float = deg_to_rad(
+					float(OS.get_environment("RC_MODEL_DEFLECT")))
+				if String(pivot.name).find("rudder") >= 0:
+					(pivot as Node3D).rotation = Vector3(0.0, angle, 0.0)
+				else:
+					(pivot as Node3D).rotation = Vector3(angle, 0.0, 0.0)
+
 	var view: Dictionary = VIEWS[_index]
 	var turntable: Node3D = _stage.get_node("Stage/Turntable")
 	turntable.rotation = Vector3(0.0, deg_to_rad(float(view["yaw"])), 0.0)

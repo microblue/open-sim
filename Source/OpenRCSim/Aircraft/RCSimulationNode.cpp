@@ -1329,6 +1329,30 @@ bool RCSimulationNode::get_section_has_control(int index) const
     return Definition.Surfaces[static_cast<size_t>(index)].HasControl;
 }
 
+String RCSimulationNode::get_section_control_channel(int index) const
+{
+    if (!IsValidSection(index)) { return String(); }
+    const rc::AeroSurfaceSpec& section =
+        Definition.Surfaces[static_cast<size_t>(index)];
+    if (!section.HasControl) { return String(); }
+    // The word, not the HUD's three-letter abbreviation. This is read by hand
+    // written configuration - Godot/aircraft/<name>/airframe.json says which
+    // channel each cut control surface belongs to - and "aileron" is what
+    // someone writing that file will write. rc::ToString gives "AIL", which is
+    // right for a 13-pixel label on a stick gate and wrong here.
+    switch (section.Control.Channel)
+    {
+        case rc::RCChannel::Aileron:  return "aileron";
+        case rc::RCChannel::Elevator: return "elevator";
+        case rc::RCChannel::Rudder:   return "rudder";
+        case rc::RCChannel::Throttle: return "throttle";
+        case rc::RCChannel::Flap:     return "flap";
+        case rc::RCChannel::Aux1:     return "aux1";
+        case rc::RCChannel::Count:    break;
+    }
+    return String();
+}
+
 double RCSimulationNode::get_section_control_chord_fraction(int index) const
 {
     if (!get_section_has_control(index)) { return 0.0; }
@@ -1604,6 +1628,7 @@ void RCSimulationNode::_bind_methods()
     OPENRC_BIND1(get_section_lift_direction, "index");
     OPENRC_BIND1(get_section_span_m, "index");
     OPENRC_BIND1(get_section_has_control, "index");
+    OPENRC_BIND1(get_section_control_channel, "index");
     OPENRC_BIND1(get_section_control_chord_fraction, "index");
     OPENRC_BIND1(get_section_control_span_fraction, "index");
     OPENRC_BIND1(get_section_control_deflection_deg, "index");

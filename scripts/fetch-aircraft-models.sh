@@ -26,6 +26,8 @@ DEST="$ROOT/ThirdParty/aircraft-models"
 MODELS=(
   "cessna172|walids2003/APEX|Airplane_model/cessna_kog| cessna172_named.glb"
   "sailplane|albertkemp/JSFS|Assets/glTF/underpoly_free_sailplane_glider|scene.gltf"
+  "mustang|KieArm/airplane-game|public/models/p-51|scene.glb"
+  "spitfire|Mafo369/OpenGLDemos|Assets/soviet_trainer_spitfire|scene.gltf"
 )
 
 fetch_file() {

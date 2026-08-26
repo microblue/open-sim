@@ -405,6 +405,15 @@ public:
     void clear_manual_channels();
 
     bool   get_section_has_control(int index) const;
+    /** Which transmitter channel moves this section's control surface:
+     *  "aileron", "elevator", "rudder", "throttle", "flap" or "gear".
+     *
+     *  A downloaded airframe has no per-section geometry to hang a hinge off,
+     *  so its control surfaces are cut out of the mesh and matched to the
+     *  flight model BY CHANNEL. Without this the match would have to be made
+     *  on section names, which is a coincidence of how the four definitions
+     *  happen to be written rather than anything the format guarantees. */
+    godot::String get_section_control_channel(int index) const;
     double get_section_control_chord_fraction(int index) const;
     double get_section_control_span_fraction(int index) const;
     double get_section_control_deflection_deg(int index) const;

@@ -1,0 +1,73 @@
+{
+  "_comment": "P-51 Mustang. The propeller node is spelled 'propeler' in the file; that is the file's spelling, not a typo here. Control surfaces are regions of the aeroplane: a span band as a fraction of the half span, a height band as a fraction of the half height, everything aft of `aft_of` along the length, and a hinge at that fraction of the LOCAL chord in the region. A downloaded airframe is one solid mesh and has no hinges of its own, so they are cut out of it.",
+  "propeller_node": "propeler",
+  "offset_m": [
+    0,
+    0,
+    0
+  ],
+  "control_surfaces": [
+    {
+      "key": "aileron_left",
+      "channel": "aileron",
+      "axis": "x",
+      "side": -1,
+      "span": [
+        -1.05,
+        -0.45
+      ],
+      "height": [
+        -1.0,
+        0.15
+      ],
+      "aft_of": -1.0,
+      "hinge": 0.7
+    },
+    {
+      "key": "aileron_right",
+      "channel": "aileron",
+      "axis": "x",
+      "side": 1,
+      "span": [
+        0.45,
+        1.05
+      ],
+      "height": [
+        -1.0,
+        0.15
+      ],
+      "aft_of": -1.0,
+      "hinge": 0.7
+    },
+    {
+      "key": "elevator",
+      "channel": "elevator",
+      "axis": "x",
+      "span": [
+        -0.45,
+        0.45
+      ],
+      "height": [
+        -0.3,
+        0.2
+      ],
+      "aft_of": 0.86,
+      "hinge": 0.55
+    },
+    {
+      "key": "rudder",
+      "channel": "rudder",
+      "axis": "y",
+      "span": [
+        -0.06,
+        0.06
+      ],
+      "height": [
+        0.05,
+        1.0
+      ],
+      "aft_of": 0.7,
+      "hinge": 0.45
+    }
+  ]
+}
