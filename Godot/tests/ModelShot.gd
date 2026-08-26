@@ -1,6 +1,7 @@
 # OpenRC Simulator - the aeroplane, alone, from four sides.
 #
-#   godot --path Godot --resolution 1400x900 --script res://tests/ModelShot.gd
+#   RC_MODEL_STEM=Glider2400 godot --path Godot --resolution 1400x900 \
+#       --script res://tests/ModelShot.gd
 #
 # The turntable in the menu showed the model was wrong in several ways at once
 # and a 300-pixel thumbnail could not say which. This renders it big, on a
@@ -26,17 +27,24 @@ var _stem: String = "Trainer1500"
 func _initialize() -> void:
 	DirAccess.make_dir_recursive_absolute(
 		ProjectSettings.globalize_path("res://shots/model"))
-	var args: PackedStringArray = OS.get_cmdline_user_args()
-	if args.size() > 0:
-		_stem = args[0]
+	# From the environment, not the command line: with --script, Godot does not
+	# hand user arguments through reliably, and a tool that silently renders
+	# the wrong aeroplane is worse than one that needs an env var.
+	if OS.has_environment("RC_MODEL_STEM"):
+		_stem = OS.get_environment("RC_MODEL_STEM")
 	_stage = StageScript.new()
 	root.add_child(_stage)
-	_stage.call("set_stage_size", Vector2i(1400, 900))
-	_stage.call("show_aircraft", _stem, 1.5)
 	_stage.set_process(false)
 
 
 func _process(_delta: float) -> bool:
+	if _index < 0 and _settle == 0:
+		# Set up on the first frame, not in _initialize: a node added to the
+		# tree there has not run _ready yet, so the stage had no simulation
+		# node to load into and every render came out as the default aeroplane.
+		_stage.call("set_stage_size", Vector2i(1400, 900))
+		_stage.call("show_aircraft", _stem, 1.5)
+
 	_settle -= 1
 	if _settle > 0:
 		return false

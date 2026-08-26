@@ -1,0 +1,17 @@
+{
+  "_comment": "How this model file sits, and what in it is not the aeroplane. Read off the rendered views, not guessed. The model faces +X with its span along Z, so it needs a quarter turn to put the nose down -Z. It also ships sitting on a museum display plinth, which is inside the bounding box and is not part of the aircraft.",
+  "rotation_deg": [
+    0,
+    90,
+    0
+  ],
+  "hide_nodes": [
+    "Static_Display"
+  ],
+  "offset_m": [
+    0,
+    0,
+    0
+  ],
+  "propeller_node": "propeller"
+}

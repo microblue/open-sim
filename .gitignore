@@ -16,6 +16,10 @@ Godot/assets/*
 # godot-cpp is fetched at a pinned commit by scripts/bootstrap.sh rather than
 # vendored, so the repository stays small.
 ThirdParty/godot-cpp/
+# The raw airframe downloads. Re-fetchable with scripts/fetch-aircraft-models.sh,
+# and what ships is the built airframe.glb under Godot/aircraft/, which IS
+# committed - along with its licence file, which is not optional.
+ThirdParty/aircraft-models/
 
 # --- CMake ------------------------------------------------------------------
 build/

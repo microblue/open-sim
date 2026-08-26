@@ -207,6 +207,40 @@ func _test_input_without_a_device() -> void:
 		"binding an unswept axis is refused")
 
 
+## A downloaded airframe has to be the size the flight model thinks it is.
+##
+## The aerodynamics integrates lift over a wing of a declared span. A visible
+## wing of any other size is lying about the aeroplane - and a downloaded model
+## arrives at whatever scale its author left it, on this one about eight times
+## too big, with a stray vertex in the undercarriage eleven hundred units out
+## for good measure. So the fit is measured, here, against the definition.
+func _test_airframe_is_fitted_to_the_definition() -> void:
+	print("  downloaded airframes")
+	var model: Node = ModelScript.new()
+	model.name = "FitModel"
+	model.simulation_path = NodePath("..")
+	_sim.add_child(model)
+	# The model builds on its first _process; force it now so this stays a
+	# straight-line check rather than another deferred phase.
+	model.call("_build")
+
+	if not model.call("is_airframe_loaded"):
+		print("       no airframe.glb for %s - generated aeroplane in use"
+			% _sim.get_aircraft_name())
+		model.queue_free()
+		return
+
+	var drawn: float = model.call("drawn_span_m")
+	var declared: float = _sim.get_wingspan_m()
+	print("       drawn %.3f m against a declared %.3f m" % [drawn, declared])
+	# Ten per cent: the fit is measured from a vertex percentile, so a wingtip
+	# light or a strut that reaches past the tip costs a few per cent. What it
+	# must not be is the eight-times-too-big the file arrives at.
+	_check(absf(drawn - declared) < declared * 0.10,
+		"the downloaded airframe is drawn at the span the flight model uses")
+	model.queue_free()
+
+
 func _test_wind() -> void:
 	print("  wind")
 	# "Wind 270" blows from the west towards the east: +X in Godot, which is
@@ -375,6 +409,10 @@ func _begin_control_surface_phase() -> void:
 
 	_surface_model = ModelScript.new()
 	_surface_model.name = "SurfaceModel"
+	# The GENERATED aeroplane, explicitly. It is the only one with hinged
+	# control surfaces - a downloaded airframe is one mesh - and this test is
+	# about the hinges, not about which aircraft happen to have models today.
+	_surface_model.prefer_generated = true
 	_surface_model.simulation_path = NodePath("..")
 	_sim.add_child(_surface_model)
 
@@ -523,6 +561,9 @@ func _finish_tree() -> void:
 	# Last, because by now the recorder holds a whole flight with a crash in it,
 	# which is exactly what a replay has to be able to show.
 	_test_replay()
+	# Last: building an aeroplane out of a 3.5 MB glb costs frames, and the
+	# section above asserts that no physics step was dropped.
+	_test_airframe_is_fitted_to_the_definition()
 
 	print("\n%d checks, %d failed" % [_checks, _failures])
 	if _failures == 0:

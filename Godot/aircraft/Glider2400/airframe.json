@@ -1,0 +1,14 @@
+{
+  "_comment": "Read off the rendered views: like the Cessna, this model faces +X with its span along Z, so a quarter turn puts the nose down -Z. It is a pure sailplane and has no propeller.",
+  "rotation_deg": [
+    0,
+    90,
+    0
+  ],
+  "offset_m": [
+    0,
+    0,
+    0
+  ],
+  "propeller_node": ""
+}

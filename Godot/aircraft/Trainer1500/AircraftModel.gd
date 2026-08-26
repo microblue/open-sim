@@ -38,7 +38,19 @@ const HINGE_SIGN: float = 1.0
 
 var _sim: RCSimulationNode
 var _built: bool = false
+## True when the aeroplane on screen is a downloaded airframe rather than the
+## one generated from the flight model's sections.
+var _airframe_loaded: bool = false
+## Forces the generated aeroplane even where a downloaded airframe exists.
+##
+## The generated one is the only one with hinged control surfaces, so the tests
+## that check an aileron goes up when the stick goes right have to ask for it
+## by name rather than depend on which aircraft happen to have models today.
+@export var prefer_generated: bool = false
 var _propeller: Node3D
+## The propeller's own axis of rotation. Z for the generated aeroplane; for a
+## downloaded one, whichever of its axes happens to point forwards.
+var _propeller_axis: Vector3 = Vector3(0.0, 0.0, 1.0)
 var _debug: ImmediateMesh
 var _spin: float = 0.0
 var _surfaces: Array[Dictionary] = []
@@ -60,7 +72,11 @@ func _process(delta: float) -> void:
 		# anyway, so this is scaled down to something the eye can follow and
 		# read as "the motor is running".
 		_spin += delta * _sim.get_rpm() * 0.012
-		_propeller.rotation.z = _spin
+		if _airframe_loaded:
+			_propeller.rotate_object_local(_propeller_axis,
+										   delta * _sim.get_rpm() * 0.012)
+		else:
+			_propeller.rotation.z = _spin
 
 	_update_surfaces()
 
@@ -249,6 +265,23 @@ func _update_surfaces() -> void:
 		pivot.rotation = Vector3(deg_to_rad(degrees) * HINGE_SIGN, 0.0, 0.0)
 
 
+## True when the aeroplane on screen came out of a .glb rather than a loft.
+func is_airframe_loaded() -> bool:
+	return _airframe_loaded
+
+
+## How wide the aeroplane is actually DRAWN, tip to tip, in metres.
+##
+## The point of measuring it is that the flight model computes lift over a wing
+## of a declared span, and a visible wing of a different size is lying about
+## the aeroplane. Exposed so a test can hold the two together.
+func drawn_span_m() -> float:
+	# The same vertex percentile the fit itself uses, measured in this node's
+	# own space - which is metres. Merging bounding boxes was tried and gives
+	# the stray-vertex answer; taking the widest single mesh gives one wing.
+	return _vertex_span(self)
+
+
 ## Throws away the built aeroplane and builds the one the simulation node is
 ## now holding. Used by the hangar, where changing the selection changes the
 ## aeroplane on the stand; in flight the model is freed and made again instead.
@@ -256,12 +289,182 @@ func rebuild() -> void:
 	for child in get_children():
 		child.queue_free()
 	_surfaces.clear()
+	_airframe_loaded = false
 	_propeller = null
 	_debug = null
 	_built = false
 
 
+## The visible aeroplane.
+##
+## A real model of a real aeroplane if one has been fetched for this airframe
+## (scripts/fetch-aircraft-models.sh), and the generated one otherwise. The
+## generated aeroplane is lofted from the flight model's own sections, which
+## guarantees that what you see is what is flying; a downloaded model is a
+## different aeroplane, fitted to the same span. Docs/ASSETS.md has the trade.
 func _build() -> void:
+	if not prefer_generated and _build_airframe():
+		return
+	_build_generated()
+
+
+## Loads Godot/aircraft/<stem>/airframe.glb, if there is one.
+##
+## The model is SCALED TO THE DEFINITION'S SPAN, always. A downloaded Cessna is
+## eleven metres across and this aeroplane is one and a half; more to the point,
+## the flight model computes its lift over a 1.5 m wing, and a visible wing of
+## any other size would be lying about the aeroplane. Everything else about the
+## fit - which way is forward, which way is up - is read from airframe.json
+## beside it, because that is a property of the model, not of the aeroplane.
+func _build_airframe() -> bool:
+	var stem: String = _sim.aircraft_definition.get_file().get_basename()
+	var path: String = "res://aircraft/%s/airframe.glb" % stem
+	if stem.is_empty() or not ResourceLoader.exists(path):
+		return false
+	var packed: PackedScene = load(path) as PackedScene
+	if packed == null:
+		return false
+
+	var config: Dictionary = _airframe_config(stem)
+	var holder := Node3D.new()
+	holder.name = "Airframe"
+	var scene: Node3D = packed.instantiate() as Node3D
+	if scene == null:
+		return false
+	holder.add_child(scene)
+	add_child(holder)
+
+	# Anything the model came with that is not the aeroplane, before anything
+	# else: this one arrives sitting on a museum display plinth, and a plinth
+	# inside the bounding box makes the measured span 16 m on an 11 m aircraft.
+	for pattern in config.get("hide_nodes", []):
+		for junk in scene.find_children("*%s*" % pattern, "Node3D", true, false):
+			# Hidden, not freed: queue_free is deferred, so a freed plinth is
+			# still in the tree when the bounding box is measured a line later
+			# - which is exactly the measurement it was ruining.
+			(junk as Node3D).visible = false
+
+	# Orientation first, then measure: the span is only the X extent once the
+	# model is the right way round.
+	var euler: Array = config.get("rotation_deg", [0.0, 0.0, 0.0])
+	scene.rotation = Vector3(deg_to_rad(float(euler[0])), deg_to_rad(float(euler[1])),
+							 deg_to_rad(float(euler[2])))
+
+	# The span, measured from the VERTICES with the outliers discarded.
+	#
+	# A bounding box is the wrong tool here. This model's main_gear_left mesh
+	# carries a stray vertex 1100 units out when the whole aeroplane is 683
+	# long; taking the box gave a "span" of 16.3 m on an 11 m aircraft, and the
+	# fitted aeroplane came out three quarters of the size it should be. Nor
+	# does measuring across the named wing nodes fix it - they carry strut and
+	# navigation-light geometry that reaches past the tip.
+	#
+	# So: every visible vertex, sorted, and the span taken between the half-
+	# percentiles. One loose vertex nobody will ever see does not get to decide
+	# how big the aeroplane is, and no per-model configuration is needed for it
+	# not to.
+	# Measured in the HOLDER's space, not the model's.
+	#
+	# Measuring inside `scene` cancels out `scene`'s own rotation - the very
+	# quarter turn applied two lines above - so the "span" came back along the
+	# model's original X, which on both of these files is the FUSELAGE. The
+	# aeroplane was then fitted so its length was the declared span, and came
+	# out a quarter too small.
+	var bounds: AABB = _visual_bounds(holder)
+	var span_measured: float = _vertex_span(holder)
+	if span_measured < 0.001:
+		span_measured = bounds.size.x
+	if OS.has_environment("RC_MODEL_DEBUG"):
+		print("   box span %.3f   vertex span %.3f" % [bounds.size.x, span_measured])
+
+	var wanted: float = _sim.get_wingspan_m()
+	var scale_factor: float = wanted / span_measured
+	holder.scale = Vector3.ONE * scale_factor
+
+	# Centre it on the centre of gravity, which is where the flight model
+	# thinks the aeroplane is. Without this the model hangs off its own origin,
+	# which for a scanned model is wherever the artist left it.
+	var centre: Vector3 = bounds.position + bounds.size * 0.5
+	var lift: Array = config.get("offset_m", [0.0, 0.0, 0.0])
+	scene.position -= centre
+	scene.position += Vector3(float(lift[0]), float(lift[1]), float(lift[2])) / scale_factor
+
+	_propeller = _find_node(scene, String(config.get("propeller_node", "")))
+	if _propeller != null:
+		# Which of the propeller node's own axes points down the nose.
+		#
+		# The generated propeller was built facing along Z and spun about Z. A
+		# downloaded one sits wherever the artist left it, and the model root
+		# has just been turned a quarter turn on top of that - so spinning it
+		# about its local Z would have turned the disc about the SPAN.
+		var nose: Vector3 = holder.global_transform.basis * Vector3(0.0, 0.0, -1.0)
+		_propeller_axis = (_propeller.global_transform.basis.inverse() * nose).normalized()
+	_airframe_loaded = true
+	print("[Model] %s: airframe.glb fitted to %.2f m span (x%.4f)"
+		% [stem, wanted, scale_factor])
+	return true
+
+
+## The model's own description: which way it faces, where its nose is. Written
+## by hand once, next to the model, because it is a fact about that file.
+func _airframe_config(stem: String) -> Dictionary:
+	var path: String = "res://aircraft/%s/airframe.json" % stem
+	if not FileAccess.file_exists(path):
+		return {}
+	var text: String = FileAccess.get_file_as_string(path)
+	var parsed: Variant = JSON.parse_string(text)
+	return parsed if parsed is Dictionary else {}
+
+
+## The bounding box of everything visible under `root`, in `root`'s own space.
+func _visual_bounds(root: Node) -> AABB:
+	var bounds := AABB()
+	var first := true
+	for child in root.find_children("*", "MeshInstance3D", true, false):
+		var mesh := child as MeshInstance3D
+		if not mesh.is_visible_in_tree():
+			continue
+		var box: AABB = root.global_transform.affine_inverse() \
+				* (mesh.global_transform * mesh.get_aabb())
+		if first:
+			bounds = box
+			first = false
+		else:
+			bounds = bounds.merge(box)
+	return bounds
+
+
+## The width the aeroplane actually occupies, ignoring the furthest half
+## percent of vertices at each end.
+func _vertex_span(root: Node3D) -> float:
+	var across := PackedFloat32Array()
+	var to_local: Transform3D = root.global_transform.affine_inverse()
+	for child in root.find_children("*", "MeshInstance3D", true, false):
+		var mesh := child as MeshInstance3D
+		if not mesh.is_visible_in_tree() or mesh.mesh == null:
+			continue
+		var into_root: Transform3D = to_local * mesh.global_transform
+		for point in mesh.mesh.get_faces():
+			across.append((into_root * point).x)
+	if across.size() < 32:
+		return 0.0
+	across.sort()
+	# A tenth of a percent. The stray vertex that started all this is one in
+	# two hundred thousand; a tenth of a percent discards two hundred of them
+	# and still leaves the wingtip where it is.
+	var margin: int = maxi(int(across.size() * 0.001), 1)
+	return across[across.size() - 1 - margin] - across[margin]
+
+
+func _find_node(root: Node, node_name: String) -> Node3D:
+	if node_name.is_empty():
+		return null
+	for child in root.find_children(node_name, "Node3D", true, false):
+		return child as Node3D
+	return null
+
+
+func _build_generated() -> void:
 	var span_total: float = 0.0
 	var nose_z: float = 0.0
 	var tail_z: float = 0.0

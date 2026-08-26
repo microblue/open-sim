@@ -1,5 +1,79 @@
 # Assets
 
+## The aeroplanes
+
+The four airframes used to be **generated** — a fuselage lofted between
+stations, a wing lofted through the aerodynamic sections the flight model
+integrates over. That had one large virtue: what you saw was, exactly and
+provably, what was flying. It also looked like what it was, which is an
+aeroplane assembled out of primitives.
+
+Two of them are now real models of real aeroplanes:
+
+| Aircraft | Model | Author | Licence |
+| --- | --- | --- | --- |
+| Trainer 1500 | [Cessna172](https://sketchfab.com/3d-models/cessna172-d1b15841c29c43d0862667300bad55a4) | [KOG_THORNS](https://sketchfab.com/ioai25312) | CC-BY-4.0 |
+| Glider 2400 | [UNDERPOLY: Free Sailplane Glider](https://sketchfab.com/3d-models/underpoly-free-sailplane-glider-4b1e6ac35d9c4e9a9f9d1a52d1b0ee73) | [UNDERPOLY Project](https://sketchfab.com/underpolyproject) | CC-BY-4.0 |
+
+> This work is based on "Cessna172" by KOG_THORNS, and on "UNDERPOLY: Free
+> Sailplane Glider" by UNDERPOLY Project, both licensed under
+> [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+**The attribution is the licence, not a courtesy.** Each model keeps its own
+`AIRFRAME-LICENSE.txt` next to it in `Godot/aircraft/<Name>/`, and the fetch
+script refuses to vendor anything that is not CC-BY-4.0 — including models that
+are only NonCommercial, however good they look. This project cannot accept that
+restriction on a user's behalf.
+
+```bash
+scripts/fetch-aircraft-models.sh     # download them with their licences
+scripts/build-aircraft-models.sh     # 1024 px textures, welded, deduplicated
+```
+
+Sport 1200 and Warbird 1100 still use the generated airframe, because no
+suitably licensed low-wing aerobat or warbird has been found. Both paths are
+live: `AircraftModel.gd` loads `airframe.glb` if there is one and generates the
+aeroplane if there is not, so adding a model for either is a fetch and a build.
+
+### What this trades away
+
+A downloaded model is a **different aeroplane**. The Cessna 172 is eleven
+metres across and this trainer is one and a half; the planform, the tail volume
+and the dihedral are the real Cessna's, not the definition's. Two things keep
+it honest:
+
+- **The span is fitted to the definition**, always. The flight model computes
+  lift over a 1.5 m wing, and a visible wing of any other size would be lying
+  about the aeroplane.
+- **Nothing about the flight model changed.** The aerodynamics still integrates
+  over the sections in `Data/Aircraft/*.json`. The model is a shell.
+
+What is lost is moving control surfaces. The generated aeroplane hinged every
+aileron, elevator and rudder off the section the flight model was deflecting;
+a downloaded airframe is one mesh and has no separable ones. The propeller
+still turns, where the model names it.
+
+### Fitting a model
+
+Two things have to be told to the loader, in `Godot/aircraft/<Name>/airframe.json`,
+and both are properties of the FILE rather than of the aeroplane:
+
+- `rotation_deg` — which way it faces. Both models here arrive nose-along-+X
+  with their span down Z, and want a quarter turn.
+- `hide_nodes` — what came with it that is not the aeroplane. The Cessna ships
+  sitting on a museum display plinth.
+
+The **scale is not configurable**, and deliberately so. It is measured from the
+vertices: every visible vertex, sorted across the span, with the outermost
+tenth of a percent at each end discarded. A bounding box was tried first and
+does not survive contact with real files — this model's `main_gear_left` mesh
+carries a stray vertex eleven hundred units out when the whole aeroplane is six
+hundred and eighty long, which made the measured span 16.3 m on an 11 m
+aircraft and drew the aeroplane at three quarters of its size. One loose vertex
+nobody will ever see does not get to decide how big the aeroplane is.
+
+## Scenery
+
 Everything in `Godot/assets/` is CC0, from [Poly Haven](https://polyhaven.com) —
 no attribution required, no restriction on use. None of it is committed: it is
 about two gigabytes of photogrammetry. What is committed is

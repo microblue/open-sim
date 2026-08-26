@@ -46,16 +46,19 @@ func _ready() -> void:
 	env.environment.background_mode = Environment.BG_CANVAS
 	env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.environment.ambient_light_color = Color(0.42, 0.50, 0.60)
-	env.environment.ambient_light_energy = 1.5
+	# Toned down for real models. The generated aeroplane was flat-shaded
+	# colour and wanted lifting; a photographed airframe with a white paint
+	# scheme and real PBR maps blows out to a silhouette at that exposure.
+	env.environment.ambient_light_energy = 0.8
 	_stage.add_child(env)
 
 	# Three lights. A key from high and forward models the wing's curvature, a
 	# cool fill from behind keeps the trailing edge off the panel it sits on,
 	# and a rim along the top edge separates a white fuselage from a pale
 	# background - which is the shot every product photograph is.
-	_light(2.2, Vector3(-38.0, 34.0, 0.0), Color(1.0, 0.97, 0.92))
-	_light(0.7, Vector3(-14.0, -140.0, 0.0), Color(0.65, 0.78, 0.95))
-	_light(0.9, Vector3(-72.0, 150.0, 0.0), Color(0.80, 0.90, 1.0))
+	_light(1.15, Vector3(-38.0, 34.0, 0.0), Color(1.0, 0.97, 0.92))
+	_light(0.35, Vector3(-14.0, -140.0, 0.0), Color(0.65, 0.78, 0.95))
+	_light(0.45, Vector3(-72.0, 150.0, 0.0), Color(0.80, 0.90, 1.0))
 
 	_turntable = Node3D.new()
 	_turntable.name = "Turntable"
