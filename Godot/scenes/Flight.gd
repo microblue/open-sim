@@ -269,7 +269,27 @@ func _open_menu(start: bool = false) -> void:
 	menu.wizard_requested.connect(_open_wizard)
 	menu.tuning_requested.connect(_open_tuning)
 	menu.fly_requested.connect(_fly_from_menu)
+	# The HUD has nothing to say while the aeroplane is parked behind a menu,
+	# and its panels showed through in the corners - a transmitter readout
+	# bottom-left and a battery gauge bottom-right, both belonging to a flight
+	# that is not happening. Hidden for as long as the menu is up.
+	menu.tree_exited.connect(_refresh_hud_visibility, CONNECT_DEFERRED)
 	add_child(menu)
+	_refresh_hud_visibility()
+
+
+## The HUD is visible only when no modal screen is. Asked as a question rather
+## than set as a flag: the menu can hand straight over to the wizard, and a
+## pair of show/hide calls would race - the menu leaving the tree after the
+## wizard has entered it, and turning the HUD back on underneath.
+func _refresh_hud_visibility() -> void:
+	var hud: Node = get_node_or_null("FlightHUD")
+	if hud == null:
+		return
+	# The tuning panel is deliberately not in this list: it slides in beside
+	# the HUD to tune the aeroplane in flight, and the numbers it is tuning
+	# against are the ones the HUD is showing.
+	hud.visible = not (has_node("MainMenu") or has_node("ControllerWizard"))
 
 
 ## The menu's Fly button: one action, the whole sortie. The aircraft, the place
@@ -295,7 +315,9 @@ func _open_wizard() -> void:
 	wizard.name = "ControllerWizard"
 	wizard.input_path = NodePath("../Transmitter")
 	wizard.finished.connect(_on_wizard_finished)
+	wizard.tree_exited.connect(_refresh_hud_visibility, CONNECT_DEFERRED)
 	add_child(wizard)
+	_refresh_hud_visibility()
 
 
 func _on_wizard_finished(saved: bool) -> void:

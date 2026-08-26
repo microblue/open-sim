@@ -181,6 +181,15 @@ func _test_input_without_a_device() -> void:
 		_check_near(_input.get_channels()[i], 0.0, 1e-12,
 			"channel %d is neutral with no device" % i)
 
+	# With nothing plugged in the keyboard flies the model. Without this a
+	# player who owns no radio has four dead controls and an aeroplane that
+	# falls out of the sky, and the only thing the HUD offers them is a setup
+	# wizard for the device they have not got.
+	_check(_input.is_using_keyboard(), "the keyboard takes over with no device")
+	# It takes over the CONTROLS, not the neutral position: no key held still
+	# means sticks centred and the motor stopped, which is what the loop above
+	# has just measured.
+
 	_input.begin_capture(true)
 	_input.end_capture()
 	_check(not _input.bind_channel(RCInputNode.CHANNEL_AILERON, 0),

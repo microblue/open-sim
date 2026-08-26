@@ -123,6 +123,16 @@ public:
     bool save_profile(const godot::String& path) const;
     bool load_profile(const godot::String& path);
 
+    /** True when nothing is plugged in and the keyboard is flying the model.
+     *
+     *  A transmitter is the point of this simulator and there is no pretending
+     *  a keyboard is one. But a player who downloads it before their radio
+     *  arrives - or who wants to see what it looks like - had every control
+     *  dead and an aeroplane that fell out of the sky, with the only offered
+     *  action being a setup wizard that needs the device they have not got.
+     *  The keys fly it badly, on purpose, and say so. */
+    bool is_using_keyboard() const;
+
     /** The mapper, for C++ callers such as RCSimulationNode. */
     const rc::ChannelValues& Channels() const { return CurrentChannels; }
     const rc::ChannelMapper& Mapper() const { return Mapper_; }
@@ -132,6 +142,10 @@ protected:
 
 private:
     void PollDevice();
+    /** Mode 2 on the keyboard: arrows for the right stick, W/S and A/D for the
+     *  left. The three spring-centred channels return to neutral when the key
+     *  is let go; the throttle latches, as a throttle stick does. */
+    void ApplyKeyboard(double deltaSeconds);
     static bool IsValidChannel(int channel);
 
     rc::ChannelMapper   Mapper_;
@@ -151,6 +165,13 @@ private:
     int  RequestedDeviceId = -1;
     int  ActiveDeviceId    = -1;
     bool WarnedNoDevice    = false;
+
+    /** Keyboard stick positions, held between frames so the surfaces move at a
+     *  servo's rate rather than snapping between the rails. */
+    double KeyThrottle = 0.0;
+    double KeyElevator = 0.0;
+    double KeyAileron  = 0.0;
+    double KeyRudder   = 0.0;
 };
 
 } // namespace openrc

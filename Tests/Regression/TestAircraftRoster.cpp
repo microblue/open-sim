@@ -196,3 +196,43 @@ RC_TEST(Roster, TheAircraftAreActuallyDifferent)
         }
     }
 }
+
+RC_TEST(Roster, TheSpawnBlockReachesTheDefinition)
+{
+    // The loader never read `spawn`. Every aeroplane in the roster therefore
+    // used the struct's defaults - 16 m/s cruise, 11 m/s approach - so the
+    // hangar quoted a 2.4 m thermal glider the same approach speed as a
+    // warbird, an air start launched all four at the same speed, and the test
+    // rig flew the glider's minimum-sink runs eleven metres a second too fast.
+    // Four files' worth of hand-measured numbers went through it unnoticed
+    // because nothing here read them back.
+    //
+    // Checked as a spread rather than against fixed values: what went wrong
+    // was not one number but every number being the same one.
+    rc::Real slowestApproach = 1e9;
+    rc::Real fastestApproach = -1e9;
+    rc::Real slowestCruise   = 1e9;
+    rc::Real fastestCruise   = -1e9;
+
+    for (const Entry& entry : Roster())
+    {
+        rc::AircraftDefinition definition;
+        if (!rc::AircraftLoader::LoadFromFile(entry.Path, definition).Success) { continue; }
+
+        // An approach below the stall is an aeroplane that arrives at the
+        // strip already stalled, and a cruise below the approach is nonsense.
+        RC_CHECK(definition.ApproachSpeed > 0.0);
+        RC_CHECK(definition.CruiseSpeed > definition.ApproachSpeed);
+        RC_CHECK(definition.AirStartAltitude > 0.0);
+
+        slowestApproach = std::min(slowestApproach, definition.ApproachSpeed);
+        fastestApproach = std::max(fastestApproach, definition.ApproachSpeed);
+        slowestCruise   = std::min(slowestCruise, definition.CruiseSpeed);
+        fastestCruise   = std::max(fastestCruise, definition.CruiseSpeed);
+    }
+
+    // The roster spans a thermal glider and a warbird. If these ever collapse
+    // to a single value again, the block has stopped being read.
+    RC_CHECK(fastestApproach - slowestApproach > 3.0);
+    RC_CHECK(fastestCruise - slowestCruise > 3.0);
+}

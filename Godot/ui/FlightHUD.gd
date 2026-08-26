@@ -104,9 +104,19 @@ func _draw_hud() -> void:
 	var strip: float = size.y - UITheme.S5 - 172.0
 	_draw_transmitter(Vector2(UITheme.S5, strip))
 	_draw_power(Vector2(size.x - UITheme.S5 - 236.0, strip))
-	_draw_attitude_block(Vector2(size.x * 0.5, strip + 86.0))
+	# Lifted clear of the replay bar when one is up. The bar takes the bottom
+	# 118 pixels of the middle third, which is exactly where the attitude ball
+	# and the angle-of-attack readout live: in a replay the ball was sliced in
+	# half and both labels were buried under the scrubber.
+	var replay_open: bool = get_parent() != null \
+			and get_parent().has_node("ReplayBar")
+	_draw_attitude_block(Vector2(size.x * 0.5,
+			strip + 86.0 - (108.0 if replay_open else 0.0)))
 	_draw_alerts(Vector2(size.x * 0.5, size.y * 0.13))
-	_draw_variometer(Vector2(size.x - 118.0, size.y * 0.5))
+	# Immediately left of the altimeter, aligned with it, the way a vario tape
+	# sits beside an altimeter on a panel. Centred on the screen's middle it
+	# drew straight through the height readout.
+	_draw_variometer(Vector2(size.x - UITheme.S5 - 168.0 - 34.0, size.y * 0.42 + 52.0))
 	_draw_hints(Vector2(size.x * 0.5, size.y - UITheme.S4))
 
 	if _diagnostics:
@@ -201,7 +211,7 @@ func _draw_transmitter(origin: Vector2) -> void:
 
 	var connected: bool = _input != null and _input.is_connected()
 	UITheme.draw_label(_canvas, origin + Vector2(UITheme.S4, 22), "transmitter")
-	var name_text: String = _input.get_device_name() if connected else "none connected"
+	var name_text: String = _input.get_device_name() if connected else "keyboard"
 	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, 40),
 					  name_text.substr(0, 30), UITheme.SIZE_LABEL,
 					  UITheme.TEXT_DIM if connected else UITheme.WARN)
@@ -293,7 +303,10 @@ func _draw_attitude_block(centre: Vector2) -> void:
 					  UITheme.SIZE_VALUE, stall_colour)
 
 	var right: Vector2 = centre + Vector2(78, -10)
-	UITheme.draw_label(_canvas, right, "wing separated", UITheme.TEXT_FAINT, 1.8)
+	# Called "wing separated" for three months, which is literally what the
+	# flow is doing and exactly what a player reads as "the wing has come
+	# off". It is the stall indicator; it says so now.
+	UITheme.draw_label(_canvas, right, "stalled", UITheme.TEXT_FAINT, 1.8)
 	UITheme.draw_text(_canvas, right + Vector2(0, 22),
 					  ("%d%%" % roundi(_stall * 100.0)) if flying else "--",
 					  UITheme.SIZE_VALUE, stall_colour)
@@ -389,7 +402,11 @@ func _draw_alerts(centre: Vector2) -> void:
 	elif flying and _stall > 0.06:
 		text = "APPROACHING THE STALL"
 	elif _input != null and not _input.is_connected():
-		text = "NO TRANSMITTER   -   PRESS F3 TO SET ONE UP"
+		# The keyboard is flying it. Says what the keys are, because the old
+		# line sent a player with no radio to a wizard that needs one - a dead
+		# end dressed up as a next step.
+		text = "NO TRANSMITTER - FLYING ON THE KEYBOARD" \
+			+ "   ARROWS ELEVATOR/AILERON   W/S THROTTLE   A/D RUDDER   F3 SET UP A RADIO"
 		colour = UITheme.WARN
 	elif _input != null and _input.is_connected() \
 			and not _input.get_profile_problem().is_empty():

@@ -323,6 +323,27 @@ namespace
         }
     }
 
+    /** The speeds the aircraft is put into the air at, and the speed a pilot
+     *  is told to fly an approach at.
+     *
+     *  This was never read. Every aeroplane in the roster used the defaults -
+     *  16 and 11 - so the hangar showed the same approach speed for a 2.4 m
+     *  glider and a warbird, SPAWN_AIR launched all four at the same speed, and
+     *  the test rig flew the glider's "minimum sink" runs eleven metres a
+     *  second too fast. Four aircraft's worth of measured targets were taken
+     *  through it. Found by looking at the menu as a player rather than by
+     *  reading the loader. */
+    void ReadSpawn(const JsonValue& root, AircraftDefinition& definition)
+    {
+        const JsonValue& spawn = root["spawn"];
+        if (!spawn.IsObject()) { return; }
+
+        definition.CruiseSpeed = spawn.GetNumber("cruise_speed_mps", definition.CruiseSpeed);
+        definition.ApproachSpeed = spawn.GetNumber("approach_speed_mps", definition.ApproachSpeed);
+        definition.AirStartAltitude =
+            spawn.GetNumber("air_start_altitude_m", definition.AirStartAltitude);
+    }
+
     void ReadValidationTargets(const JsonValue& root, AircraftDefinition& definition)
     {
         const JsonValue& targets = root["validation_targets"];
@@ -456,6 +477,7 @@ AircraftLoadResult AircraftLoader::LoadFromString(const std::string& text,
 
     ReadPropulsion(root, outDefinition);
     ReadLandingGear(root, outDefinition, result);
+    ReadSpawn(root, outDefinition);
     ReadValidationTargets(root, outDefinition);
 
     const AircraftLoadResult validation = Validate(outDefinition);

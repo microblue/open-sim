@@ -4,6 +4,8 @@
 
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/input.hpp>
+
+#include <algorithm>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/typed_array.hpp>
 
@@ -30,7 +32,7 @@ void RCInputNode::_ready()
     PollDevice();
 }
 
-void RCInputNode::_process(double /*deltaSeconds*/)
+void RCInputNode::_process(double deltaSeconds)
 {
     PollDevice();
 
@@ -51,6 +53,78 @@ void RCInputNode::_process(double /*deltaSeconds*/)
     // otherwise normalise to half power.
     CurrentChannels.Set(rc::RCChannel::Throttle,
                         ThrottleArming_.Apply(CurrentChannels.Throttle()));
+
+    ApplyKeyboard(deltaSeconds);
+}
+
+bool RCInputNode::is_using_keyboard() const
+{
+    // Asked, not remembered. A cached flag is only true once _process has run,
+    // so a caller in the same frame the node was created - the in-engine tests,
+    // and the HUD on its first draw - was told the controls were dead when they
+    // were not.
+    return !is_connected();
+}
+
+void RCInputNode::ApplyKeyboard(double deltaSeconds)
+{
+    if (!is_using_keyboard())
+    {
+        // Whatever the keys were doing is forgotten the moment a transmitter
+        // arrives. A stale keyboard throttle surviving a hot-plug would be a
+        // motor running on a command nobody has given.
+        KeyThrottle = 0.0;
+        KeyElevator = 0.0;
+        KeyAileron  = 0.0;
+        KeyRudder   = 0.0;
+        return;
+    }
+
+    Input* input = Input::get_singleton();
+    if (input == nullptr) { return; }
+
+    const double dt = deltaSeconds > 0.0 ? std::min(deltaSeconds, 0.1) : 0.0;
+
+    // Rates chosen so a full deflection takes about a third of a second and a
+    // release recentres in about a fifth. Slower than a stick, which is the
+    // honest result: the keyboard has no proportional control, and ramping is
+    // the only thing standing between the player and a bang-bang input.
+    const double throw_rate  = 3.0 * dt;
+    const double centre_rate = 5.0 * dt;
+
+    auto axis = [&](Key positive, Key negative, double& value)
+    {
+        const bool up   = input->is_key_pressed(positive);
+        const bool down = input->is_key_pressed(negative);
+        if (up == down)
+        {
+            if (value > 0.0)      { value = std::max(0.0, value - centre_rate); }
+            else if (value < 0.0) { value = std::min(0.0, value + centre_rate); }
+        }
+        else if (up)   { value = std::min(1.0, value + throw_rate); }
+        else           { value = std::max(-1.0, value - throw_rate); }
+    };
+
+    // Right stick: elevator and ailerons on the arrow keys. UP pitches the
+    // nose DOWN, as a transmitter's elevator stick does.
+    axis(Key::KEY_DOWN, Key::KEY_UP, KeyElevator);
+    axis(Key::KEY_RIGHT, Key::KEY_LEFT, KeyAileron);
+    // Left stick: rudder on A/D. The throttle latches instead of centring.
+    axis(Key::KEY_D, Key::KEY_A, KeyRudder);
+
+    if (input->is_key_pressed(Key::KEY_W))
+    {
+        KeyThrottle = std::min(1.0, KeyThrottle + throw_rate * 0.5);
+    }
+    else if (input->is_key_pressed(Key::KEY_S))
+    {
+        KeyThrottle = std::max(0.0, KeyThrottle - throw_rate * 0.5);
+    }
+
+    CurrentChannels.Set(rc::RCChannel::Throttle, KeyThrottle);
+    CurrentChannels.Set(rc::RCChannel::Elevator, KeyElevator);
+    CurrentChannels.Set(rc::RCChannel::Aileron, KeyAileron);
+    CurrentChannels.Set(rc::RCChannel::Rudder, KeyRudder);
 }
 
 void RCInputNode::PollDevice()
@@ -410,6 +484,7 @@ bool RCInputNode::load_profile(const String& path)
 void RCInputNode::_bind_methods()
 {
     ClassDB::bind_method(D_METHOD("is_connected"), &RCInputNode::is_connected);
+    ClassDB::bind_method(D_METHOD("is_using_keyboard"), &RCInputNode::is_using_keyboard);
     ClassDB::bind_method(D_METHOD("is_throttle_armed"), &RCInputNode::is_throttle_armed);
     ClassDB::bind_method(D_METHOD("get_profile_problem"), &RCInputNode::get_profile_problem);
     ClassDB::bind_method(D_METHOD("resolve_data_path", "relative"), &RCInputNode::resolve_data_path);

@@ -256,6 +256,17 @@ double RCSimulationNode::get_approach_speed_mps() const
     return AircraftLoaded ? Definition.ApproachSpeed : 0.0;
 }
 
+Dictionary RCSimulationNode::get_performance() const
+{
+    Dictionary out;
+    if (!AircraftLoaded) { return out; }
+    for (const auto& entry : Definition.ValidationTargets)
+    {
+        out[String(entry.first.c_str())] = entry.second.Value;
+    }
+    return out;
+}
+
 PackedStringArray RCSimulationNode::list_aircraft() const
 {
     // Discovered rather than listed. A new aeroplane appears in the menu the
@@ -1402,6 +1413,7 @@ void RCSimulationNode::_bind_methods()
     OPENRC_BIND(get_power_to_weight_w_per_kg);
     OPENRC_BIND(get_cruise_speed_mps);
     OPENRC_BIND(get_approach_speed_mps);
+    OPENRC_BIND(get_performance);
     OPENRC_BIND(list_aircraft);
 
     OPENRC_BIND1(set_physics_rate_hz, "rate_hz");

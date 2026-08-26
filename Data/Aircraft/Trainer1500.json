@@ -1,76 +1,45 @@
 {
-  // ==========================================================================
-  //  Trainer 1500 - the reference aircraft for OpenRC Simulator.
-  //
-  //  A 1.5 m high-wing electric trainer with tricycle gear. Stable, mildly
-  //  self-correcting, gentle at the stall, and powerful enough that a beginner
-  //  can climb out of a mistake.
-  //
-  //  Every number below is either measured off the published geometry or
-  //  derived from it. Where a value is a judgement call, the reason is in the
-  //  comment next to it. See Docs/AIRCRAFT_FORMAT.md for the schema and
-  //  Docs/PHYSICS_DESIGN.md for what the physics does with each field.
-  // ==========================================================================
-
   "format_version": 1,
   "name": "Trainer 1500",
   "description": "1.5 m high-wing electric trainer, tricycle gear, 3S power.",
-
-  // --------------------------------------------------------------- mass ----
   "mass": {
     "mass_kg": 1.35,
-    "cg_offset_from_mesh_origin_m": [0.0, 0.0, 0.0],
-
-    // Estimated by summing components about the CG:
-    //   Ixx  wing panels (0.40 kg over 1.5 m) dominate
-    //   Iyy  tail arm and fuselage structure dominate
-    //   Izz  roughly 0.9 * (Ixx + Iyy), the usual value for an airframe that
-    //        is not quite planar
+    "cg_offset_from_mesh_origin_m": [
+      0.0,
+      0.0,
+      0.0
+    ],
     "inertia": {
       "ixx_kg_m2": 0.072,
       "iyy_kg_m2": 0.087,
-      "izz_kg_m2": 0.140,
+      "izz_kg_m2": 0.14,
       "ixz_kg_m2": 0.004
     }
   },
-
-  // ---------------------------------------------------------- reference ----
   "reference": {
     "wing_area_m2": 0.32,
-    "wingspan_m": 1.50,
-    // Rectangular wing: 0.32 / 1.50. The brief's "approximately 0.22 m" rounds
-    // to this once the area and span are both held exactly.
+    "wingspan_m": 1.5,
     "mean_aerodynamic_chord_m": 0.2133
   },
-
-  // ----------------------------------------------------------- airfoils ----
   "airfoils": {
-    // Clark-Y-like flat bottom, the standard trainer section, characterised at
-    // the Reynolds number this wing actually sees in cruise (~2e5).
     "trainer_flat_bottom": {
-      "cl_zero_alpha": 0.30,
-      "cl_alpha_per_rad": 5.70,
-      "cl_max": 1.20,
+      "cl_zero_alpha": 0.3,
+      "cl_alpha_per_rad": 5.7,
+      "cl_max": 1.2,
       "alpha_stall_deg": 13.0,
-      // Wide blend = gentle break. This single number is the difference between
-      // a trainer and something that bites.
       "stall_blend_deg": 5.0,
       "reattach_hysteresis_deg": 2.5,
-      // 0.016 rather than a textbook 0.011: film-covered foam at Re 1.5e5 is
-      // considerably draggier than a smooth wind-tunnel section.
       "cd_min": 0.016,
       "cd_alpha_quadratic": 0.012,
-      "cd_separated_max": 1.30,
+      "cd_separated_max": 1.3,
       "cm_quarter_chord": -0.075,
       "oswald_efficiency": 0.85,
       "reference_reynolds": 200000
     },
-
-    // Symmetric, NACA 0009-ish. Used for both tails.
     "symmetric_tail": {
       "cl_zero_alpha": 0.0,
-      "cl_alpha_per_rad": 5.50,
-      "cl_max": 1.00,
+      "cl_alpha_per_rad": 5.5,
+      "cl_max": 1.0,
       "alpha_stall_deg": 12.0,
       "stall_blend_deg": 3.5,
       "reattach_hysteresis_deg": 2.0,
@@ -78,45 +47,44 @@
       "cd_alpha_quadratic": 0.014,
       "cd_separated_max": 1.25,
       "cm_quarter_chord": 0.0,
-      "oswald_efficiency": 0.80,
+      "oswald_efficiency": 0.8,
       "reference_reynolds": 120000
     }
   },
-
-  // ------------------------------------------------------ aero surfaces ----
-  //
-  //  Wing: 4 sections per side, each 0.1875 m of span and 0.03994 m^2.
-  //        8 x 0.03994 = 0.3195 m^2, which is the 0.32 m^2 reference area.
-  //
-  //  Positions are the quarter-chord point relative to the CG, body FRD.
-  //    x = +0.009  : the wing AC sits 4 % MAC ahead of a CG at 29 % MAC
-  //    z = -0.085 - y*tan(3.5 deg)
-  //                : high wing, 85 mm above the CG, plus dihedral. The offset
-  //                  above the CG is a large part of this aircraft's roll
-  //                  stability - it is a pendulum.
-  //
-  //  Washout runs 0 deg at the root to -1.5 deg at the tip so that the root
-  //  stalls first. That is what makes the nose drop before a wing does.
-  //
   "aero_surfaces": [
     {
       "name": "wing_right_1_root",
       "role": "wing",
       "airfoil": "trainer_flat_bottom",
-      "position_m": [0.009, 0.09375, -0.0907],
-      "area_m2": 0.03994, "chord_m": 0.2133, "span_m": 0.1875,
-      "incidence_deg": 2.0, "dihedral_deg": 3.5, "twist_deg": 0.0,
+      "position_m": [
+        0.009,
+        0.09375,
+        -0.0907
+      ],
+      "area_m2": 0.03994,
+      "chord_m": 0.2133,
+      "span_m": 0.1875,
+      "incidence_deg": 2.0,
+      "dihedral_deg": 3.5,
+      "twist_deg": 0.0,
       "effective_aspect_ratio": 7.03,
-      // Inside the 11 in propeller wake cone.
       "in_propwash": true
     },
     {
       "name": "wing_right_2",
       "role": "wing",
       "airfoil": "trainer_flat_bottom",
-      "position_m": [0.009, 0.28125, -0.1022],
-      "area_m2": 0.03994, "chord_m": 0.2133, "span_m": 0.1875,
-      "incidence_deg": 2.0, "dihedral_deg": 3.5, "twist_deg": -0.5,
+      "position_m": [
+        0.009,
+        0.28125,
+        -0.1022
+      ],
+      "area_m2": 0.03994,
+      "chord_m": 0.2133,
+      "span_m": 0.1875,
+      "incidence_deg": 2.0,
+      "dihedral_deg": 3.5,
+      "twist_deg": -0.5,
       "effective_aspect_ratio": 7.03,
       "in_propwash": false
     },
@@ -124,16 +92,23 @@
       "name": "wing_right_3",
       "role": "wing",
       "airfoil": "trainer_flat_bottom",
-      "position_m": [0.009, 0.46875, -0.1137],
-      "area_m2": 0.03994, "chord_m": 0.2133, "span_m": 0.1875,
-      "incidence_deg": 2.0, "dihedral_deg": 3.5, "twist_deg": -1.0,
+      "position_m": [
+        0.009,
+        0.46875,
+        -0.1137
+      ],
+      "area_m2": 0.03994,
+      "chord_m": 0.2133,
+      "span_m": 0.1875,
+      "incidence_deg": 2.0,
+      "dihedral_deg": 3.5,
+      "twist_deg": -1.0,
       "effective_aspect_ratio": 7.03,
       "control_surface": {
-        // Positive aileron stick = roll RIGHT, so the RIGHT aileron goes UP,
-        // which is a negative (trailing edge up) deflection. See
-        // Docs/AIRCRAFT_FORMAT.md for the sign convention.
-        "channel": "aileron", "chord_fraction": 0.25,
-        "span_fraction": 1.0, "direction": -1.0
+        "channel": "aileron",
+        "chord_fraction": 0.25,
+        "span_fraction": 1.0,
+        "direction": -1.0
       },
       "in_propwash": false
     },
@@ -141,27 +116,41 @@
       "name": "wing_right_4_tip",
       "role": "wing",
       "airfoil": "trainer_flat_bottom",
-      "position_m": [0.009, 0.65625, -0.1251],
-      "area_m2": 0.03994, "chord_m": 0.2133, "span_m": 0.1875,
-      "incidence_deg": 2.0, "dihedral_deg": 3.5, "twist_deg": -1.5,
+      "position_m": [
+        0.009,
+        0.65625,
+        -0.1251
+      ],
+      "area_m2": 0.03994,
+      "chord_m": 0.2133,
+      "span_m": 0.1875,
+      "incidence_deg": 2.0,
+      "dihedral_deg": 3.5,
+      "twist_deg": -1.5,
       "effective_aspect_ratio": 7.03,
       "control_surface": {
-        // Positive aileron stick = roll RIGHT, so the RIGHT aileron goes UP,
-        // which is a negative (trailing edge up) deflection. See
-        // Docs/AIRCRAFT_FORMAT.md for the sign convention.
-        "channel": "aileron", "chord_fraction": 0.25,
-        "span_fraction": 1.0, "direction": -1.0
+        "channel": "aileron",
+        "chord_fraction": 0.25,
+        "span_fraction": 1.0,
+        "direction": -1.0
       },
       "in_propwash": false
     },
-
     {
       "name": "wing_left_1_root",
       "role": "wing",
       "airfoil": "trainer_flat_bottom",
-      "position_m": [0.009, -0.09375, -0.0907],
-      "area_m2": 0.03994, "chord_m": 0.2133, "span_m": 0.1875,
-      "incidence_deg": 2.0, "dihedral_deg": 3.5, "twist_deg": 0.0,
+      "position_m": [
+        0.009,
+        -0.09375,
+        -0.0907
+      ],
+      "area_m2": 0.03994,
+      "chord_m": 0.2133,
+      "span_m": 0.1875,
+      "incidence_deg": 2.0,
+      "dihedral_deg": 3.5,
+      "twist_deg": 0.0,
       "effective_aspect_ratio": 7.03,
       "in_propwash": true
     },
@@ -169,9 +158,17 @@
       "name": "wing_left_2",
       "role": "wing",
       "airfoil": "trainer_flat_bottom",
-      "position_m": [0.009, -0.28125, -0.1022],
-      "area_m2": 0.03994, "chord_m": 0.2133, "span_m": 0.1875,
-      "incidence_deg": 2.0, "dihedral_deg": 3.5, "twist_deg": -0.5,
+      "position_m": [
+        0.009,
+        -0.28125,
+        -0.1022
+      ],
+      "area_m2": 0.03994,
+      "chord_m": 0.2133,
+      "span_m": 0.1875,
+      "incidence_deg": 2.0,
+      "dihedral_deg": 3.5,
+      "twist_deg": -0.5,
       "effective_aspect_ratio": 7.03,
       "in_propwash": false
     },
@@ -179,13 +176,23 @@
       "name": "wing_left_3",
       "role": "wing",
       "airfoil": "trainer_flat_bottom",
-      "position_m": [0.009, -0.46875, -0.1137],
-      "area_m2": 0.03994, "chord_m": 0.2133, "span_m": 0.1875,
-      "incidence_deg": 2.0, "dihedral_deg": 3.5, "twist_deg": -1.0,
+      "position_m": [
+        0.009,
+        -0.46875,
+        -0.1137
+      ],
+      "area_m2": 0.03994,
+      "chord_m": 0.2133,
+      "span_m": 0.1875,
+      "incidence_deg": 2.0,
+      "dihedral_deg": 3.5,
+      "twist_deg": -1.0,
       "effective_aspect_ratio": 7.03,
       "control_surface": {
-        "channel": "aileron", "chord_fraction": 0.25,
-        "span_fraction": 1.0, "direction": 1.0
+        "channel": "aileron",
+        "chord_fraction": 0.25,
+        "span_fraction": 1.0,
+        "direction": 1.0
       },
       "in_propwash": false
     },
@@ -193,36 +200,47 @@
       "name": "wing_left_4_tip",
       "role": "wing",
       "airfoil": "trainer_flat_bottom",
-      "position_m": [0.009, -0.65625, -0.1251],
-      "area_m2": 0.03994, "chord_m": 0.2133, "span_m": 0.1875,
-      "incidence_deg": 2.0, "dihedral_deg": 3.5, "twist_deg": -1.5,
+      "position_m": [
+        0.009,
+        -0.65625,
+        -0.1251
+      ],
+      "area_m2": 0.03994,
+      "chord_m": 0.2133,
+      "span_m": 0.1875,
+      "incidence_deg": 2.0,
+      "dihedral_deg": 3.5,
+      "twist_deg": -1.5,
       "effective_aspect_ratio": 7.03,
       "control_surface": {
-        "channel": "aileron", "chord_fraction": 0.25,
-        "span_fraction": 1.0, "direction": 1.0
+        "channel": "aileron",
+        "chord_fraction": 0.25,
+        "span_fraction": 1.0,
+        "direction": 1.0
       },
       "in_propwash": false
     },
-
-    // Horizontal tail. Volume coefficient Vh = St*lt/(S*c)
-    //                                       = 0.058*0.62/(0.32*0.2133) = 0.53
-    // which is generous, as a trainer's is - that is where the pitch stability
-    // and the "it comes back to level on its own" behaviour comes from.
-    // Zero incidence: the tail carries a small download at trim because the
-    // wing is at +2 deg and the section is cambered.
     {
       "name": "htail_right",
       "role": "horizontal_tail",
       "airfoil": "symmetric_tail",
-      "position_m": [-0.620, 0.105, -0.020],
-      "area_m2": 0.029, "chord_m": 0.138, "span_m": 0.21,
-      "incidence_deg": 0.0, "dihedral_deg": 0.0, "twist_deg": 0.0,
+      "position_m": [
+        -0.62,
+        0.105,
+        -0.02
+      ],
+      "area_m2": 0.029,
+      "chord_m": 0.138,
+      "span_m": 0.21,
+      "incidence_deg": 0.0,
+      "dihedral_deg": 0.0,
+      "twist_deg": 0.0,
       "effective_aspect_ratio": 3.04,
       "control_surface": {
-        // Positive elevator stick = nose UP, which needs the tail pushed DOWN,
-        // which is a trailing-edge-UP (negative) deflection.
-        "channel": "elevator", "chord_fraction": 0.40,
-        "span_fraction": 1.0, "direction": -1.0
+        "channel": "elevator",
+        "chord_fraction": 0.4,
+        "span_fraction": 1.0,
+        "direction": -1.0
       },
       "in_propwash": true
     },
@@ -230,70 +248,72 @@
       "name": "htail_left",
       "role": "horizontal_tail",
       "airfoil": "symmetric_tail",
-      "position_m": [-0.620, -0.105, -0.020],
-      "area_m2": 0.029, "chord_m": 0.138, "span_m": 0.21,
-      "incidence_deg": 0.0, "dihedral_deg": 0.0, "twist_deg": 0.0,
+      "position_m": [
+        -0.62,
+        -0.105,
+        -0.02
+      ],
+      "area_m2": 0.029,
+      "chord_m": 0.138,
+      "span_m": 0.21,
+      "incidence_deg": 0.0,
+      "dihedral_deg": 0.0,
+      "twist_deg": 0.0,
       "effective_aspect_ratio": 3.04,
       "control_surface": {
-        // Positive elevator stick = nose UP, which needs the tail pushed DOWN,
-        // which is a trailing-edge-UP (negative) deflection.
-        "channel": "elevator", "chord_fraction": 0.40,
-        "span_fraction": 1.0, "direction": -1.0
+        "channel": "elevator",
+        "chord_fraction": 0.4,
+        "span_fraction": 1.0,
+        "direction": -1.0
       },
       "in_propwash": true
     },
-
-    // Vertical tail. Vv = Sv*lv/(S*b) = 0.033*0.60/(0.32*1.50) = 0.041.
-    // Effective aspect ratio is roughly 1.5x geometric because the fuselage
-    // and horizontal tail act as an endplate.
     {
       "name": "vtail",
       "role": "vertical_tail",
       "airfoil": "symmetric_tail",
-      "position_m": [-0.600, 0.0, -0.100],
-      "area_m2": 0.033, "chord_m": 0.165, "span_m": 0.20,
-      "incidence_deg": 0.0, "dihedral_deg": 0.0, "twist_deg": 0.0,
-      "effective_aspect_ratio": 1.80,
+      "position_m": [
+        -0.6,
+        0.0,
+        -0.1
+      ],
+      "area_m2": 0.033,
+      "chord_m": 0.165,
+      "span_m": 0.2,
+      "incidence_deg": 0.0,
+      "dihedral_deg": 0.0,
+      "twist_deg": 0.0,
+      "effective_aspect_ratio": 1.8,
       "control_surface": {
-        "channel": "rudder", "chord_fraction": 0.45,
-        "span_fraction": 1.0, "direction": 1.0
+        "channel": "rudder",
+        "chord_fraction": 0.45,
+        "span_fraction": 1.0,
+        "direction": 1.0
       },
-      // In the wake, and specifically in the swirl - this is why the aircraft
-      // yaws left when the throttle is opened on the runway.
       "in_propwash": true
     }
   ],
-
-  // ---------------------------------------------------------- fuselage ----
   "fuselage": {
-    "position_m": [0.05, 0.0, 0.0],
+    "position_m": [
+      0.05,
+      0.0,
+      0.0
+    ],
     "length_m": 1.05,
     "frontal_area_m2": 0.011,
     "side_area_m2": 0.055,
     "cd_frontal": 0.35,
-    "cd_side": 0.60,
-    // Negative: a body whose centroid is ahead of the CG is destabilising in
-    // yaw. The fin has to overcome this, and does.
+    "cd_side": 0.6,
     "cn_beta_per_rad": -0.06,
-
-    // Everything the section model does not represent, as an equivalent extra
-    // frontal area carried at the fuselage's own drag coefficient: three wheels
-    // and their struts, servo horns and pushrods, wing/fuselage interference,
-    // the exposed motor, and the general roughness of a film-covered model.
-    // This is the single largest lever on glide ratio, and Milestone 5 sets it
-    // from the measured polar rather than from this estimate.
-    "parasite_area_m2": 0.030
+    "parasite_area_m2": 0.03
   },
-
-  // -------------------------------------------------------- propulsion ----
   "propulsion": {
     "battery": {
       "cell_count": 3,
-      "nominal_cell_voltage_v": 3.70,
+      "nominal_cell_voltage_v": 3.7,
       "full_cell_voltage_v": 4.15,
-      "empty_cell_voltage_v": 3.30,
+      "empty_cell_voltage_v": 3.3,
       "capacity_mah": 2200,
-      // 5 mOhm per cell is typical for a healthy 25C 2200.
       "internal_resistance_ohm": 0.015
     },
     "esc": {
@@ -307,36 +327,18 @@
       "max_current_a": 30.0
     },
     "propeller": {
-      // 10x5 rather than the 11x6 the design brief listed.
-      //
-      // Measured: a 1000 KV motor swinging an 11x6 on 3S draws 35 A and 417 W
-      // (309 W/kg) and gives a thrust-to-weight of 1.18 - past the current
-      // rating of any motor in this class, and past the 0.9-1.1 the brief asks
-      // for. That combination is the classic over-prop, and a real modeller
-      // would either prop down or drop to 850 KV.
-      //
-      // A 10x5 on the same motor gives 13.8 N, 9200 rpm, 27.5 A, 331 W and
-      // T/W 1.04 - which is the number the brief actually wants, and is the
-      // combination real 1.5 m trainers use.
-      //
-      // The alternative that keeps the 11x6 is an 850 KV motor: 13.9 N,
-      // 7550 rpm, 26.7 A. Both are correct; this one keeps the motor as
-      // specified.
       "diameter_in": 10.0,
       "pitch_in": 5.0,
       "blade_count": 2,
-      // A 10 in nylon prop. Small, but it is what makes the motor spool up
-      // over a fraction of a second rather than instantly, and it is the H in
-      // the gyroscopic term.
-      "moment_of_inertia_kg_m2": 1.1e-5,
-      // Seen from behind, i.e. from where the pilot stands. Clockwise gives a
-      // left torque roll and a left yaw on takeoff.
+      "moment_of_inertia_kg_m2": 1.1e-05,
       "rotation": "clockwise"
     },
     "mount": {
-      "position_m": [0.35, 0.0, -0.010],
-      // The usual trainer rigging: down and right thrust to offset torque and
-      // P-factor so the aircraft tracks straight at climb power.
+      "position_m": [
+        0.35,
+        0.0,
+        -0.01
+      ],
       "down_thrust_deg": 2.0,
       "right_thrust_deg": 2.0
     },
@@ -347,25 +349,19 @@
       "strength": 1.0
     }
   },
-
-  // ------------------------------------------------------ landing gear ----
-  //
-  //  Tricycle. Mains 60 mm behind the CG, nose wheel 320 mm ahead of it, which
-  //  puts about 16 % of the static weight on the nose - enough to steer with,
-  //  little enough that the aircraft rotates cleanly.
-  //
-  //  Rolling resistance of 0.12 is grass, not tarmac, and it dominates the
-  //  takeoff roll.
-  //
   "landing_gear": [
     {
       "name": "nose",
-      "position_m": [0.320, 0.0, 0.145],
+      "position_m": [
+        0.32,
+        0.0,
+        0.145
+      ],
       "radius_m": 0.025,
       "spring_n_per_m": 1500.0,
       "damper_ns_per_m": 40.0,
-      "max_travel_m": 0.020,
-      "friction_static": 0.70,
+      "max_travel_m": 0.02,
+      "friction_static": 0.7,
       "friction_dynamic": 0.55,
       "rolling_resistance": 0.12,
       "steerable": true,
@@ -374,91 +370,104 @@
     },
     {
       "name": "main_left",
-      "position_m": [-0.060, -0.160, 0.148],
+      "position_m": [
+        -0.06,
+        -0.16,
+        0.148
+      ],
       "radius_m": 0.028,
       "spring_n_per_m": 2000.0,
       "damper_ns_per_m": 50.0,
-      "max_travel_m": 0.020,
-      "friction_static": 0.70,
+      "max_travel_m": 0.02,
+      "friction_static": 0.7,
       "friction_dynamic": 0.55,
       "rolling_resistance": 0.12,
       "steerable": false
     },
     {
       "name": "main_right",
-      "position_m": [-0.060, 0.160, 0.148],
+      "position_m": [
+        -0.06,
+        0.16,
+        0.148
+      ],
       "radius_m": 0.028,
       "spring_n_per_m": 2000.0,
       "damper_ns_per_m": 50.0,
-      "max_travel_m": 0.020,
-      "friction_static": 0.70,
+      "max_travel_m": 0.02,
+      "friction_static": 0.7,
       "friction_dynamic": 0.55,
       "rolling_resistance": 0.12,
       "steerable": false
     }
   ],
-
-  // --------------------------------------------------- control channels ----
   "control_channels": {
-    // Differential: the down-going aileron travels 30 % less than the up-going
-    // one, which is how a real trainer keeps adverse yaw manageable.
-    "aileron":  { "max_deflection_deg": 20.0, "expo": 0.25, "dual_rate": 1.0, "differential": 0.30 },
-    "elevator": { "max_deflection_deg": 22.0, "expo": 0.30, "dual_rate": 1.0 },
-    "rudder":   { "max_deflection_deg": 25.0, "expo": 0.20, "dual_rate": 1.0 },
-    "throttle": { "idle_fraction": 0.0, "expo": 0.0 }
+    "aileron": {
+      "max_deflection_deg": 20.0,
+      "expo": 0.25,
+      "dual_rate": 1.0,
+      "differential": 0.3
+    },
+    "elevator": {
+      "max_deflection_deg": 22.0,
+      "expo": 0.3,
+      "dual_rate": 1.0
+    },
+    "rudder": {
+      "max_deflection_deg": 25.0,
+      "expo": 0.2,
+      "dual_rate": 1.0
+    },
+    "throttle": {
+      "idle_fraction": 0.0,
+      "expo": 0.0
+    }
   },
-
-  // -------------------------------------------------------------- spawn ----
   "spawn": {
     "cruise_speed_mps": 16.0,
-    // About 1.3x the stall speed - a normal, safe approach for a trainer.
     "approach_speed_mps": 11.0,
     "air_start_altitude_m": 50.0
   },
-
-  // ------------------------------------------------- validation targets ----
-  //
-  //  MEASURED at Milestone 5, not estimated. Every one of these came out of
-  //  Tests/Regression/TestTrainerTargets.cpp flying this exact definition, and
-  //  every one is "locked": a physics change that moves any of them outside its
-  //  tolerance fails the build.
-  //
-  //  Tolerances are set to catch a regression without tripping on ordinary
-  //  tuning. The tightest are the ones that pin down the aerodynamics
-  //  (stall speed, static thrust); the loosest are the ones that depend on how
-  //  the aircraft is flown (takeoff roll).
-  //
-  //  Seven of the eight first-principles seeds proved good. The one that did
-  //  not was cruise speed, and the reason was a definition rather than an
-  //  error: the seed assumed a cruise of 16 m/s, whereas the measurement is
-  //  "the speed this aircraft holds in level flight at 60 % throttle", which is
-  //  12.4 m/s. Its top speed is higher; 60 % is a cruise setting, not a dash.
-  //
   "validation_targets": {
-    // Power off, trimmed. The best glide ratio of a film-covered trainer with
-    // fixed tricycle gear; the parasite_area_m2 above is the dominant lever.
-    "glide_ratio":           { "value": 8.02,  "tolerance": 0.08, "locked": true },
-    "best_glide_speed_mps":  { "value": 8.39,  "tolerance": 0.08, "locked": true },
-    "min_sink_rate_mps":     { "value": 0.99,  "tolerance": 0.10, "locked": true },
-
-    // The slowest speed the aircraft will hold before the wing lets go. Tight
-    // tolerance: almost every change to the aerodynamics moves this.
-    "stall_speed_mps":       { "value": 7.89,  "tolerance": 0.05, "locked": true },
-
-    // Full aileron at cruise. pb/2V works out at 0.13, which is the trainer
-    // range - brisk enough to be useful, slow enough to be forgiving.
-    "roll_rate_deg_per_s":   { "value": 152.3, "tolerance": 0.10, "locked": true },
-
-    // Full throttle, stationary, sea level. Thrust-to-weight 1.04.
-    "static_thrust_n":       { "value": 13.78, "tolerance": 0.05, "locked": true },
-
-    // Level flight at 60 % throttle, measured by flying it and letting the
-    // speed settle.
-    "cruise_speed_mps":      { "value": 12.42, "tolerance": 0.10, "locked": true },
-
-    // Brake release to wheels-off on grass, rotating at 11.5 m/s. Loosest
-    // tolerance of the set, because it depends on how it is flown as well as on
-    // the aircraft.
-    "takeoff_ground_roll_m": { "value": 11.57, "tolerance": 0.15, "locked": true }
+    "glide_ratio": {
+      "value": 8.02,
+      "tolerance": 0.08,
+      "locked": true
+    },
+    "best_glide_speed_mps": {
+      "value": 8.39,
+      "tolerance": 0.08,
+      "locked": true
+    },
+    "min_sink_rate_mps": {
+      "value": 0.99,
+      "tolerance": 0.1,
+      "locked": true
+    },
+    "stall_speed_mps": {
+      "value": 7.89,
+      "tolerance": 0.05,
+      "locked": true
+    },
+    "roll_rate_deg_per_s": {
+      "value": 152.26,
+      "tolerance": 0.1,
+      "locked": true
+    },
+    "static_thrust_n": {
+      "value": 13.78,
+      "tolerance": 0.05,
+      "locked": true
+    },
+    "cruise_speed_mps": {
+      "value": 12.42,
+      "tolerance": 0.1,
+      "locked": true
+    },
+    "takeoff_ground_roll_m": {
+      "value": 11.57,
+      "tolerance": 0.15,
+      "locked": true
+    }
   }
 }

@@ -83,31 +83,42 @@ func _unhandled_input(event: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 
 
+## One preview per column, reused as the selection moves.
+var _previews: Dictionary = {}
+
+
 func _draw_screen() -> void:
 	var size: Vector2 = _canvas.size
-	_canvas.draw_rect(Rect2(Vector2.ZERO, size), Color(0.03, 0.04, 0.05, 0.90))
+	# Opaque. At 0.90 the menu behind - its headings, its aircraft list, its
+	# brief - read straight through both columns, and the two screens' hint
+	# lines collided into one unreadable row along the bottom.
+	_canvas.draw_rect(Rect2(Vector2.ZERO, size), Color(0.035, 0.045, 0.055, 1.0))
 
 	var heading := "WHERE AND WHEN"
 	UITheme.draw_label(_canvas,
 			Vector2(size.x * 0.5 - UITheme.label_width(heading, 3.0, UITheme.SIZE_LABEL) * 0.5, 54),
 			heading, UITheme.TEXT_DIM, 3.0, UITheme.SIZE_LABEL)
 
-	var width: float = minf(size.x * 0.86, 1080.0)
+	# Wide columns. At 1080 across the whole screen each column was a portrait
+	# hole, and a 16:9 preview dropped into it lost its sky and two thirds of
+	# its horizon - the Meadow Field frame cropped down to a strip of scrub
+	# that could have been anywhere.
+	var width: float = minf(size.x * 0.92, 1560.0)
 	var left: float = (size.x - width) * 0.5
 	var column: float = width * 0.5 - 16.0
 
 	_draw_column(Rect2(left, 96.0, column, size.y - 190.0), "PLACE",
-			_scenes, _scene_index, _column == 0)
+			_scenes, _scene_index, _column == 0, "scene")
 	_draw_column(Rect2(left + column + 32.0, 96.0, column, size.y - 190.0), "WEATHER",
-			_weathers, _weather_index, _column == 1)
+			_weathers, _weather_index, _column == 1, "weather")
 
-	UITheme.draw_text(_canvas, Vector2(size.x * 0.5, size.y - 34),
+	UITheme.draw_text(_canvas, Vector2(0.0, size.y - 34),
 			"left / right   column        up / down   choose        enter   fly        esc   back",
-			UITheme.SIZE_LABEL, UITheme.TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER)
+			UITheme.SIZE_LABEL, UITheme.TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER, size.x)
 
 
 func _draw_column(rect: Rect2, heading: String, entries: Array[Dictionary],
-				  index: int, active: bool) -> void:
+				  index: int, active: bool, kind: String) -> void:
 	UITheme.draw_panel(_canvas, rect, UITheme.PANEL_SOLID,
 			UITheme.ACCENT if active else UITheme.STROKE)
 
@@ -154,6 +165,36 @@ func _draw_column(rect: Rect2, heading: String, entries: Array[Dictionary],
 			UITheme.draw_text(_canvas, Vector2(x + 150.0, y), row[1],
 					UITheme.SIZE_BODY, UITheme.TEXT)
 			y += 24.0
+
+	# The picture, filling the rest of the column. A place chooser made of
+	# nothing but nouns asks the player to pick a landscape they have never
+	# seen; these are real frames from the place itself, the same ones the
+	# menu shows.
+	_place_preview(kind, String(entries[index]["id"]),
+				   Rect2(rect.position.x + 24.0, y + 18.0, rect.size.x - 48.0,
+						 rect.position.y + rect.size.y - y - 42.0))
+
+
+## Shows the preview for `id` at `rect`, keeping one TextureRect per column so
+## changing the selection swaps the texture rather than leaking a node a frame.
+func _place_preview(kind: String, id: String, rect: Rect2) -> void:
+	if rect.size.y < 60.0:
+		return
+	var path: String = "res://assets/previews/%s_%s.png" % [kind, id]
+	if not ResourceLoader.exists(path):
+		return
+	var view: TextureRect = _previews.get(kind)
+	if view == null:
+		view = TextureRect.new()
+		view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		view.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		view.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		view.clip_contents = true
+		_previews[kind] = view
+		_canvas.add_child(view)
+	view.texture = load(path) as Texture2D
+	view.position = rect.position
+	view.size = rect.size
 
 
 static func _wrap(text: String, columns: int) -> PackedStringArray:

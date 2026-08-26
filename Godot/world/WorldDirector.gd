@@ -38,6 +38,14 @@ func _ready() -> void:
 		if _field_script == null:
 			_field_script = _field
 
+	# The declared weather, applied at once. Until now the only thing that ever
+	# applied one was the menu's Fly button, so the world sat in whatever state
+	# the field built for itself - a heavier haze than any of the five presets
+	# asks for, with the sky washed brown. That is what the player saw behind
+	# the menu, and what they got if they closed it without flying.
+	apply_scene(scene_id)
+	apply_weather(weather_id)
+
 
 func current_scene() -> Dictionary:
 	return ScenePresetsLib.by_id(scene_id)

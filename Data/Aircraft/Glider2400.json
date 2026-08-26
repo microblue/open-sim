@@ -447,7 +447,7 @@
       "locked": true
     },
     "roll_rate_deg_per_s": {
-      "value": 62.3,
+      "value": 47.96,
       "tolerance": 0.1,
       "locked": true
     },
@@ -457,7 +457,7 @@
       "locked": true
     },
     "cruise_speed_mps": {
-      "value": 11.52,
+      "value": 11.51,
       "tolerance": 0.1,
       "locked": true
     },

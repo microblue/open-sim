@@ -41,6 +41,18 @@ const STEP_REVIEW: int = 3
 const STEP_COUNT: int = 4
 const STEP_NAMES: Array[String] = ["Aircraft", "Location", "Weather", "Fly"]
 
+## The brief's flown figures: label, the key the regression suite stores it
+## under, and the format. An aeroplane that has not been measured for one of
+## these simply does not show that row.
+const BRIEF_MEASURED: Array = [
+	["glide ratio", "glide_ratio", "%.1f : 1"],
+	["stall speed", "stall_speed_mps", "%.1f m/s"],
+	["roll rate", "roll_rate_deg_per_s", "%.0f deg/s"],
+	["cruise", "cruise_speed_mps", "%.1f m/s"],
+	["static thrust", "static_thrust_n", "%.1f N"],
+	["takeoff roll", "takeoff_ground_roll_m", "%.1f m"],
+]
+
 var _input: RCInputNode
 var _sim: RCSimulationNode
 var _director: Node
@@ -153,6 +165,10 @@ func _gather() -> void:
 			"capacity": _sim.get_battery_capacity_mah(),
 			"kv": _sim.get_motor_kv(),
 			"cruise": _sim.get_cruise_speed_mps(),
+			# The measured figures, as the regression suite recorded them.
+			# These are flown, not quoted - and they are what actually tells a
+			# pilot how an aeroplane will feel.
+			"performance": _sim.get_performance(),
 		})
 	_sim.aircraft_definition = restore
 	_sim.reload_aircraft()
@@ -400,8 +416,13 @@ func _layout() -> void:
 
 	# Footer: back and next. On the review step, next becomes fly.
 	var foot_y: float = size.y - 88.0
-	_back_rect = Rect2(PAD, foot_y, 150.0, 52.0)
-	_hit.append({"rect": _back_rect, "action": "back"})
+	# No BACK on the first step: there is nowhere behind it. Drawing a button
+	# that does nothing teaches the player that buttons here might not.
+	if _step > STEP_AIRCRAFT:
+		_back_rect = Rect2(PAD, foot_y, 150.0, 52.0)
+		_hit.append({"rect": _back_rect, "action": "back"})
+	else:
+		_back_rect = Rect2()
 	var next_label: String = "FLY" if _step == STEP_REVIEW else "NEXT"
 	var next_w: float = 150.0 if next_label == "NEXT" else 260.0
 	_next_rect = Rect2(size.x - PAD - next_w, foot_y, next_w, 52.0)
@@ -575,13 +596,15 @@ func _draw_header(size: Vector2, shift: Vector2) -> void:
 			Color(UITheme.ACCENT.r, UITheme.ACCENT.g, UITheme.ACCENT.b, 0.16),
 			UITheme.ACCENT if _hover.get("action", "") == "setup" else UITheme.STROKE_STRONG,
 			10.0)
-	UITheme.draw_text(_canvas, _setup_rect.position + Vector2(54, 33) + shift, "SETUP",
-					  UITheme.SIZE_SECTION, UITheme.ACCENT, HORIZONTAL_ALIGNMENT_CENTER)
+	UITheme.draw_text(_canvas, _setup_rect.position + Vector2(0, 33) + shift, "SETUP",
+					  UITheme.SIZE_SECTION, UITheme.ACCENT, HORIZONTAL_ALIGNMENT_CENTER,
+					  _setup_rect.size.x)
 
 	UITheme.draw_panel(_canvas, Rect2(_quit_rect.position + shift, _quit_rect.size),
 					   UITheme.PANEL, UITheme.STROKE_STRONG, 10.0)
-	UITheme.draw_text(_canvas, _quit_rect.position + Vector2(36, 33) + shift, "QUIT",
-					  UITheme.SIZE_SECTION, UITheme.TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER)
+	UITheme.draw_text(_canvas, _quit_rect.position + Vector2(0, 33) + shift, "QUIT",
+					  UITheme.SIZE_SECTION, UITheme.TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER,
+					  _quit_rect.size.x)
 
 
 ## The four steps, with the current one lit and the completed ones checkmarked.
@@ -620,11 +643,16 @@ func _draw_breadcrumb(size: Vector2, shift: Vector2) -> void:
 		var colour: Color = UITheme.ACCENT if current \
 				else (UITheme.GOOD if done else UITheme.TEXT_DIM)
 		if done:
-			UITheme.draw_text(_canvas, Vector2(x + 14.0, crumb_y + 21.0), "✓",
+			UITheme.draw_text(_canvas, Vector2(x + 16.0, crumb_y + 21.0), "✓",
 							  UITheme.SIZE_VALUE, UITheme.GOOD)
-			label = "  %s" % STEP_NAMES[i]
 			colour = UITheme.TEXT_DIM
-		UITheme.draw_text(_canvas, Vector2(centre, crumb_y + 21.0), label,
+		# Positioned at the panel's LEFT edge, not its centre.
+		#
+		# draw_string takes the position as the left edge of the box it centres
+		# within, so passing the centre shifted every label right by half a tab
+		# and the words overlapped their neighbours. Same rectangle as the panel
+		# above, so the two cannot drift apart.
+		UITheme.draw_text(_canvas, Vector2(x + 6.0, crumb_y + 21.0), label,
 						  UITheme.SIZE_SECTION, colour, HORIZONTAL_ALIGNMENT_CENTER,
 						  crumb_w - 12.0)
 
@@ -633,8 +661,13 @@ func _section_heading(pos: Vector2, text: String, sub: String) -> void:
 	UITheme.draw_text_shadow(_canvas, pos, text, UITheme.SIZE_TITLE, UITheme.TEXT,
 							 Color(0, 0, 0, 0.5))
 	if sub != "":
-		UITheme.draw_text(_canvas, pos + Vector2(0, 28), sub,
-						  UITheme.SIZE_LABEL, UITheme.TEXT_DIM)
+		# TEXT_DIM at label size, over sunlit grass, was not a colour so much
+		# as a rumour - the line that explains each step was the least
+		# readable thing on the screen. Lifted, and given the heavier shadow
+		# the title gets, because it is competing with the same background.
+		UITheme.draw_text_shadow(_canvas, pos + Vector2(0, 28), sub,
+								 UITheme.SIZE_LABEL, Color(0.76, 0.82, 0.90),
+								 Color(0, 0, 0, 0.7))
 	UITheme.draw_rule(_canvas, pos + Vector2(0, 44), 320.0, UITheme.ACCENT, 2.0)
 
 
@@ -672,26 +705,97 @@ func _draw_aircraft(size: Vector2) -> void:
 	# thing the pilot actually needs to read before choosing.
 	if not _aircraft.is_empty():
 		var card: Dictionary = _aircraft[_aircraft_index]
+		var lines: int = _wrap(card["description"], 46).size()
+		var perf_rows: int = 0
+		for key in BRIEF_MEASURED:
+			if card.get("performance", {}).has(key[1]):
+				perf_rows += 1
+		var brief_h: float = 76.0 + lines * 19.0 + 16.0 \
+				+ 26.0 + perf_rows * 27.0 + 12.0 + 26.0 + 3 * 27.0
 		var brief := Rect2(rect.position.x + rect.size.x * 0.62 + 60.0,
 						   rect.position.y + 6.0,
-						   rect.size.x * 0.38 - 60.0, rect.size.y - 12.0)
+						   rect.size.x * 0.38 - 60.0,
+						   minf(brief_h, rect.size.y - 12.0))
 		UITheme.draw_panel(_canvas, brief, UITheme.PANEL, UITheme.ACCENT, 12.0)
 		UITheme.draw_label(_canvas, brief.position + Vector2(24, 30), "the brief",
 						   UITheme.ACCENT, 2.6, UITheme.SIZE_SECTION)
 		var by: float = brief.position.y + 60.0
-		for line in _wrap(card["description"], 40):
+		for line in _wrap(card["description"], 46):
 			UITheme.draw_text(_canvas, Vector2(brief.position.x + 24, by), line,
 							  UITheme.SIZE_LABEL, UITheme.TEXT_DIM)
 			by += 19.0
-		by += 10.0
-		for row in [["wing loading", "%.0f N/m2" % card["loading"]],
-					["power / weight", "%.0f W/kg" % card["pw"]],
-					["approach speed", "%.0f m/s" % card["approach"]]]:
-			UITheme.draw_text(_canvas, Vector2(brief.position.x + 24, by), row[0],
-							  UITheme.SIZE_LABEL, UITheme.TEXT_FAINT)
-			UITheme.draw_text(_canvas, Vector2(brief.position.x + 190, by), row[1],
-							  UITheme.SIZE_BODY, UITheme.TEXT)
-			by += 26.0
+		by += 16.0
+
+		# Everything below is MEASURED - the regression suite flies each of
+		# these and records what it got. Three numbers on a panel this size
+		# left it four fifths empty, which read as "there is nothing more to
+		# know" when in fact the interesting half of the aeroplane's
+		# character was sitting unused in the file. Each row also carries a
+		# bar showing where this machine sits against the rest of the
+		# roster, so a glance answers "compared to what?".
+		var perf: Dictionary = card.get("performance", {})
+		UITheme.draw_label(_canvas, Vector2(brief.position.x + 24, by),
+						   "measured in flight", UITheme.TEXT_FAINT)
+		UITheme.draw_rule(_canvas, Vector2(brief.position.x + 24, by + 8.0),
+						  brief.size.x - 48.0)
+		by += 26.0
+		for row in BRIEF_MEASURED:
+			if not perf.has(row[1]):
+				continue
+			by = _brief_row(brief, by, row[0], row[2] % float(perf[row[1]]),
+							_roster_fraction(row[1], float(perf[row[1]])))
+
+		by += 12.0
+		UITheme.draw_label(_canvas, Vector2(brief.position.x + 24, by),
+						   "on the ground", UITheme.TEXT_FAINT)
+		UITheme.draw_rule(_canvas, Vector2(brief.position.x + 24, by + 8.0),
+						  brief.size.x - 48.0)
+		by += 26.0
+		for row in [["wing loading", "%.0f N/m2" % card["loading"], "loading"],
+					["power / weight", "%.0f W/kg" % card["pw"], "pw"],
+					["approach speed", "%.1f m/s" % card["approach"], "approach"]]:
+			by = _brief_row(brief, by, row[0], row[1],
+							_roster_fraction(row[2], float(card[row[2]])))
+
+
+## One line of the brief: name, value, and a bar placing the value against the
+## rest of the roster. Returns the y for the line below.
+func _brief_row(brief: Rect2, y: float, label: String, value: String,
+				fraction: float) -> float:
+	UITheme.draw_text(_canvas, Vector2(brief.position.x + 24, y), label,
+					  UITheme.SIZE_LABEL, UITheme.TEXT_FAINT)
+	# Right-aligned so the digits line up in a column. draw_string takes the
+	# position as the LEFT edge of the box it aligns within, so the box is
+	# placed to end at x + 300, not to start there.
+	UITheme.draw_text(_canvas, Vector2(brief.position.x + 150, y), value,
+					  UITheme.SIZE_BODY, UITheme.TEXT,
+					  HORIZONTAL_ALIGNMENT_RIGHT, 150.0)
+	var track := Rect2(brief.position.x + 320.0, y - 9.0,
+					   brief.size.x - 344.0, 5.0)
+	UITheme.draw_track(_canvas, track, fraction)
+	return y + 27.0
+
+
+## Where `value` sits between the smallest and largest the roster has for the
+## same figure, 0..1. With one aeroplane, or a figure they all share, the bar
+## is drawn half full rather than empty - an empty bar reads as "none of it".
+func _roster_fraction(key: String, value: float) -> float:
+	var low: float = INF
+	var high: float = -INF
+	for entry in _aircraft:
+		var candidate: float = 0.0
+		if entry.has(key):
+			candidate = float(entry[key])
+		else:
+			var perf: Dictionary = entry.get("performance", {})
+			if not perf.has(key):
+				continue
+			candidate = float(perf[key])
+		low = minf(low, candidate)
+		high = maxf(high, candidate)
+	if not is_finite(low) or high - low < 0.0001:
+		return 0.5
+	return clampf((value - low) / (high - low), 0.06, 1.0)
 
 
 func _draw_scenes(size: Vector2) -> void:
@@ -839,13 +943,19 @@ func _draw_card(rect: Rect2, selected: bool, focused: bool, pulse: float,
 						  UITheme.ACCENT, true)
 
 
-func _draw_footer(size: Vector2) -> void:
-	# Back button.
+func _draw_back() -> void:
 	UITheme.draw_panel(_canvas, _back_rect,
 			Color(1, 1, 1, 0.06) if _hover.get("action", "") == "back" else UITheme.PANEL,
 			UITheme.STROKE_STRONG, 10.0)
-	UITheme.draw_text(_canvas, _back_rect.position + Vector2(75, 34), "BACK",
-					  UITheme.SIZE_SECTION, UITheme.TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER)
+	UITheme.draw_text(_canvas, _back_rect.position + Vector2(0, 34), "BACK",
+					  UITheme.SIZE_SECTION, UITheme.TEXT_DIM,
+					  HORIZONTAL_ALIGNMENT_CENTER, _back_rect.size.x)
+
+
+func _draw_footer(size: Vector2) -> void:
+	# Back button - absent on the first step, where it would go nowhere.
+	if _back_rect.size.x > 0.0:
+		_draw_back()
 
 	# Next / Fly button.
 	var is_fly: bool = _step == STEP_REVIEW
@@ -859,9 +969,10 @@ func _draw_footer(size: Vector2) -> void:
 				Color(UITheme.ACCENT.r, UITheme.ACCENT.g, UITheme.ACCENT.b,
 					  0.92 if hovered else 0.78),
 				Color(1, 1, 1, 0.5 if hovered else 0.25), 12.0)
-		UITheme.draw_text_shadow(_canvas, r.position + Vector2(130, 34), "FLY",
+		UITheme.draw_text_shadow(_canvas, r.position + Vector2(0, 38), "FLY",
 								 UITheme.SIZE_LARGE, Color(0.02, 0.06, 0.09, 1.0),
-								 Color(0, 0, 0, 0.4))
+								 Color(0, 0, 0, 0.4), HORIZONTAL_ALIGNMENT_CENTER,
+								 r.size.x)
 		if _progress_active:
 			var bar := Rect2(r.position + Vector2(30, r.size.y - 10.0),
 							 Vector2(r.size.x - 60.0, 4.0))
@@ -872,14 +983,16 @@ func _draw_footer(size: Vector2) -> void:
 				Color(UITheme.ACCENT.r, UITheme.ACCENT.g, UITheme.ACCENT.b,
 					  0.22 if hovered else 0.14),
 				UITheme.ACCENT if hovered else UITheme.STROKE_STRONG, 12.0)
-		UITheme.draw_text(_canvas, r.position + Vector2(75, 34), "NEXT",
-						  UITheme.SIZE_SECTION, UITheme.ACCENT, HORIZONTAL_ALIGNMENT_CENTER)
+		UITheme.draw_text(_canvas, r.position + Vector2(0, 34), "NEXT",
+						  UITheme.SIZE_SECTION, UITheme.ACCENT, HORIZONTAL_ALIGNMENT_CENTER,
+						  r.size.x)
 
 	# The corner hint, readable now.
-	UITheme.draw_text(_canvas, Vector2(size.x * 0.5, size.y - 36.0),
+	UITheme.draw_text(_canvas, Vector2(0.0, size.y - 36.0),
 					  "arrows choose   enter next   backspace back   esc %s" %
 					  ("quit" if start_screen else "close"),
-					  UITheme.SIZE_LABEL, UITheme.TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER)
+					  UITheme.SIZE_LABEL, UITheme.TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER,
+					  size.x)
 
 
 static func _wrap(text: String, columns: int) -> PackedStringArray:

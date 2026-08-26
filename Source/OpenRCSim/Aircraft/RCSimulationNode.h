@@ -240,6 +240,14 @@ public:
     double get_cruise_speed_mps() const;
     double get_approach_speed_mps() const;
 
+    /** The aircraft's measured performance, as the regression suite recorded
+     *  it: glide ratio, stall speed, roll rate and the rest.
+     *
+     *  These are flown, not quoted. A specification sheet that disagrees with
+     *  the aeroplane is worse than none, and these are the numbers the suite
+     *  holds the aeroplane to. */
+    godot::Dictionary get_performance() const;
+
     /** File stems of every aircraft in Data/Aircraft/, sorted. */
     godot::PackedStringArray list_aircraft() const;
 

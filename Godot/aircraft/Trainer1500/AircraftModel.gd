@@ -219,6 +219,18 @@ func _update_surfaces() -> void:
 		pivot.rotation = Vector3(deg_to_rad(degrees) * HINGE_SIGN, 0.0, 0.0)
 
 
+## Throws away the built aeroplane and builds the one the simulation node is
+## now holding. Used by the hangar, where changing the selection changes the
+## aeroplane on the stand; in flight the model is freed and made again instead.
+func rebuild() -> void:
+	for child in get_children():
+		child.queue_free()
+	_surfaces.clear()
+	_propeller = null
+	_debug = null
+	_built = false
+
+
 func _build() -> void:
 	var span_total: float = 0.0
 	var nose_z: float = 0.0

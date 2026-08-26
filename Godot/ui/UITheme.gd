@@ -164,10 +164,16 @@ static func draw_text(ci: CanvasItem, position: Vector2, text: String,
 static func draw_label(ci: CanvasItem, position: Vector2, text: String,
 					   colour: Color = TEXT_FAINT, spacing: float = 2.2,
 					   size: int = SIZE_MICRO) -> void:
+	# Shadowed like draw_text. These labels are the smallest, faintest type on
+	# the screen and half of them sit over sky or sunlit grass: without it
+	# "VARIO", "ANGLE OF ATTACK" and "FLAP" were invisible in flight and
+	# perfectly legible in the menu, which is the wrong way round.
 	var f: Font = font_condensed()
 	var x: float = position.x
 	for i in text.length():
 		var glyph: String = text[i].to_upper()
+		ci.draw_string(f, Vector2(x + 1.0, position.y + 1.5), glyph,
+					   HORIZONTAL_ALIGNMENT_LEFT, -1, size, Color(0, 0, 0, 0.55))
 		ci.draw_string(f, Vector2(x, position.y), glyph,
 					   HORIZONTAL_ALIGNMENT_LEFT, -1, size, colour)
 		x += f.get_string_size(glyph, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x + spacing
@@ -412,7 +418,9 @@ static func draw_glow(ci: CanvasItem, rect: Rect2, colour: Color,
 ## bright thumbnail. Drawn as one extra pass a couple of pixels down and right.
 static func draw_text_shadow(ci: CanvasItem, position: Vector2, text: String,
 							 size: int = SIZE_BODY, colour: Color = TEXT,
-							 shadow: Color = Color(0, 0, 0, 0.55)) -> void:
-	ci.draw_string(font(), position + Vector2(1.5, 2.0), text,
-				   HORIZONTAL_ALIGNMENT_LEFT, -1, size, shadow)
-	ci.draw_string(font(), position, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, colour)
+							 shadow: Color = Color(0, 0, 0, 0.55),
+							 align: HorizontalAlignment = HORIZONTAL_ALIGNMENT_LEFT,
+							 width: float = -1.0) -> void:
+	ci.draw_string(font(), position + Vector2(1.5, 2.0), text, align, width,
+				   size, shadow)
+	ci.draw_string(font(), position, text, align, width, size, colour)
