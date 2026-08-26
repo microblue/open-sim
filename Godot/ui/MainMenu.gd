@@ -503,7 +503,16 @@ func _content_rect(size: Vector2) -> Rect2:
 	# to be -36 with the rule 44 below the title, which put the rule 8 px
 	# INSIDE the content and the first aircraft card straight over the top of
 	# it. Those offsets were set when the type was two thirds this size.
-	return Rect2(PAD, 330.0, size.x - PAD * 2.0, size.y - 330.0 - 160.0)
+	# The vertical rhythm of the whole screen, in one place:
+	#
+	#   44..150   wordmark and radio        150  the rule that divides them
+	#   176..234  the step tabs, alone
+	#   280       the step heading          316  its subtitle    346  its rule
+	#   370       the content starts here
+	#
+	# Every one of those numbers used to be a guess made against a smaller
+	# type, and three separate things ended up drawn on top of each other.
+	return Rect2(PAD, 370.0, size.x - PAD * 2.0, size.y - 370.0 - 160.0)
 
 
 ## The aircraft step is three columns: the roster to choose from, the aeroplane
@@ -513,6 +522,23 @@ func _content_rect(size: Vector2) -> Rect2:
 const AIRCRAFT_LIST_W: float = 440.0
 const AIRCRAFT_BRIEF_W: float = 480.0
 const AIRCRAFT_GAP: float = 30.0
+
+## The header, in two bands. The wordmark and the radio share the first; the
+## step tabs have the second to themselves. They used to share one 200 px band
+## between the three of them, and the wordmark's rule ran underneath the first
+## tab.
+const HEADER_RULE_Y: float = 150.0
+const CRUMB_Y: float = 176.0
+const CRUMB_H: float = 58.0
+
+## How tall a preview is on the sortie summary. Capped: at a full 16:9 of a
+## 597 px card it was 313 px, which pushed the weather figures out through the
+## bottom of the panel.
+const REVIEW_THUMB_H: float = 236.0
+
+
+static func _review_thumb_size(card_w: float) -> Vector2:
+	return Vector2(card_w - 40.0, minf((card_w - 40.0) * 9.0 / 16.0, REVIEW_THUMB_H))
 
 
 func _aircraft_card_rect(rect: Rect2, index: int) -> Rect2:
@@ -595,14 +621,14 @@ func _layout_review(size: Vector2) -> void:
 		# Preview thumbnails live on the location and weather cards.
 		if i == 1:
 			var thumb1: TextureRect = _make_thumb("scene", _scenes[_scene_index]["id"],
-					Vector2(card_w - 40.0, (card_w - 40.0) * 9.0 / 16.0))
+					_review_thumb_size(card_w))
 			if thumb1 != null:
 				thumb1.position = r.position + Vector2(20, 52)
 				_canvas.add_child(thumb1)
 				_thumbs.append(thumb1)
 		elif i == 2:
 			var thumb2: TextureRect = _make_thumb("weather", _weathers[_weather_index]["id"],
-					Vector2(card_w - 40.0, (card_w - 40.0) * 9.0 / 16.0))
+					_review_thumb_size(card_w))
 			if thumb2 != null:
 				thumb2.position = r.position + Vector2(20, 52)
 				_canvas.add_child(thumb2)
@@ -634,14 +660,20 @@ func _draw_detail(content: Rect2, title: String, description: String,
 
 	# The numbers sit in their own column on the right, so a long description
 	# cannot push them off the panel.
+	# The row pitch follows the space there is, so the last row cannot fall out
+	# of the bottom of the panel - which is what "thermals 100 % of a clear
+	# day" was doing, half of it below the edge.
 	var col: float = panel.position.x + panel.size.x * 0.60
 	var ry: float = panel.position.y + 56.0
+	var pitch: float = 40.0
+	if not rows.is_empty():
+		pitch = minf(40.0, (panel.size.y - 86.0) / float(rows.size()))
 	for row in rows:
 		UITheme.draw_text(_canvas, Vector2(col, ry), String(row[0]),
 						  UITheme.SIZE_BODY, UITheme.TEXT_FAINT)
 		UITheme.draw_text(_canvas, Vector2(col + 200.0, ry), String(row[1]),
 						  UITheme.SIZE_VALUE, UITheme.TEXT)
-		ry += 40.0
+		ry += pitch
 
 
 ## The chosen and hovered frames for the picture steps, drawn over the images.
@@ -772,8 +804,13 @@ func _draw_header(size: Vector2, shift: Vector2) -> void:
 	UITheme.draw_label(_canvas, origin + Vector2(5, 84),
 					  "RC FLIGHT TRAINING SIMULATOR", UITheme.ACCENT, 3.0,
 					  UITheme.SIZE_SECTION)
-	UITheme.draw_rule(_canvas, origin + Vector2(0, 102), 340.0,
-					  UITheme.STROKE_STRONG, 2.0)
+	# The wordmark's rule used to run 340 px to the right and disappear under
+	# the first step tab. The header is two bands now - the wordmark and the
+	# radio on the top one, the step tabs alone on the second - and the rule
+	# that separates them runs the WHOLE width, under the tabs rather than
+	# into them.
+	UITheme.draw_rule(_canvas, Vector2(PAD, HEADER_RULE_Y) + shift,
+					  size.x - PAD * 2.0, UITheme.STROKE, 1.0)
 
 	var rect := Rect2(_transmitter_origin + shift, Vector2(300, 64))
 	var ready: bool = _input != null and _input.is_connected() and _input.is_fully_bound()
@@ -818,10 +855,11 @@ func _draw_header(size: Vector2, shift: Vector2) -> void:
 ## One step's pill. Layout and drawing share it, so what is clickable is what
 ## is drawn.
 func _crumb_rect(size: Vector2, index: int) -> Rect2:
-	var total: float = minf(size.x - PAD * 2.0, 1180.0)
+	# Full width, on their own line. Centred in a narrow 1180 band they sat
+	# beside the wordmark and the QUIT button rather than below them.
+	var total: float = size.x - PAD * 2.0
 	var each: float = total / float(STEP_COUNT)
-	return Rect2((size.x - total) * 0.5 + each * float(index) + 8.0, 142.0,
-				 each - 16.0, 58.0)
+	return Rect2(PAD + each * float(index) + 8.0, CRUMB_Y, each - 16.0, CRUMB_H)
 
 
 func _draw_breadcrumb(size: Vector2, shift: Vector2) -> void:
@@ -878,7 +916,7 @@ func _section_heading(pos: Vector2, text: String, sub: String) -> void:
 
 func _draw_aircraft(size: Vector2) -> void:
 	var rect: Rect2 = _content_rect(size)
-	_section_heading(rect.position - Vector2(0, 100), "Choose your aeroplane",
+	_section_heading(rect.position - Vector2(0, 90), "Choose your aeroplane",
 					 "%d machines, easiest first. Each one is measured, not described."
 					 % _aircraft.size())
 	# The roster down the left. The selected card was a faint tint and a thin
@@ -1065,7 +1103,7 @@ func _roster_fraction(key: String, value: float) -> float:
 
 func _draw_scenes(size: Vector2) -> void:
 	var rect: Rect2 = _content_rect(size)
-	_section_heading(rect.position - Vector2(0, 100), "Where do you want to fly?",
+	_section_heading(rect.position - Vector2(0, 90), "Where do you want to fly?",
 					 "Each place is its own climate and geology. The previews are real frames.")
 	for i in _scenes.size():
 		var r: Rect2 = _picture_rect(rect, i, _scenes.size(), 9.0 / 16.0)
@@ -1086,7 +1124,7 @@ func _draw_scenes(size: Vector2) -> void:
 
 func _draw_weather(size: Vector2) -> void:
 	var rect: Rect2 = _content_rect(size)
-	_section_heading(rect.position - Vector2(0, 100), "What kind of day?",
+	_section_heading(rect.position - Vector2(0, 90), "What kind of day?",
 					 "Weather is not a filter - it changes the air and the ground.")
 	for i in _weathers.size():
 		var r: Rect2 = _picture_rect(rect, i, _weathers.size(), 9.0 / 16.0)
@@ -1122,7 +1160,7 @@ func _draw_weather(size: Vector2) -> void:
 
 func _draw_review(size: Vector2) -> void:
 	var rect: Rect2 = _content_rect(size)
-	_section_heading(rect.position - Vector2(0, 100), "The sortie",
+	_section_heading(rect.position - Vector2(0, 90), "The sortie",
 					 "Everything below is what you are about to fly.")
 	var gap: float = 20.0
 	var card_w: float = (rect.size.x - gap * 2.0) / 3.0
@@ -1174,7 +1212,7 @@ func _draw_review(size: Vector2) -> void:
 	UITheme.draw_panel(_canvas, r1, UITheme.PANEL, UITheme.ACCENT, 12.0)
 	UITheme.draw_label(_canvas, r1.position + Vector2(20, 32), "location",
 					   UITheme.ACCENT, 2.6, UITheme.SIZE_SECTION)
-	var thumb_h: float = (card_w - 40.0) * 9.0 / 16.0
+	var thumb_h: float = _review_thumb_size(card_w).y
 	var ly: float = 56.0 + thumb_h + 46.0
 	UITheme.draw_display(_canvas, r1.position + Vector2(20, ly), String(scene["name"]),
 						 UITheme.SIZE_LARGE, UITheme.TEXT)
@@ -1196,13 +1234,17 @@ func _draw_review(size: Vector2) -> void:
 						 UITheme.SIZE_LARGE, UITheme.TEXT)
 	wy += 40.0
 	var gust: float = float(weather["wind_mps"]) * float(weather["gust"])
-	for row in [["wind", "%.1f m/s" % weather["wind_mps"]],
-				["gusting to", "%.1f m/s" % (float(weather["wind_mps"]) + gust)],
-				["turbulence", "%.1f m/s" % weather["turbulence"]],
-				["ground grip", "%.0f %%" % (float(weather["ground_grip"]) * 100.0)],
-				["thermals", "%.0f %%" % (float(weather["thermal_scale"]) * 100.0)]]:
+	var air: Array = [["wind", "%.1f m/s" % weather["wind_mps"]],
+					  ["gusting to", "%.1f m/s" % (float(weather["wind_mps"]) + gust)],
+					  ["turbulence", "%.1f m/s" % weather["turbulence"]],
+					  ["ground grip", "%.0f %%" % (float(weather["ground_grip"]) * 100.0)],
+					  ["thermals", "%.0f %%" % (float(weather["thermal_scale"]) * 100.0)]]
+	# The pitch follows the space there is, so the last row cannot fall out of
+	# the bottom of the card - which is what "thermals" was doing.
+	var pitch: float = minf(34.0, (card_h - wy - 24.0) / float(air.size()))
+	for row in air:
 		_review_row(r2, wy, String(row[0]), String(row[1]))
-		wy += 34.0
+		wy += pitch
 
 
 ## One label-and-value line on a sortie card, the value right-aligned to the
