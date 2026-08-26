@@ -29,10 +29,19 @@ gdscript/warnings/untyped_declaration=1
 
 [display]
 
-window/size/viewport_width=2560
-window/size/viewport_height=1440
 window/size/mode=0
 window/vsync/vsync_mode=0
+; The interface is laid out in pixels at 1920x1080 and SCALED to whatever the
+; window actually is. Without this a 1280x720 window drew the same absolute
+; rectangles into two thirds of the space: the brief panel sat on top of the
+; FLY button and the aeroplane's name ran through the middle of it. Every
+; screen in this project is drawn with draw_string and draw_rect rather than
+; laid out by containers, so this is the only thing that makes them resolution
+; independent.
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/size/viewport_width=1920
+window/size/viewport_height=1080
 
 [physics]
 

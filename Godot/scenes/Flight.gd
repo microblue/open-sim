@@ -90,13 +90,16 @@ func _ready() -> void:
 	aircraft.reset_state()
 	_print_help()
 
-	# The main menu is the briefing room: the aeroplane, the place, the weather
-	# and the radio are all chosen there before the first flight. It opens on
-	# every cold start once the auto-bind attempt has resolved, bound or not -
-	# one Enter flies, which keeps the "flying within seconds" promise while
-	# making sure the choices are never invisible.
-	if not _autobind_pending:
-		_open_menu(true)
+	# The briefing room opens NOW, on the first frame, whatever the radio is
+	# doing.
+	#
+	# It used to wait for the auto-bind attempt to resolve - up to a second and
+	# a half - and in the meantime the player sat looking at an empty 3D
+	# viewport. Which is indistinguishable from watching a scene load, and was
+	# reported as exactly that. Nothing is loading; the menu was simply being
+	# withheld. The transmitter panel reads the radio every frame and says
+	# "READY" the moment it binds, so there was never anything to wait for.
+	_open_menu(true)
 
 
 func _print_help() -> void:
@@ -452,9 +455,8 @@ func _process(delta: float) -> void:
 			_autobind_pending = false
 			if not transmitter.is_connected():
 				print("No transmitter detected. Plug one in and press F3 for the wizard.")
-			# The briefing room opens whatever the radio situation is: the
-			# choice of aeroplane, place and weather is never skipped.
-			_open_menu(true)
+			# The menu is already up - it opened on the first frame. Its
+			# transmitter panel will have changed to READY on its own.
 
 
 ## A binding can be well-formed and still be wrong for the radio attached, and
