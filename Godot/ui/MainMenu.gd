@@ -82,6 +82,10 @@ var _fade: float = -1.0
 ## The turntable on the aircraft step, and the rectangle it is drawn in.
 var _stage: Node
 var _stage_view: TextureRect
+## Drawn above the picture cards, which are Controls and therefore paint over
+## anything the canvas draws underneath them. The selection frame has to be
+## here or it is invisible.
+var _overlay: Control
 ## The picture behind everything: the place currently chosen.
 var _backdrop: TextureRect
 var _backdrop_id: String = ""
@@ -147,6 +151,16 @@ func _ready() -> void:
 	_canvas.gui_input.connect(_on_gui_input)
 	add_child(_canvas)
 
+	# Above every thumbnail: the picture cards are Controls, so they paint over
+	# anything the canvas draws underneath them, and a selection frame drawn
+	# there would be invisible.
+	_overlay = Control.new()
+	_overlay.name = "Overlay"
+	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_overlay.draw.connect(_draw_overlay)
+	_canvas.add_child(_overlay)
+
 	_gather()
 
 	if _sim != null:
@@ -211,7 +225,6 @@ func _on_gui_input(event: InputEvent) -> void:
 				or hit.get("index", -1) != _hover.get("index", -1) \
 				or hit.get("action", "") != _hover.get("action", ""):
 			_hover = hit
-			_apply_hover_selection()
 			_canvas.queue_redraw()
 	elif event is InputEventMouseButton:
 		var press := event as InputEventMouseButton
@@ -281,25 +294,10 @@ func _hit_at(point: Vector2) -> Dictionary:
 	return {}
 
 
-func _apply_hover_selection() -> void:
-	if _hover.is_empty():
-		return
-	match _hover.get("action", ""):
-		"step":
-			# Hovering a breadcrumb highlights it; clicking moves there.
-			return
-		"aircraft":
-			if _step == STEP_AIRCRAFT:
-				_aircraft_index = int(_hover["index"])
-				_play(SoundBank.ui_tick())
-		"scene":
-			if _step == STEP_LOCATION:
-				_scene_index = int(_hover["index"])
-				_play(SoundBank.ui_tick())
-		"weather":
-			if _step == STEP_WEATHER:
-				_weather_index = int(_hover["index"])
-				_play(SoundBank.ui_tick())
+# Hover selection used to live here: moving the mouse across the roster chose
+# whatever it passed over, so the aeroplane you ended up with was the last one
+# the pointer happened to cross on its way to the button. Hovering highlights;
+# clicking chooses. They are drawn differently for the same reason.
 
 
 func _activate(entry: Dictionary) -> void:
@@ -425,22 +423,17 @@ func _layout() -> void:
 	_refresh_backdrop()
 
 	var header_y: float = 44.0
-	_transmitter_origin = Vector2(size.x - PAD - 300.0 - 8.0 - 108.0 - 8.0 - 72.0, header_y)
-	_setup_rect = Rect2(_transmitter_origin.x + 308.0, header_y, 108.0, 64.0)
-	_quit_rect = Rect2(_transmitter_origin.x + 428.0, header_y, 72.0, 64.0)
+	_transmitter_origin = Vector2(size.x - PAD - 360.0 - 12.0 - 150.0 - 12.0 - 118.0,
+								  header_y)
+	_setup_rect = Rect2(_transmitter_origin.x + 372.0, header_y, 150.0, 72.0)
+	_quit_rect = Rect2(_transmitter_origin.x + 534.0, header_y, 118.0, 72.0)
 	_hit.append({"rect": _setup_rect, "action": "setup"})
 	_hit.append({"rect": _quit_rect, "action": "quit"})
 
 	# Breadcrumb: four steps across the top, clickable, with the current step
-	# drawn brighter. Short pills, so the step headings below them never have
-	# to squeeze against the row.
-	var crumb_y: float = 152.0
-	var crumb_total: float = minf(size.x - PAD * 2.0, 760.0)
-	var crumb_x: float = (size.x - crumb_total) * 0.5
-	var crumb_w: float = crumb_total / float(STEP_COUNT)
+	# drawn brighter.
 	for i in STEP_COUNT:
-		_hit.append({"rect": Rect2(crumb_x + crumb_w * float(i), crumb_y - 8.0,
-								   crumb_w, 40.0), "action": "step", "index": i})
+		_hit.append({"rect": _crumb_rect(size, i), "action": "step", "index": i})
 
 	# Step content.
 	match _step:
@@ -450,24 +443,34 @@ func _layout() -> void:
 		STEP_REVIEW: _layout_review(size)
 
 	# Footer: back and next. On the review step, next becomes fly.
-	var foot_y: float = size.y - 88.0
+	var foot_y: float = size.y - 104.0
 	# No BACK on the first step: there is nowhere behind it. Drawing a button
 	# that does nothing teaches the player that buttons here might not.
 	if _step > STEP_AIRCRAFT:
-		_back_rect = Rect2(PAD, foot_y, 150.0, 52.0)
+		_back_rect = Rect2(PAD, foot_y, 210.0, 68.0)
 		_hit.append({"rect": _back_rect, "action": "back"})
 	else:
 		_back_rect = Rect2()
 	var next_label: String = "FLY" if _step == STEP_REVIEW else "NEXT"
-	var next_w: float = 150.0 if next_label == "NEXT" else 260.0
-	_next_rect = Rect2(size.x - PAD - next_w, foot_y, next_w, 52.0)
+	var next_w: float = 210.0 if next_label == "NEXT" else 340.0
+	_next_rect = Rect2(size.x - PAD - next_w, foot_y, next_w, 68.0)
 	_hit.append({"rect": _next_rect, "action": "next"})
+
+	# Last child, so it paints over every thumbnail added this pass. Done here
+	# rather than at the top of the layout, where the thumbnails have not been
+	# created yet and the overlay ends up underneath them - which showed as a
+	# selection frame that worked (it sits in the card's margin) and a tick
+	# badge that did not (it sits on the picture).
+	if _overlay != null:
+		_canvas.move_child(_overlay, -1)
+		_overlay.queue_redraw()
 
 	_canvas.queue_redraw()
 
 
 func _content_rect(size: Vector2) -> Rect2:
-	return Rect2(PAD, 248.0, size.x - PAD * 2.0, size.y - 248.0 - 132.0)
+	# The step tabs are taller now, and the footer buttons are too.
+	return Rect2(PAD, 268.0, size.x - PAD * 2.0, size.y - 268.0 - 160.0)
 
 
 ## The aircraft step is three columns: the roster to choose from, the aeroplane
@@ -499,37 +502,45 @@ func _layout_aircraft(size: Vector2) -> void:
 					 "index": i, "action": "aircraft"})
 
 
+## One picture card. Layout, drawing and the selection overlay share it.
+func _picture_rect(rect: Rect2, index: int, count: int, ratio: float) -> Rect2:
+	var gap: float = 18.0
+	var card_w: float = (rect.size.x - gap * float(count - 1)) / float(count)
+	return Rect2(rect.position.x + float(index) * (card_w + gap),
+				 rect.position.y + 6.0, card_w, card_w * ratio)
+
+
 func _layout_scenes(size: Vector2) -> void:
 	var rect: Rect2 = _content_rect(size)
-	var gap: float = 16.0
-	var card_w: float = (rect.size.x - gap * 4.0) / 5.0
-	var thumb_h: float = card_w * 9.0 / 16.0
 	for i in _scenes.size():
-		var r := Rect2(rect.position.x + float(i) * (card_w + gap),
-					   rect.position.y + 6.0, card_w, thumb_h)
+		var r: Rect2 = _picture_rect(rect, i, _scenes.size(), 9.0 / 16.0)
+		var card_w: float = r.size.x
+		var thumb_h: float = r.size.y
 		_hit.append({"rect": r, "kind": "scene", "index": i, "action": "scene"})
 		var thumb: TextureRect = _make_thumb("scene", _scenes[i]["id"],
-				Vector2(card_w, thumb_h))
+				Vector2(card_w - 8.0, thumb_h - 8.0))
 		if thumb != null:
-			thumb.position = r.position
+			thumb.position = r.position + Vector2(4.0, 4.0)
+			# Unchosen places are held back, so the chosen one is the only
+			# thing on the row at full strength. The card's own tint could
+			# never do this: the picture is a Control drawn ON TOP of it.
+			thumb.modulate = _picture_tint(i == _scene_index,
+										   _focus_card(i, "scene"))
 			_canvas.add_child(thumb)
 			_thumbs.append(thumb)
 
 
 func _layout_weather(size: Vector2) -> void:
 	var rect: Rect2 = _content_rect(size)
-	var gap: float = 16.0
-	var card_w: float = (rect.size.x - gap * 4.0) / 5.0
-	var thumb_h: float = minf(card_w * 0.62, 150.0)
 	for i in _weathers.size():
-		var r := Rect2(rect.position.x + float(i) * (card_w + gap),
-					   rect.position.y + 6.0, card_w, thumb_h)
+		var r: Rect2 = _picture_rect(rect, i, _weathers.size(), 9.0 / 16.0)
 		_hit.append({"rect": r, "kind": "weather", "index": i, "action": "weather"})
 		var thumb: TextureRect = _make_thumb("weather", _weathers[i]["id"],
-				Vector2(card_w - 6.0, thumb_h - 6.0))
+				Vector2(r.size.x - 8.0, r.size.y - 8.0))
 		if thumb != null:
-			# Inset so the card's selection frame shows around the image.
-			thumb.position = r.position + Vector2(3.0, 3.0)
+			thumb.position = r.position + Vector2(4.0, 4.0)
+			thumb.modulate = _picture_tint(i == _weather_index,
+										   _focus_card(i, "weather"))
 			_canvas.add_child(thumb)
 			_thumbs.append(thumb)
 
@@ -557,6 +568,91 @@ func _layout_review(size: Vector2) -> void:
 				thumb2.position = r.position + Vector2(20, 52)
 				_canvas.add_child(thumb2)
 				_thumbs.append(thumb2)
+
+
+## The chosen entry, written out under the row of cards.
+##
+## Both picture steps put five thumbnails across the top and left the bottom
+## half of a 1080-line screen empty, which reads as a page that failed to
+## finish loading. What goes here is the thing the thumbnail cannot say.
+func _draw_detail(content: Rect2, title: String, description: String,
+				  rows: Array) -> void:
+	var top: float = content.position.y + content.size.x * (9.0 / 16.0) / 5.0 + 130.0
+	var panel := Rect2(content.position.x, top, content.size.x,
+					   maxf(content.end.y - top, 120.0))
+	UITheme.draw_panel(_canvas, panel, UITheme.PANEL, UITheme.STROKE, 12.0)
+
+	var x: float = panel.position.x + 36.0
+	var y: float = panel.position.y + 56.0
+	UITheme.draw_display(_canvas, Vector2(x, y), title, UITheme.SIZE_LARGE,
+						 UITheme.TEXT)
+	y += 46.0
+	for line in UITheme.wrap_text(description, panel.size.x * 0.52,
+								  UITheme.SIZE_BODY):
+		UITheme.draw_text(_canvas, Vector2(x, y), line, UITheme.SIZE_BODY,
+						  UITheme.TEXT_DIM)
+		y += 30.0
+
+	# The numbers sit in their own column on the right, so a long description
+	# cannot push them off the panel.
+	var col: float = panel.position.x + panel.size.x * 0.60
+	var ry: float = panel.position.y + 56.0
+	for row in rows:
+		UITheme.draw_text(_canvas, Vector2(col, ry), String(row[0]),
+						  UITheme.SIZE_BODY, UITheme.TEXT_FAINT)
+		UITheme.draw_text(_canvas, Vector2(col + 200.0, ry), String(row[1]),
+						  UITheme.SIZE_VALUE, UITheme.TEXT)
+		ry += 40.0
+
+
+## The chosen and hovered frames for the picture steps, drawn over the images.
+func _draw_overlay() -> void:
+	var rect: Rect2 = _content_rect(_canvas.size)
+	var entries: Array = []
+	if _step == STEP_LOCATION:
+		entries = _scenes
+	elif _step == STEP_WEATHER:
+		entries = _weathers
+	else:
+		return
+	var chosen: int = _scene_index if _step == STEP_LOCATION else _weather_index
+	var kind: String = "scene" if _step == STEP_LOCATION else "weather"
+
+	for i in entries.size():
+		var r: Rect2 = _picture_rect(rect, i, entries.size(), 9.0 / 16.0)
+		var selected: bool = i == chosen
+		var hovered: bool = _focus_card(i, kind)
+		if selected:
+			UITheme.draw_glow(_overlay, r, UITheme.ACCENT, 14.0, 3)
+			_frame(r, UITheme.ACCENT, 4.0)
+			# A badge, not a bare tick floating on the photograph.
+			var badge := Rect2(r.end - Vector2(50.0, 50.0), Vector2(38.0, 38.0))
+			UITheme.draw_panel(_overlay, badge, UITheme.ACCENT, UITheme.ACCENT, 10.0)
+			UITheme.draw_text(_overlay, badge.position + Vector2(0.0, 28.0), "✓",
+							  UITheme.SIZE_VALUE, Color(0.02, 0.07, 0.10),
+							  HORIZONTAL_ALIGNMENT_CENTER, badge.size.x)
+		elif hovered:
+			_frame(r, Color(1, 1, 1, 0.75), 2.0)
+
+
+## A hollow rectangle of `width` pixels, drawn inside `rect`.
+func _frame(rect: Rect2, colour: Color, width: float) -> void:
+	_overlay.draw_rect(Rect2(rect.position, Vector2(rect.size.x, width)), colour)
+	_overlay.draw_rect(Rect2(Vector2(rect.position.x, rect.end.y - width),
+							 Vector2(rect.size.x, width)), colour)
+	_overlay.draw_rect(Rect2(rect.position, Vector2(width, rect.size.y)), colour)
+	_overlay.draw_rect(Rect2(Vector2(rect.end.x - width, rect.position.y),
+							 Vector2(width, rect.size.y)), colour)
+
+
+## How bright a picture card is drawn. Three states that have to be told apart
+## at a glance: chosen, under the pointer, and neither.
+func _picture_tint(selected: bool, hovered: bool) -> Color:
+	if selected:
+		return Color(1.0, 1.0, 1.0)
+	if hovered:
+		return Color(0.86, 0.90, 0.94)
+	return Color(0.50, 0.54, 0.60)
 
 
 ## The backdrop follows the chosen place, dimmed hard enough that the panels
@@ -668,65 +764,62 @@ func _draw_header(size: Vector2, shift: Vector2) -> void:
 			Color(UITheme.ACCENT.r, UITheme.ACCENT.g, UITheme.ACCENT.b, 0.16),
 			UITheme.ACCENT if _hover.get("action", "") == "setup" else UITheme.STROKE_STRONG,
 			10.0)
-	UITheme.draw_text(_canvas, _setup_rect.position + Vector2(0, 33) + shift, "SETUP",
-					  UITheme.SIZE_SECTION, UITheme.ACCENT, HORIZONTAL_ALIGNMENT_CENTER,
-					  _setup_rect.size.x)
+	UITheme.draw_display(_canvas, _setup_rect.position + Vector2(0, 48) + shift,
+						 "SETUP", UITheme.SIZE_TITLE, UITheme.ACCENT,
+						 HORIZONTAL_ALIGNMENT_CENTER, _setup_rect.size.x)
 
 	UITheme.draw_panel(_canvas, Rect2(_quit_rect.position + shift, _quit_rect.size),
 					   UITheme.PANEL, UITheme.STROKE_STRONG, 10.0)
-	UITheme.draw_text(_canvas, _quit_rect.position + Vector2(0, 33) + shift, "QUIT",
-					  UITheme.SIZE_SECTION, UITheme.TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER,
-					  _quit_rect.size.x)
+	UITheme.draw_display(_canvas, _quit_rect.position + Vector2(0, 48) + shift,
+						 "QUIT", UITheme.SIZE_TITLE, UITheme.TEXT_DIM,
+						 HORIZONTAL_ALIGNMENT_CENTER, _quit_rect.size.x)
 
 
 ## The four steps, with the current one lit and the completed ones checkmarked.
-func _draw_breadcrumb(size: Vector2, shift: Vector2) -> void:
-	var crumb_y: float = 152.0
-	var crumb_total: float = minf(size.x - PAD * 2.0, 760.0)
-	var crumb_x: float = (size.x - crumb_total) * 0.5
-	var crumb_w: float = crumb_total / float(STEP_COUNT)
+## One step's pill. Layout and drawing share it, so what is clickable is what
+## is drawn.
+func _crumb_rect(size: Vector2, index: int) -> Rect2:
+	var total: float = minf(size.x - PAD * 2.0, 1180.0)
+	var each: float = total / float(STEP_COUNT)
+	return Rect2((size.x - total) * 0.5 + each * float(index) + 8.0, 142.0,
+				 each - 16.0, 58.0)
 
+
+func _draw_breadcrumb(size: Vector2, shift: Vector2) -> void:
 	for i in STEP_COUNT:
-		var x: float = crumb_x + crumb_w * float(i)
+		var rect: Rect2 = _crumb_rect(size, i)
 		var current: bool = i == _step
 		var done: bool = i < _step
 		var hovered: bool = _hover.get("action", "") == "step" \
 				and int(_hover.get("index", -1)) == i
-		var centre: float = x + crumb_w * 0.5
 
+		var fill := Color(0.05, 0.09, 0.12, 0.85)
+		var stroke: Color = UITheme.STROKE
 		if current:
-			UITheme.draw_glow(_canvas, Rect2(x + 6.0, crumb_y, crumb_w - 12.0, 32.0),
-							  UITheme.ACCENT, 10.0, 2)
-			UITheme.draw_panel(_canvas, Rect2(x + 6.0, crumb_y, crumb_w - 12.0, 32.0),
-					Color(0.05, 0.09, 0.12, 0.92),
-					UITheme.ACCENT, 10.0)
+			UITheme.draw_glow(_canvas, rect, UITheme.ACCENT, 12.0, 3)
+			fill = Color(UITheme.ACCENT.r * 0.30, UITheme.ACCENT.g * 0.34,
+						 UITheme.ACCENT.b * 0.38, 0.95)
+			stroke = UITheme.ACCENT
 		elif done:
-			UITheme.draw_panel(_canvas, Rect2(x + 6.0, crumb_y, crumb_w - 12.0, 32.0),
-					Color(0.05, 0.09, 0.12, 0.92),
-					UITheme.GOOD, 10.0)
+			fill = Color(0.05, 0.11, 0.10, 0.92)
+			stroke = UITheme.GOOD
 		elif hovered:
-			UITheme.draw_panel(_canvas, Rect2(x + 6.0, crumb_y, crumb_w - 12.0, 32.0),
-					Color(0.05, 0.09, 0.12, 0.92), UITheme.STROKE_STRONG, 10.0)
-		else:
-			UITheme.draw_panel(_canvas, Rect2(x + 6.0, crumb_y, crumb_w - 12.0, 32.0),
-					Color(0.05, 0.09, 0.12, 0.85), UITheme.STROKE, 10.0)
+			fill = Color(0.09, 0.14, 0.18, 0.95)
+			stroke = UITheme.STROKE_STRONG
+		UITheme.draw_panel(_canvas, rect, fill, stroke, 12.0)
 
 		var label: String = "%d  %s" % [i + 1, STEP_NAMES[i]]
-		var colour: Color = UITheme.ACCENT if current \
+		var colour: Color = UITheme.TEXT if current \
 				else (UITheme.GOOD if done else UITheme.TEXT_DIM)
 		if done:
-			UITheme.draw_text(_canvas, Vector2(x + 16.0, crumb_y + 21.0), "✓",
+			UITheme.draw_text(_canvas, rect.position + Vector2(14.0, 39.0), "✓",
 							  UITheme.SIZE_VALUE, UITheme.GOOD)
-			colour = UITheme.TEXT_DIM
-		# Positioned at the panel's LEFT edge, not its centre.
-		#
-		# draw_string takes the position as the left edge of the box it centres
-		# within, so passing the centre shifted every label right by half a tab
-		# and the words overlapped their neighbours. Same rectangle as the panel
-		# above, so the two cannot drift apart.
-		UITheme.draw_text(_canvas, Vector2(x + 6.0, crumb_y + 21.0), label,
-						  UITheme.SIZE_SECTION, colour, HORIZONTAL_ALIGNMENT_CENTER,
-						  crumb_w - 12.0)
+		# The pill's LEFT edge, with the pill's width: draw_string takes the
+		# position as the left edge of the box it centres within, so passing
+		# the centre shifts the label right by half a tab.
+		UITheme.draw_display(_canvas, rect.position + Vector2(0.0, 40.0), label,
+							 UITheme.SIZE_TITLE, colour,
+							 HORIZONTAL_ALIGNMENT_CENTER, rect.size.x)
 
 
 func _section_heading(pos: Vector2, text: String, sub: String) -> void:
@@ -903,51 +996,57 @@ func _draw_scenes(size: Vector2) -> void:
 	var rect: Rect2 = _content_rect(size)
 	_section_heading(rect.position - Vector2(0, 36), "Where do you want to fly?",
 					 "Each place is its own climate and geology. The previews are real frames.")
-	var gap: float = 16.0
-	var card_w: float = (rect.size.x - gap * 4.0) / 5.0
-	var thumb_h: float = card_w * 9.0 / 16.0
-
 	for i in _scenes.size():
-		var r := Rect2(rect.position.x + float(i) * (card_w + gap),
-					   rect.position.y + 6.0, card_w, thumb_h)
+		var r: Rect2 = _picture_rect(rect, i, _scenes.size(), 9.0 / 16.0)
 		var selected: bool = i == _scene_index
 		var pulse: float = _card_pulse.get("scene:%d" % i, 0.0)
 		_draw_card(r, selected, _focus_card(i, "scene"), pulse, 1.0)
 
-		var name_y: float = r.end.y + 26.0
-		var name_size: int = _fit_size(_scenes[i]["name"], card_w)
-		UITheme.draw_text(_canvas, Vector2(r.position.x, name_y), _scenes[i]["name"],
-						  name_size, UITheme.TEXT if selected else UITheme.TEXT_DIM)
-		if selected:
-			UITheme.draw_text(_canvas, r.position + r.size - Vector2(24, 22), "✓",
-							  UITheme.SIZE_VALUE, UITheme.ACCENT)
+		# The tick and the frame are drawn by the overlay, above the picture.
+		var name_y: float = r.end.y + 38.0
+		UITheme.draw_display(_canvas, Vector2(r.position.x, name_y),
+							 String(_scenes[i]["name"]), UITheme.SIZE_TITLE,
+							 UITheme.TEXT if selected else UITheme.TEXT_DIM,
+							 HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
+
+	var place: Dictionary = _scenes[_scene_index]
+	_draw_detail(rect, String(place["name"]), String(place["description"]), [])
 
 
 func _draw_weather(size: Vector2) -> void:
 	var rect: Rect2 = _content_rect(size)
 	_section_heading(rect.position - Vector2(0, 36), "What kind of day?",
 					 "Weather is not a filter - it changes the air and the ground.")
-	var gap: float = 16.0
-	var card_w: float = (rect.size.x - gap * 4.0) / 5.0
-	var thumb_h: float = minf(card_w * 0.62, 150.0)
-
 	for i in _weathers.size():
-		var r := Rect2(rect.position.x + float(i) * (card_w + gap),
-					   rect.position.y + 6.0, card_w, thumb_h)
+		var r: Rect2 = _picture_rect(rect, i, _weathers.size(), 9.0 / 16.0)
 		var selected: bool = i == _weather_index
 		var pulse: float = _card_pulse.get("weather:%d" % i, 0.0)
 		_draw_card(r, selected, _focus_card(i, "weather"), pulse, 1.0)
 
-		var name_y: float = r.end.y + 26.0
-		UITheme.draw_text(_canvas, Vector2(r.position.x, name_y), _weathers[i]["name"],
-						  UITheme.SIZE_VALUE,
-						  UITheme.TEXT if selected else UITheme.TEXT_DIM)
+		# The tick and the frame are drawn by the overlay, above the picture.
+		var name_y: float = r.end.y + 38.0
+		UITheme.draw_display(_canvas, Vector2(r.position.x, name_y),
+							 String(_weathers[i]["name"]), UITheme.SIZE_TITLE,
+							 UITheme.TEXT if selected else UITheme.TEXT_DIM,
+							 HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
 		var wind: String = "%.1f m/s wind" % _weathers[i]["wind_mps"]
-		UITheme.draw_text(_canvas, Vector2(r.position.x, name_y + 24.0), wind,
-						  UITheme.SIZE_LABEL, UITheme.ACCENT if selected else UITheme.TEXT_DIM)
-		if selected:
-			UITheme.draw_text(_canvas, r.position + r.size - Vector2(24, 22), "✓",
-							  UITheme.SIZE_VALUE, UITheme.ACCENT)
+		UITheme.draw_text(_canvas, Vector2(r.position.x, name_y + 30.0), wind,
+						  UITheme.SIZE_BODY,
+						  UITheme.ACCENT if selected else UITheme.TEXT_DIM,
+						  HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
+
+	# What the chosen day actually does to the air and the ground. The row of
+	# cards left the bottom half of the screen empty, and this is the half of
+	# the weather a pilot feels rather than sees.
+	var day: Dictionary = _weathers[_weather_index]
+	var gust: float = float(day["wind_mps"]) * float(day["gust"])
+	_draw_detail(rect, String(day["name"]), String(day["description"]), [
+		["wind", "%.1f m/s" % day["wind_mps"]],
+		["gusting to", "%.1f m/s" % (float(day["wind_mps"]) + gust)],
+		["turbulence", "%.1f m/s" % day["turbulence"]],
+		["ground grip", "%.0f %%" % (float(day["ground_grip"]) * 100.0)],
+		["thermals", "%.0f %% of a clear day" % (float(day["thermal_scale"]) * 100.0)],
+	])
 
 
 func _draw_review(size: Vector2) -> void:
@@ -1015,32 +1114,40 @@ func _draw_review(size: Vector2) -> void:
 					  UITheme.SIZE_LABEL, UITheme.TEXT_DIM)
 
 
+## Is THIS card under the pointer?
+##
+## It used to answer "is this kind of card the one this step shows", which is
+## true for every card on the step at once - so the hovered state was passed to
+## the drawing code as "all of them", and the drawing code, reasonably enough,
+## ignored it. Hover and selection have looked identical since.
 func _focus_card(index: int, kind: String) -> bool:
-	match _step:
-		STEP_AIRCRAFT: return kind == "aircraft"
-		STEP_LOCATION: return kind == "scene"
-		STEP_WEATHER: return kind == "weather"
-	return false
+	return _hover.get("kind", "") == kind and int(_hover.get("index", -1)) == index
 
 
 ## One card: a translucent panel, an accent edge when selected, a brightened
 ## edge on hover, and a left rule on the focus step's selection. The pulse is
 ## eased in _process, so the glow and the lift grow smoothly - a card that
 ## jumps is a button; one that breathes is a UI.
-func _draw_card(rect: Rect2, selected: bool, focused: bool, pulse: float,
+## Three states, and they have to be told apart without thinking: chosen, under
+## the pointer, and neither. Chosen is a filled accent panel with a heavy edge
+## and a bar down its side; hovered is a lighter panel with a bright hairline
+## and nothing else. Before this they were a 12 % tint and a 26 % tint.
+func _draw_card(rect: Rect2, selected: bool, hovered: bool, pulse: float,
 				lift: float) -> void:
 	var lifted := Rect2(rect.position - Vector2(0, pulse * lift), rect.size)
 	var fill: Color = UITheme.PANEL
 	var stroke: Color = UITheme.STROKE
 	if selected:
-		fill = Color(UITheme.ACCENT.r, UITheme.ACCENT.g, UITheme.ACCENT.b,
-					 0.12 + 0.14 * pulse)
+		fill = Color(UITheme.ACCENT.r * 0.42, UITheme.ACCENT.g * 0.46,
+					 UITheme.ACCENT.b * 0.50, 0.94)
 		stroke = UITheme.ACCENT
-	if pulse > 0.01:
-		UITheme.draw_glow(_canvas, lifted, UITheme.ACCENT, 10.0, int(1.0 + pulse * 2.0))
+		UITheme.draw_glow(_canvas, lifted, UITheme.ACCENT, 12.0, 3)
+	elif hovered:
+		fill = Color(0.13, 0.18, 0.23, 0.92)
+		stroke = Color(1, 1, 1, 0.55)
 	UITheme.draw_panel(_canvas, lifted, fill, stroke, 10.0)
 	if selected:
-		_canvas.draw_rect(Rect2(lifted.position, Vector2(4, lifted.size.y)),
+		_canvas.draw_rect(Rect2(lifted.position, Vector2(6, lifted.size.y)),
 						  UITheme.ACCENT, true)
 
 
@@ -1048,9 +1155,9 @@ func _draw_back() -> void:
 	UITheme.draw_panel(_canvas, _back_rect,
 			Color(1, 1, 1, 0.06) if _hover.get("action", "") == "back" else UITheme.PANEL,
 			UITheme.STROKE_STRONG, 10.0)
-	UITheme.draw_text(_canvas, _back_rect.position + Vector2(0, 34), "BACK",
-					  UITheme.SIZE_SECTION, UITheme.TEXT_DIM,
-					  HORIZONTAL_ALIGNMENT_CENTER, _back_rect.size.x)
+	UITheme.draw_display(_canvas, _back_rect.position + Vector2(0, 46), "BACK",
+						 UITheme.SIZE_TITLE, UITheme.TEXT_DIM,
+						 HORIZONTAL_ALIGNMENT_CENTER, _back_rect.size.x)
 
 
 func _draw_footer(size: Vector2) -> void:
@@ -1070,10 +1177,9 @@ func _draw_footer(size: Vector2) -> void:
 				Color(UITheme.ACCENT.r, UITheme.ACCENT.g, UITheme.ACCENT.b,
 					  0.92 if hovered else 0.78),
 				Color(1, 1, 1, 0.5 if hovered else 0.25), 12.0)
-		UITheme.draw_text_shadow(_canvas, r.position + Vector2(0, 38), "FLY",
-								 UITheme.SIZE_LARGE, Color(0.02, 0.06, 0.09, 1.0),
-								 Color(0, 0, 0, 0.4), HORIZONTAL_ALIGNMENT_CENTER,
-								 r.size.x)
+		UITheme.draw_display(_canvas, r.position + Vector2(0, 52), "FLY",
+							 UITheme.SIZE_HERO, Color(0.02, 0.06, 0.09, 1.0),
+							 HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
 		if _progress_active:
 			var bar := Rect2(r.position + Vector2(30, r.size.y - 10.0),
 							 Vector2(r.size.x - 60.0, 4.0))
@@ -1084,15 +1190,15 @@ func _draw_footer(size: Vector2) -> void:
 				Color(UITheme.ACCENT.r, UITheme.ACCENT.g, UITheme.ACCENT.b,
 					  0.22 if hovered else 0.14),
 				UITheme.ACCENT if hovered else UITheme.STROKE_STRONG, 12.0)
-		UITheme.draw_text(_canvas, r.position + Vector2(0, 34), "NEXT",
-						  UITheme.SIZE_SECTION, UITheme.ACCENT, HORIZONTAL_ALIGNMENT_CENTER,
-						  r.size.x)
+		UITheme.draw_display(_canvas, r.position + Vector2(0, 46), "NEXT",
+							 UITheme.SIZE_TITLE, UITheme.ACCENT,
+							 HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
 
 	# The corner hint, readable now.
 	UITheme.draw_text(_canvas, Vector2(0.0, size.y - 36.0),
 					  "arrows choose   enter next   backspace back   esc %s" %
 					  ("quit" if start_screen else "close"),
-					  UITheme.SIZE_LABEL, UITheme.TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER,
+					  UITheme.SIZE_BODY, UITheme.TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER,
 					  size.x)
 
 

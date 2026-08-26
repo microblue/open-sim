@@ -100,10 +100,10 @@ func _draw_hud() -> void:
 	_draw_identity(Vector2(UITheme.S5, UITheme.S5))
 	_draw_performance(Vector2(size.x - UITheme.S5, UITheme.S5))
 	_draw_speed(Vector2(UITheme.S5, size.y * 0.42))
-	_draw_altitude(Vector2(size.x - UITheme.S5 - 168.0, size.y * 0.42))
-	var strip: float = size.y - UITheme.S5 - 172.0
+	_draw_altitude(Vector2(size.x - UITheme.S5 - 240.0, size.y * 0.42))
+	var strip: float = size.y - UITheme.S5 - 236.0
 	_draw_transmitter(Vector2(UITheme.S5, strip))
-	_draw_power(Vector2(size.x - UITheme.S5 - 236.0, strip))
+	_draw_power(Vector2(size.x - UITheme.S5 - 320.0, strip))
 	# Lifted clear of the replay bar when one is up. The bar takes the bottom
 	# 118 pixels of the middle third, which is exactly where the attitude ball
 	# and the angle-of-attack readout live: in a replay the ball was sliced in
@@ -111,12 +111,12 @@ func _draw_hud() -> void:
 	var replay_open: bool = get_parent() != null \
 			and get_parent().has_node("ReplayBar")
 	_draw_attitude_block(Vector2(size.x * 0.5,
-			strip + 86.0 - (108.0 if replay_open else 0.0)))
+			strip + 112.0 - (140.0 if replay_open else 0.0)))
 	_draw_alerts(Vector2(size.x * 0.5, size.y * 0.13))
 	# Immediately left of the altimeter, aligned with it, the way a vario tape
 	# sits beside an altimeter on a panel. Centred on the screen's middle it
 	# drew straight through the height readout.
-	_draw_variometer(Vector2(size.x - UITheme.S5 - 168.0 - 34.0, size.y * 0.42 + 52.0))
+	_draw_variometer(Vector2(size.x - UITheme.S5 - 240.0 - 42.0, size.y * 0.42 + 84.0))
 	_draw_hints(Vector2(size.x * 0.5, size.y - UITheme.S4))
 
 	if _diagnostics:
@@ -127,9 +127,10 @@ func _draw_hud() -> void:
 
 ## Aircraft name and what it is doing. Quiet, top left, where a title goes.
 func _draw_identity(origin: Vector2) -> void:
-	UITheme.draw_label(_canvas, origin + Vector2(0, 10), "aircraft")
-	UITheme.draw_text(_canvas, origin + Vector2(0, 34), _sim.get_aircraft_name(),
-					  UITheme.SIZE_VALUE, UITheme.TEXT)
+	UITheme.draw_label(_canvas, origin + Vector2(0, 14), "aircraft",
+					   UITheme.TEXT_FAINT, 2.2, UITheme.SIZE_LABEL)
+	UITheme.draw_display(_canvas, origin + Vector2(0, 54), _sim.get_aircraft_name(),
+						 UITheme.SIZE_LARGE, UITheme.TEXT)
 
 	var state: String = "on ground"
 	var colour: Color = UITheme.TEXT_DIM
@@ -139,7 +140,8 @@ func _draw_identity(origin: Vector2) -> void:
 	elif not _sim.is_on_ground():
 		state = "airborne"
 		colour = UITheme.ACCENT
-	UITheme.draw_label(_canvas, origin + Vector2(0, 52), state, colour, 1.6)
+	UITheme.draw_label(_canvas, origin + Vector2(0, 82), state, colour, 2.4,
+					   UITheme.SIZE_SECTION)
 
 
 ## Frame and step rate. Dropped steps are the number that matters: they mean the
@@ -159,14 +161,17 @@ func _draw_performance(anchor: Vector2) -> void:
 
 ## Airspeed. The number a trainee should be flying by.
 func _draw_speed(origin: Vector2) -> void:
-	var rect := Rect2(origin, Vector2(168, 104))
+	var rect := Rect2(origin, Vector2(240, 168))
 	UITheme.draw_panel(_canvas, rect)
 
-	UITheme.draw_label(_canvas, origin + Vector2(UITheme.S4, 22), "airspeed")
-	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, 62),
-					  "%.1f" % _airspeed, UITheme.SIZE_LARGE, UITheme.TEXT)
-	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4 + 62, 62), "m/s",
-					  UITheme.SIZE_LABEL, UITheme.TEXT_DIM)
+	UITheme.draw_label(_canvas, origin + Vector2(UITheme.S4, 30), "airspeed",
+					   UITheme.TEXT_FAINT, 2.2, UITheme.SIZE_LABEL)
+	var speed_text: String = "%.1f" % _airspeed
+	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, 88),
+					  speed_text, UITheme.SIZE_HERO, UITheme.TEXT)
+	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4 + 10.0
+					  + UITheme.text_width(speed_text, UITheme.SIZE_HERO), 88),
+					  "m/s", UITheme.SIZE_BODY, UITheme.TEXT_DIM)
 
 	# Stall margin as a track: how much of the usable band is left below.
 	var stall_speed: float = 7.9
@@ -176,44 +181,49 @@ func _draw_speed(origin: Vector2) -> void:
 		colour = UITheme.WARN
 	if _airspeed < stall_speed:
 		colour = UITheme.DANGER
-	UITheme.draw_track(_canvas, Rect2(origin + Vector2(UITheme.S4, 78),
-									  Vector2(136, 3)), fraction, colour)
-	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, 96),
+	UITheme.draw_track(_canvas, Rect2(origin + Vector2(UITheme.S4, 106),
+									  Vector2(rect.size.x - UITheme.S4 * 2.0, 5)),
+					   fraction, colour)
+	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, 140),
 					  "%.0f km/h" % (_airspeed * 3.6),
-					  UITheme.SIZE_LABEL, UITheme.TEXT_FAINT)
+					  UITheme.SIZE_BODY, UITheme.TEXT_FAINT)
 
 
 func _draw_altitude(origin: Vector2) -> void:
-	var rect := Rect2(origin, Vector2(168, 104))
+	var rect := Rect2(origin, Vector2(240, 168))
 	UITheme.draw_panel(_canvas, rect)
 
-	UITheme.draw_label(_canvas, origin + Vector2(UITheme.S4, 22), "height")
-	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, 62),
-					  "%.0f" % maxf(_altitude, 0.0), UITheme.SIZE_LARGE, UITheme.TEXT)
-	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4 + 46, 62), "m",
-					  UITheme.SIZE_LABEL, UITheme.TEXT_DIM)
+	UITheme.draw_label(_canvas, origin + Vector2(UITheme.S4, 30), "height",
+					   UITheme.TEXT_FAINT, 2.2, UITheme.SIZE_LABEL)
+	var height_text: String = "%.0f" % maxf(_altitude, 0.0)
+	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, 88),
+					  height_text, UITheme.SIZE_HERO, UITheme.TEXT)
+	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4 + 10.0
+					  + UITheme.text_width(height_text, UITheme.SIZE_HERO), 88),
+					  "m", UITheme.SIZE_BODY, UITheme.TEXT_DIM)
 
 	var climbing: bool = _climb > 0.15
 	var sinking: bool = _climb < -0.15
 	var arrow: String = "^" if climbing else ("v" if sinking else "-")
 	var colour: Color = UITheme.GOOD if climbing else \
 		(UITheme.WARN if _climb < -2.5 else UITheme.TEXT_DIM)
-	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, 96),
+	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, 140),
 					  "%s %+.1f m/s" % [arrow, _climb],
-					  UITheme.SIZE_LABEL, colour)
+					  UITheme.SIZE_BODY, colour)
 
 
 ## The transmitter, mirrored. Two gates at gimbal proportions, so a glance at
 ## the screen answers the same question as a glance at the pilot's thumbs.
 func _draw_transmitter(origin: Vector2) -> void:
-	var rect := Rect2(origin, Vector2(266, 172))
+	var rect := Rect2(origin, Vector2(348, 236))
 	UITheme.draw_panel(_canvas, rect)
 
 	var connected: bool = _input != null and _input.is_connected()
-	UITheme.draw_label(_canvas, origin + Vector2(UITheme.S4, 22), "transmitter")
+	UITheme.draw_label(_canvas, origin + Vector2(UITheme.S4, 30), "transmitter",
+					   UITheme.TEXT_FAINT, 2.2, UITheme.SIZE_LABEL)
 	var name_text: String = _input.get_device_name() if connected else "keyboard"
-	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, 40),
-					  name_text.substr(0, 30), UITheme.SIZE_LABEL,
+	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, 58),
+					  name_text.substr(0, 30), UITheme.SIZE_BODY,
 					  UITheme.TEXT_DIM if connected else UITheme.WARN)
 
 	var channels: PackedFloat64Array = _input.get_channels() if _input != null \
@@ -223,9 +233,9 @@ func _draw_transmitter(origin: Vector2) -> void:
 	var throttle: float = channels[2]
 	var rudder: float = channels[3]
 
-	var gate := Vector2(96, 96)
-	var left_origin: Vector2 = origin + Vector2(UITheme.S4, 54)
-	var right_origin: Vector2 = origin + Vector2(UITheme.S4 + 106, 54)
+	var gate := Vector2(132, 132)
+	var left_origin: Vector2 = origin + Vector2(UITheme.S4, 74)
+	var right_origin: Vector2 = origin + Vector2(UITheme.S4 + 148, 74)
 
 	if mode_two:
 		# Left gimbal: throttle up, rudder across. Throttle is unipolar, so it
@@ -233,52 +243,58 @@ func _draw_transmitter(origin: Vector2) -> void:
 		UITheme.draw_stick_gate(_canvas, Rect2(left_origin, gate),
 								rudder, throttle * 2.0 - 1.0)
 		UITheme.draw_stick_gate(_canvas, Rect2(right_origin, gate), aileron, elevator)
-		UITheme.draw_label(_canvas, left_origin + Vector2(0, 112), "thr / rud")
-		UITheme.draw_label(_canvas, right_origin + Vector2(0, 112), "ele / ail")
+		UITheme.draw_label(_canvas, left_origin + Vector2(0, 154), "thr / rud", UITheme.TEXT_FAINT, 2.2, UITheme.SIZE_LABEL)
+		UITheme.draw_label(_canvas, right_origin + Vector2(0, 154), "ele / ail", UITheme.TEXT_FAINT, 2.2, UITheme.SIZE_LABEL)
 	else:
 		UITheme.draw_stick_gate(_canvas, Rect2(left_origin, gate),
 								rudder, elevator)
 		UITheme.draw_stick_gate(_canvas, Rect2(right_origin, gate),
 								aileron, throttle * 2.0 - 1.0)
-		UITheme.draw_label(_canvas, left_origin + Vector2(0, 112), "ele / rud")
-		UITheme.draw_label(_canvas, right_origin + Vector2(0, 112), "thr / ail")
+		UITheme.draw_label(_canvas, left_origin + Vector2(0, 154), "ele / rud", UITheme.TEXT_FAINT, 2.2, UITheme.SIZE_LABEL)
+		UITheme.draw_label(_canvas, right_origin + Vector2(0, 154), "thr / ail", UITheme.TEXT_FAINT, 2.2, UITheme.SIZE_LABEL)
 
 	if _input != null and _input.raw_mode:
-		UITheme.draw_label(_canvas, origin + Vector2(228, 22), "raw", UITheme.ACCENT)
+		UITheme.draw_label(_canvas, origin + Vector2(292, 30), "raw", UITheme.ACCENT,
+						   2.2, UITheme.SIZE_LABEL)
 
 
 ## Power, as one arc plus two supporting figures. The battery is the number a
 ## pilot has to plan around; a LiPo holds up and then falls off a cliff.
 func _draw_power(origin: Vector2) -> void:
-	var rect := Rect2(origin, Vector2(236, 172))
+	var rect := Rect2(origin, Vector2(320, 236))
 	UITheme.draw_panel(_canvas, rect)
-	UITheme.draw_label(_canvas, origin + Vector2(UITheme.S4, 22), "power")
+	UITheme.draw_label(_canvas, origin + Vector2(UITheme.S4, 30), "power",
+					   UITheme.TEXT_FAINT, 2.2, UITheme.SIZE_LABEL)
 
-	var centre: Vector2 = origin + Vector2(76, 96)
-	UITheme.draw_arc_gauge(_canvas, centre, 42.0, 260.0, _throttle, UITheme.ACCENT, 4.0)
+	var centre: Vector2 = origin + Vector2(104, 132)
+	UITheme.draw_arc_gauge(_canvas, centre, 60.0, 260.0, _throttle, UITheme.ACCENT, 6.0)
 	var throttle_text: String = "%d" % roundi(_throttle * 100.0)
 	UITheme.draw_text(_canvas,
-		centre + Vector2(-UITheme.text_width(throttle_text, UITheme.SIZE_LARGE) * 0.5, 8),
-		throttle_text, UITheme.SIZE_LARGE, UITheme.TEXT)
-	UITheme.draw_label(_canvas, centre + Vector2(-8, 26), "%")
+		centre + Vector2(-UITheme.text_width(throttle_text, UITheme.SIZE_HERO) * 0.5, 12),
+		throttle_text, UITheme.SIZE_HERO, UITheme.TEXT)
+	UITheme.draw_label(_canvas, centre + Vector2(-10, 38), "%", UITheme.TEXT_FAINT,
+					   2.2, UITheme.SIZE_LABEL)
 
 	var charge: float = _sim.get_battery_charge()
 	var charge_colour: Color = UITheme.GOOD
 	if charge < 0.35: charge_colour = UITheme.WARN
 	if charge < 0.15: charge_colour = UITheme.DANGER
 
-	var column: Vector2 = origin + Vector2(140, 54)
-	UITheme.draw_label(_canvas, column, "battery")
-	UITheme.draw_track(_canvas, Rect2(column + Vector2(0, 8), Vector2(78, 4)),
+	var column: Vector2 = origin + Vector2(192, 72)
+	UITheme.draw_label(_canvas, column, "battery", UITheme.TEXT_FAINT, 2.2,
+					   UITheme.SIZE_LABEL)
+	UITheme.draw_track(_canvas, Rect2(column + Vector2(0, 10), Vector2(104, 6)),
 					   charge, charge_colour)
-	UITheme.draw_text(_canvas, column + Vector2(0, 30), "%d%%" % roundi(charge * 100.0),
+	UITheme.draw_text(_canvas, column + Vector2(0, 42), "%d%%" % roundi(charge * 100.0),
 					  UITheme.SIZE_VALUE, charge_colour)
 
-	UITheme.draw_label(_canvas, column + Vector2(0, 54), "rpm")
-	UITheme.draw_text(_canvas, column + Vector2(0, 74), "%d" % roundi(_sim.get_rpm()),
+	UITheme.draw_label(_canvas, column + Vector2(0, 76), "rpm", UITheme.TEXT_FAINT,
+					   2.2, UITheme.SIZE_LABEL)
+	UITheme.draw_text(_canvas, column + Vector2(0, 102), "%d" % roundi(_sim.get_rpm()),
 					  UITheme.SIZE_BODY, UITheme.TEXT_DIM)
-	UITheme.draw_label(_canvas, column + Vector2(0, 92), "thrust")
-	UITheme.draw_text(_canvas, column + Vector2(0, 112), "%.1f N" % _sim.get_thrust_n(),
+	UITheme.draw_label(_canvas, column + Vector2(0, 130), "thrust", UITheme.TEXT_FAINT,
+					   2.2, UITheme.SIZE_LABEL)
+	UITheme.draw_text(_canvas, column + Vector2(0, 156), "%.1f N" % _sim.get_thrust_n(),
 					  UITheme.SIZE_BODY, UITheme.TEXT_DIM)
 
 
@@ -286,31 +302,35 @@ func _draw_power(origin: Vector2) -> void:
 ## because when it matters it matters more than anything else on the screen.
 func _draw_attitude_block(centre: Vector2) -> void:
 	var attitude: Vector3 = _sim.get_attitude_degrees()
-	UITheme.draw_attitude(_canvas, centre, 46.0, attitude.x, attitude.y)
+	# Twice the radius it was. It is the one instrument on the screen that is
+	# read as a shape rather than as a number, and a 46-pixel disc across a
+	# 1080-line frame is a badge, not an instrument.
+	UITheme.draw_attitude(_canvas, centre, 92.0, attitude.x, attitude.y)
 
 	var flying: bool = not _sim.is_on_ground() or _sim.get_airspeed_mps() > 6.0
 	var stall_colour: Color = UITheme.ACCENT
 	if flying and _stall > 0.06: stall_colour = UITheme.WARN
 	if flying and _stall > 0.30: stall_colour = UITheme.DANGER
 
-	var left: Vector2 = centre + Vector2(-206, -10)
+	var left: Vector2 = centre + Vector2(-330, -10)
 	UITheme.draw_label(_canvas, left, "angle of attack",
-					   UITheme.TEXT_FAINT, 1.8)
+					   UITheme.TEXT_FAINT, 2.2, UITheme.SIZE_LABEL)
 	# Parked in a breeze the relative wind comes from behind the wing, so the
 	# angle of attack is near 180 degrees and technically correct but useless.
-	UITheme.draw_text(_canvas, left + Vector2(0, 22),
+	UITheme.draw_text(_canvas, left + Vector2(0, 34),
 					  ("%+.1f deg" % _alpha) if flying else "--",
-					  UITheme.SIZE_VALUE, stall_colour)
+					  UITheme.SIZE_LARGE, stall_colour)
 
-	var right: Vector2 = centre + Vector2(78, -10)
+	var right: Vector2 = centre + Vector2(126, -10)
 	# Called "wing separated" for three months, which is literally what the
 	# flow is doing and exactly what a player reads as "the wing has come
 	# off". It is the stall indicator; it says so now.
-	UITheme.draw_label(_canvas, right, "stalled", UITheme.TEXT_FAINT, 1.8)
-	UITheme.draw_text(_canvas, right + Vector2(0, 22),
+	UITheme.draw_label(_canvas, right, "stalled", UITheme.TEXT_FAINT, 2.2,
+					   UITheme.SIZE_LABEL)
+	UITheme.draw_text(_canvas, right + Vector2(0, 34),
 					  ("%d%%" % roundi(_stall * 100.0)) if flying else "--",
-					  UITheme.SIZE_VALUE, stall_colour)
-	UITheme.draw_track(_canvas, Rect2(right + Vector2(0, 30), Vector2(96, 3)),
+					  UITheme.SIZE_LARGE, stall_colour)
+	UITheme.draw_track(_canvas, Rect2(right + Vector2(0, 46), Vector2(150, 5)),
 					   _stall if flying else 0.0, stall_colour)
 
 
@@ -432,21 +452,27 @@ func _draw_alerts(centre: Vector2) -> void:
 	var pulse: float = 0.72 + 0.28 * sin(_alert_phase * 4.0)
 	# Measured with the letterspacing the banner is actually drawn with; using
 	# the unspaced width left the last words hanging outside the panel.
-	var width: float = UITheme.label_width(text, 1.8, UITheme.SIZE_BODY) + UITheme.S5 * 2.0
-	var rect := Rect2(centre - Vector2(width * 0.5, 18), Vector2(width, 36))
+	var width: float = UITheme.label_width(text, 2.2, UITheme.SIZE_VALUE) \
+			+ UITheme.S5 * 2.0
+	var rect := Rect2(centre - Vector2(width * 0.5, 26), Vector2(width, 52))
+	UITheme.draw_glow(_canvas, rect, colour, 10.0, 2)
 	UITheme.draw_panel(_canvas, rect, Color(colour.r * 0.22, colour.g * 0.14,
-										   colour.b * 0.14, 0.88),
-					   Color(colour.r, colour.g, colour.b, 0.45 * pulse), 6.0)
-	UITheme.draw_label(_canvas, rect.position + Vector2(UITheme.S5, 23), text,
-					   Color(colour.r, colour.g, colour.b, pulse), 1.8, UITheme.SIZE_BODY)
+										   colour.b * 0.14, 0.92),
+					   Color(colour.r, colour.g, colour.b, 0.55 * pulse), 8.0)
+	UITheme.draw_label(_canvas, rect.position + Vector2(UITheme.S5, 35), text,
+					   Color(colour.r, colour.g, colour.b, pulse), 2.2,
+					   UITheme.SIZE_VALUE)
 
 
 func _draw_hints(centre: Vector2) -> void:
 	var text: String = "F1 hud    F2 sections    F3 transmitter    F4 tuning    " \
-		+ "F5 reload    R reset    1/2/3 camera    Z zoom"
-	var width: float = UITheme.text_width(text, UITheme.SIZE_MICRO)
+		+ "F5 reload    R reset    1/2/3 camera    Z zoom    M menu    " \
+		+ "H hangar    L location"
+	# At SIZE_MICRO in TEXT_FAINT this was a grey smear along the bottom of
+	# the frame. It is the only list of what the keys do.
+	var width: float = UITheme.text_width(text, UITheme.SIZE_BODY)
 	UITheme.draw_text(_canvas, centre + Vector2(-width * 0.5, 0), text,
-					  UITheme.SIZE_MICRO, UITheme.TEXT_FAINT)
+					  UITheme.SIZE_BODY, UITheme.TEXT_DIM)
 
 
 ## The per-section drawer. This is the wall of numbers, and it is behind a key

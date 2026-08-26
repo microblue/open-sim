@@ -133,6 +133,16 @@ public:
      *  The keys fly it badly, on purpose, and say so. */
     bool is_using_keyboard() const;
 
+    /** Turns the keyboard fallback off while a menu owns the keyboard.
+     *
+     *  The fallback reads the keys directly through Input rather than through
+     *  the event system, so nothing a screen does with an event can stop it:
+     *  arrowing down a list of aeroplanes was also feeding full up-elevator to
+     *  the model parked on the strip, and W - which opens the world screen -
+     *  was opening the throttle at the same time. */
+    void set_keyboard_enabled(bool enabled);
+    bool is_keyboard_enabled() const;
+
     /** The mapper, for C++ callers such as RCSimulationNode. */
     const rc::ChannelValues& Channels() const { return CurrentChannels; }
     const rc::ChannelMapper& Mapper() const { return Mapper_; }
@@ -172,6 +182,7 @@ private:
     double KeyElevator = 0.0;
     double KeyAileron  = 0.0;
     double KeyRudder   = 0.0;
+    bool   KeyboardAllowed = true;
 };
 
 } // namespace openrc

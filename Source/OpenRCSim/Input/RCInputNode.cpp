@@ -63,8 +63,25 @@ bool RCInputNode::is_using_keyboard() const
     // so a caller in the same frame the node was created - the in-engine tests,
     // and the HUD on its first draw - was told the controls were dead when they
     // were not.
-    return !is_connected();
+    return KeyboardAllowed && !is_connected();
 }
+
+void RCInputNode::set_keyboard_enabled(bool enabled)
+{
+    KeyboardAllowed = enabled;
+    if (!enabled)
+    {
+        // Sticks centred and the motor stopped the instant a menu takes the
+        // keyboard, not once the player next presses something.
+        KeyThrottle = 0.0;
+        KeyElevator = 0.0;
+        KeyAileron  = 0.0;
+        KeyRudder   = 0.0;
+        CurrentChannels = rc::ChannelValues::Neutral();
+    }
+}
+
+bool RCInputNode::is_keyboard_enabled() const { return KeyboardAllowed; }
 
 void RCInputNode::ApplyKeyboard(double deltaSeconds)
 {
@@ -485,6 +502,9 @@ void RCInputNode::_bind_methods()
 {
     ClassDB::bind_method(D_METHOD("is_connected"), &RCInputNode::is_connected);
     ClassDB::bind_method(D_METHOD("is_using_keyboard"), &RCInputNode::is_using_keyboard);
+    ClassDB::bind_method(D_METHOD("set_keyboard_enabled", "enabled"),
+                         &RCInputNode::set_keyboard_enabled);
+    ClassDB::bind_method(D_METHOD("is_keyboard_enabled"), &RCInputNode::is_keyboard_enabled);
     ClassDB::bind_method(D_METHOD("is_throttle_armed"), &RCInputNode::is_throttle_armed);
     ClassDB::bind_method(D_METHOD("get_profile_problem"), &RCInputNode::get_profile_problem);
     ClassDB::bind_method(D_METHOD("resolve_data_path", "relative"), &RCInputNode::resolve_data_path);

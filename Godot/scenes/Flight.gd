@@ -108,7 +108,7 @@ OpenRC Simulator
   R           reset
   F1          hide the telemetry overlay      F2  per-section detail
   F4          tuning panel (wind, weather, physics rate)
-  M           menu       H   hangar (aircraft)   W  world (place, weather)
+  M           menu       H   hangar (aircraft)   L  location (place, weather)
   Tab         replay the last two minutes
   4 5 6 7 8   dead stick / jammed aileron / elevator linkage / radio loss / brownout
   9           clear the failure
@@ -120,6 +120,12 @@ OpenRC Simulator
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	# While a screen is up it owns the keyboard. Every one of these was live
+	# behind the menu: R reset the aeroplane you were still choosing, the
+	# number row induced failures at the briefing, and W - the world screen -
+	# is also the throttle.
+	if _modal_open():
 		return
 
 	match event.keycode:
@@ -145,7 +151,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			_open_menu(false)
 		KEY_H:
 			_open_hangar()
-		KEY_W:
+		KEY_L:
+			# L for location. It was W, which is also the keyboard throttle:
+			# opening the throttle opened the world screen.
 			_open_world_screen()
 		KEY_TAB:
 			_toggle_replay()
@@ -188,7 +196,9 @@ func _open_world_screen() -> void:
 		return
 	var screen := WorldScreenScript.new()
 	screen.name = "WorldScreen"
+	screen.tree_exited.connect(_refresh_hud_visibility, CONNECT_DEFERRED)
 	add_child(screen)
+	_refresh_hud_visibility()
 	screen.select(director.scene_id, director.weather_id)
 	screen.chosen.connect(func(scene_id: String, weather_id: String) -> void:
 		director.apply_scene(scene_id)
@@ -207,7 +217,9 @@ func _open_hangar() -> void:
 	hangar.simulation_path = NodePath("../Aircraft")
 	hangar.chosen.connect(_fly_aircraft)
 	hangar.cancelled.connect(func() -> void: hangar.queue_free())
+	hangar.tree_exited.connect(_refresh_hud_visibility, CONNECT_DEFERRED)
 	add_child(hangar)
+	_refresh_hud_visibility()
 
 
 func _fly_aircraft(stem: String) -> void:
@@ -251,18 +263,34 @@ func _open_menu(start: bool = false) -> void:
 	_refresh_hud_visibility()
 
 
-## The HUD is visible only when no modal screen is. Asked as a question rather
-## than set as a flag: the menu can hand straight over to the wizard, and a
-## pair of show/hide calls would race - the menu leaving the tree after the
-## wizard has entered it, and turning the HUD back on underneath.
+## Is a screen that owns the whole frame - and the keyboard - up?
+##
+## The tuning panel is deliberately not in this list: it slides in beside the
+## HUD to tune the aeroplane in flight, and the numbers it is tuning against
+## are the ones the HUD is showing.
+func _modal_open() -> bool:
+	return has_node("MainMenu") or has_node("ControllerWizard") \
+			or has_node("Hangar") or has_node("WorldScreen") \
+			or has_node("LoadingScreen")
+
+
+## Hands the frame and the keyboard to whichever screen is up, or back to the
+## sortie when none is. Asked as a question rather than set as a flag: the menu
+## can hand straight over to the wizard, and a pair of enable/disable calls
+## would race - the menu leaving the tree after the wizard has entered it, and
+## turning the aeroplane's controls back on underneath.
 func _refresh_hud_visibility() -> void:
+	var modal: bool = _modal_open()
 	var hud: Node = get_node_or_null("FlightHUD")
-	if hud == null:
-		return
-	# The tuning panel is deliberately not in this list: it slides in beside
-	# the HUD to tune the aeroplane in flight, and the numbers it is tuning
-	# against are the ones the HUD is showing.
-	hud.visible = not (has_node("MainMenu") or has_node("ControllerWizard"))
+	if hud != null:
+		hud.visible = not modal
+	# The keyboard fallback reads the keys directly, so nothing a screen does
+	# with an event can stop it. It has to be told.
+	if transmitter != null:
+		transmitter.set_keyboard_enabled(not modal)
+	# 1/2/3, Z and right-drag belong to the sortie, not to a briefing.
+	if camera_rig != null:
+		camera_rig.set_process_unhandled_input(not modal)
 
 
 ## The menu's Fly button: one action, the whole sortie.
@@ -287,7 +315,9 @@ func _fly_from_menu(stem: String, scene_id: String, weather_id: String) -> void:
 		_display_name(stem),
 		ScenePresetsLib.by_id(scene_id).get("name", scene_id),
 		WeatherLib.by_id(weather_id).get("name", weather_id)]
+	loader.tree_exited.connect(_refresh_hud_visibility, CONNECT_DEFERRED)
 	add_child(loader)
+	_refresh_hud_visibility()
 	await get_tree().process_frame
 
 	await _build_world(loader, stem, scene_id, weather_id)

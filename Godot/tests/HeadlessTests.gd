@@ -184,8 +184,19 @@ func _test_input_without_a_device() -> void:
 	# With nothing plugged in the keyboard flies the model. Without this a
 	# player who owns no radio has four dead controls and an aeroplane that
 	# falls out of the sky, and the only thing the HUD offers them is a setup
-	# wizard for the device they have not got.
-	_check(_input.is_using_keyboard(), "the keyboard takes over with no device")
+	# wizard for the device they have not got. And while a menu is up it has
+	# to stop, or arrowing down a list of aeroplanes feeds full up-elevator to
+	# the model parked on the strip.
+	# Both directions, because this suite runs on machines with a transmitter
+	# plugged in and on machines without one. The first version asserted the
+	# no-device case unconditionally and failed the moment a radio was
+	# connected - which is the case it is meant to protect.
+	_check(_input.is_using_keyboard() != _input.is_connected(),
+		"the keyboard takes over exactly when no device is reporting")
+	_input.set_keyboard_enabled(false)
+	_check(not _input.is_using_keyboard(),
+		"a menu can take the keyboard away from the model")
+	_input.set_keyboard_enabled(true)
 	# It takes over the CONTROLS, not the neutral position: no key held still
 	# means sticks centred and the motor stopped, which is what the loop above
 	# has just measured.

@@ -24,33 +24,48 @@ func _initialize() -> void:
 
 	_plan = [
 		{"id": "01_first_launch", "settle": 60, "do": func() -> void: pass},
-		{"id": "02_hangar", "settle": 40, "do": func() -> void: _scene.call("_open_hangar")},
-		{"id": "03_hangar_glider", "settle": 30, "do": func() -> void:
+		# Every step of the briefing, because each one is a screen a player
+		# looks at and the walkthrough only ever showed the first.
+		{"id": "02_location", "settle": 30, "do": func() -> void:
+			_menu().call("_set_step", 1)},
+		{"id": "03_weather", "settle": 30, "do": func() -> void:
+			_menu().call("_set_step", 2)},
+		{"id": "04_review", "settle": 30, "do": func() -> void:
+			_menu().call("_set_step", 3)},
+		{"id": "05_hangar", "settle": 40, "do": func() -> void:
+			_menu().call("_set_step", 0)
+			_scene.call("_open_hangar")},
+		{"id": "06_hangar_glider", "settle": 30, "do": func() -> void:
 			var h: Node = _scene.get_node_or_null("Hangar")
 			if h: h.set("_index", 0); h.get_node("Canvas").queue_redraw()},
-		{"id": "04_world", "settle": 30, "do": func() -> void:
+		{"id": "07_world", "settle": 30, "do": func() -> void:
 			var h: Node = _scene.get_node_or_null("Hangar")
 			if h: h.free()
 			_scene.call("_open_world_screen")},
 		# The real path: the menu's own Fly button, which is what builds the
 		# world. Captured part-way through, because a loading screen nobody
 		# has looked at is a loading screen nobody has checked.
-		{"id": "05_loading", "settle": 30, "do": func() -> void:
+		{"id": "08_loading", "settle": 30, "do": func() -> void:
 			var w: Node = _scene.get_node_or_null("WorldScreen")
 			if w: w.free()
 			var menu: Node = _scene.get_node_or_null("MainMenu")
 			if menu != null:
 				menu.call("_begin_fly")},
-		{"id": "06_flying_pilot", "settle": 240, "do": func() -> void: _fly()},
-		{"id": "07_flying_chase", "settle": 30, "do": func() -> void: _rig.set("mode", 1)},
-		{"id": "08_flying_fpv", "settle": 30, "do": func() -> void: _rig.set("mode", 2)},
-		{"id": "09_failure", "settle": 40, "do": func() -> void:
+		{"id": "09_flying_pilot", "settle": 240, "do": func() -> void: _fly()},
+		{"id": "10_flying_chase", "settle": 30, "do": func() -> void: _rig.set("mode", 1)},
+		{"id": "11_flying_fpv", "settle": 30, "do": func() -> void: _rig.set("mode", 2)},
+		{"id": "12_failure", "settle": 40, "do": func() -> void:
 			_rig.set("mode", 1)
 			_sim.induce_failure(1, 0)},
-		{"id": "10_replay", "settle": 40, "do": func() -> void:
+		{"id": "13_replay", "settle": 40, "do": func() -> void:
 			_sim.clear_failures()
 			_scene.call("_toggle_replay")},
 	]
+
+
+## The menu, which every briefing step is driven through.
+func _menu() -> Node:
+	return _scene.get_node_or_null("MainMenu")
 
 
 func _fly() -> void:

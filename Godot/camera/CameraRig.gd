@@ -15,7 +15,16 @@ extends Node3D
 enum Mode { PILOT, CHASE, FPV }
 
 const ZOOM_STEPS: Array[float] = [1.0, 2.0, 4.0]
-const BASE_FOV: float = 50.0
+## 38 degrees, not 50.
+##
+## The pilot's viewpoint does not move - apparent size is the only distance cue
+## a standing pilot has, and that is worth defending. But the FIELD is a free
+## choice, and 50 degrees is a wide-angle lens: it drew a 1.5 m trainer at
+## eighty metres about twelve pixels across, which is smaller than it looks to
+## a person standing on the strip, because a person's attention is foveal.
+## Narrowing the field makes the model bigger without moving the eye, so the
+## cue still scales correctly with distance.
+const BASE_FOV: float = 38.0
 
 ## How far off-centre the aircraft may drift before the camera starts to follow.
 const TRACKING_DEADZONE_DEGREES: float = 7.0
@@ -171,7 +180,10 @@ func _update_pilot(delta: float) -> void:
 func _update_chase(delta: float) -> void:
 	var behind: Vector3 = _sim.global_transform.basis.z.normalized()
 	var up: Vector3 = _sim.global_transform.basis.y.normalized()
-	var desired: Vector3 = _sim.global_position + behind * 5.5 + up * 1.4 + Vector3.UP * 0.6
+	# Closer in than it was - 5.5 m behind a 1.5 m aeroplane left it a third of
+	# the frame tall on a wide field and much less on a narrow one.
+	var desired: Vector3 = _sim.global_position + behind * 3.4 + up * 0.9 \
+			+ Vector3.UP * 0.4
 
 	global_position = global_position.lerp(desired, clampf(6.0 * delta, 0.0, 1.0))
 	_keep_above_ground()
