@@ -214,6 +214,56 @@ func _test_input_without_a_device() -> void:
 ## arrives at whatever scale its author left it, on this one about eight times
 ## too big, with a stray vertex in the undercarriage eleven hundred units out
 ## for good measure. So the fit is measured, here, against the definition.
+## The roster is offered gentlest-first, and the aeroplane offered FIRST is one
+## a beginner can actually learn on.
+##
+## The order of a list is a recommendation whether or not it was meant as one.
+## Alphabetical order offered a short-coupled tail-dragging biplane at the top
+## of a training simulator, and this is the check that stops that coming back
+## the next time an aeroplane is added.
+func _test_the_roster_is_offered_gentlest_first() -> void:
+	print("  the order the roster is offered in")
+	var ranking := load("res://ui/AircraftRanking.gd")
+	var cards: Array = []
+	var restore: String = _sim.aircraft_definition
+	for stem in _sim.list_aircraft():
+		_sim.aircraft_definition = "Data/Aircraft/%s.json" % stem
+		if not _sim.reload_aircraft():
+			continue
+		cards.append({
+			"name": _sim.get_aircraft_name(),
+			"loading": _sim.get_wing_loading_pa(),
+			"pw": _sim.get_power_to_weight_w_per_kg(),
+			"performance": _sim.get_performance(),
+			"hand_launched": _sim.is_hand_launched(),
+			"nose_wheel": _sim.has_steerable_nose_wheel(),
+		})
+	_sim.aircraft_definition = restore
+	_sim.reload_aircraft()
+
+	_check(cards.size() >= 3, "there is a roster to order")
+	if cards.size() < 3:
+		return
+	ranking.rank(cards)
+	for card in cards:
+		print("       %-14s %-16s %.3f" % [card["name"],
+			  ranking.word(float(card["difficulty"])), card["learn_order"]])
+
+	for i in range(1, cards.size()):
+		_check(float(cards[i]["learn_order"]) >= float(cards[i - 1]["learn_order"]),
+			"the roster is in order at position %d" % i)
+
+	# The one offered first has to be flyable by someone who has never flown:
+	# it must have wheels, and it must not be the twitchiest thing there.
+	var first: Dictionary = cards[0]
+	_check(not bool(first["hand_launched"]),
+		"the aeroplane offered first can take off from the ground")
+	_check(bool(first["nose_wheel"]),
+		"the aeroplane offered first has a nose wheel, not a tailwheel")
+	_check(float(first["difficulty"]) < 0.50,
+		"the aeroplane offered first is a gentle one")
+
+
 func _test_airframe_is_fitted_to_the_definition() -> void:
 	print("  downloaded airframes")
 	var model: Node = ModelScript.new()
@@ -598,6 +648,7 @@ func _finish_tree() -> void:
 	_test_replay()
 	# Last: building an aeroplane out of a 3.5 MB glb costs frames, and the
 	# section above asserts that no physics step was dropped.
+	_test_the_roster_is_offered_gentlest_first()
 	_test_airframe_is_fitted_to_the_definition()
 
 	print("\n%d checks, %d failed" % [_checks, _failures])

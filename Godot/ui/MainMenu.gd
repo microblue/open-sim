@@ -23,6 +23,7 @@ const ScenePresetsLib := preload("res://world/ScenePresets.gd")
 const WeatherLib := preload("res://world/Weather.gd")
 const SoundBank := preload("res://audio/SoundBank.gd")
 const StageScript := preload("res://ui/AircraftStage.gd")
+const Ranking := preload("res://ui/AircraftRanking.gd")
 
 signal fly_requested(aircraft_stem: String, scene_id: String, weather_id: String)
 signal wizard_requested
@@ -214,9 +215,28 @@ func _gather() -> void:
 			# Thrown, not rolled. A player handed a glider and told to take off
 			# will sit at the end of the strip with the throttle open.
 			"hand_launched": _sim.is_hand_launched(),
+			# A tail-dragger has no steerable wheel at the front, and will try
+			# to swap ends on every take-off roll.
+			"nose_wheel": _sim.has_steerable_nose_wheel(),
 		})
 	_sim.aircraft_definition = restore
 	_sim.reload_aircraft()
+
+	# EASIEST FIRST, and start there.
+	#
+	# The roster arrived in whatever order the directory listing gave, which is
+	# alphabetical - so a beginner opening a TRAINING simulator was offered a
+	# short-coupled tail-dragging biplane at the top of the list and had to
+	# scroll past it to find the trainer. The first thing in a list is a
+	# recommendation whether or not it was meant as one.
+	Ranking.rank(_aircraft)
+	_aircraft_index = 0
+	if OS.has_environment("RC_MENU_DEBUG"):
+		for card in _aircraft:
+			print("   %-14s handling %.3f  order %.3f  loading %5.1f  roll %6.1f"
+				  % [card["name"], card["difficulty"], card["learn_order"],
+					 card["loading"],
+					 float(card.get("performance", {}).get("roll_rate_deg_per_s", -1.0))])
 
 
 # ------------------------------------------------------------- interaction --
@@ -566,7 +586,7 @@ func _layout_review(size: Vector2) -> void:
 				_thumbs.append(thumb1)
 		elif i == 2:
 			var thumb2: TextureRect = _make_thumb("weather", _weathers[_weather_index]["id"],
-					Vector2(card_w - 40.0, minf((card_w - 40.0) * 0.62, 120.0)))
+					Vector2(card_w - 40.0, (card_w - 40.0) * 9.0 / 16.0))
 			if thumb2 != null:
 				thumb2.position = r.position + Vector2(20, 52)
 				_canvas.add_child(thumb2)
@@ -841,7 +861,8 @@ func _section_heading(pos: Vector2, text: String, sub: String) -> void:
 func _draw_aircraft(size: Vector2) -> void:
 	var rect: Rect2 = _content_rect(size)
 	_section_heading(rect.position - Vector2(0, 36), "Choose your aeroplane",
-					 "Four machines, each with its own character - pick one and see the brief.")
+					 "%d machines, easiest first. Each one is measured, not described."
+					 % _aircraft.size())
 	# The roster down the left. The selected card was a faint tint and a thin
 	# rule, which at a glance said nothing: four cards, one very slightly
 	# bluer. It is now unmistakable - a filled accent panel, a heavy left bar,
@@ -858,11 +879,25 @@ func _draw_aircraft(size: Vector2) -> void:
 		UITheme.draw_text(_canvas, Vector2(x, r.position.y + 44.0), card["name"],
 						  UITheme.SIZE_TITLE,
 						  UITheme.TEXT if selected else UITheme.TEXT_DIM)
-		var specs: String = "%.1f m   %.2f kg   %.0f N/m2   %.0f W/kg" % [
-			card["span"], card["mass"], card["loading"], card["pw"]]
+		# "31 N/m2, 439 W/kg" is what an engineer wants and tells a beginner
+		# nothing about whether this aeroplane will bite them. The span and
+		# the weight are physical and stay; the rest is one word.
+		var specs: String = "%.1f m   %.2f kg   %s%s" % [
+			card["span"], card["mass"], Ranking.word(float(card["difficulty"])),
+			"   hand launched" if bool(card.get("hand_launched", false)) else ""]
 		UITheme.draw_text(_canvas, Vector2(x, r.position.y + 76.0), specs,
 						  UITheme.SIZE_LABEL,
 						  UITheme.ACCENT if selected else UITheme.TEXT_FAINT)
+
+		# And a bar for it, so five aeroplanes can be compared at a glance
+		# rather than by reading five words.
+		var bar := Rect2(r.end.x - 118.0, r.position.y + 62.0, 84.0, 6.0)
+		var band: float = float(card["difficulty"])
+		var shade: Color = UITheme.GOOD
+		if band > 0.38: shade = UITheme.ACCENT
+		if band > 0.52: shade = UITheme.WARN
+		if band > 0.68: shade = UITheme.DANGER
+		UITheme.draw_track(_canvas, bar, band, shade)
 
 		if selected:
 			UITheme.draw_text(_canvas, Vector2(r.end.x - 40.0,
@@ -889,7 +924,7 @@ func _draw_aircraft(size: Vector2) -> void:
 		for key in BRIEF_MEASURED:
 			if card.get("performance", {}).has(key[1]):
 				perf_rows += 1
-		var brief_h: float = 92.0 + lines * 24.0 + 18.0 \
+		var brief_h: float = 132.0 + lines * 24.0 + 18.0 \
 				+ 32.0 + perf_rows * 32.0 + 14.0 + 32.0 + 3 * 32.0
 		var brief := Rect2(rect.end.x - brief_w, rect.position.y,
 						   brief_w, minf(brief_h, rect.size.y))
@@ -897,6 +932,15 @@ func _draw_aircraft(size: Vector2) -> void:
 		UITheme.draw_label(_canvas, brief.position + Vector2(24, 46), "the brief",
 						   UITheme.ACCENT, 3.0, UITheme.SIZE_SECTION)
 		var by: float = brief.position.y + 92.0
+		var band: float = float(card.get("difficulty", 0.5))
+		var shade: Color = UITheme.GOOD
+		if band > 0.38: shade = UITheme.ACCENT
+		if band > 0.52: shade = UITheme.WARN
+		if band > 0.68: shade = UITheme.DANGER
+		UITheme.draw_text(_canvas, Vector2(brief.position.x + 24, by),
+						  "To fly: %s" % Ranking.word(band),
+						  UITheme.SIZE_VALUE, shade)
+		by += 40.0
 		for line in UITheme.wrap_text(card["description"], brief.size.x - 48.0, UITheme.SIZE_LABEL):
 			UITheme.draw_text(_canvas, Vector2(brief.position.x + 24, by), line,
 							  UITheme.SIZE_LABEL, UITheme.TEXT_DIM)
@@ -1064,63 +1108,94 @@ func _draw_review(size: Vector2) -> void:
 					 "Everything below is what you are about to fly.")
 	var gap: float = 20.0
 	var card_w: float = (rect.size.x - gap * 2.0) / 3.0
+	# Sized to the tallest of the three, not to the screen. Three panels each
+	# two thirds empty read as a page that failed to finish loading; three of
+	# the same height, each full, read as a summary.
+	var card_h: float = minf(rect.size.y, 620.0)
 
 	var aircraft: Dictionary = _aircraft[_aircraft_index] if not _aircraft.is_empty() else {}
 	var scene: Dictionary = _scenes[_scene_index]
 	var weather: Dictionary = _weathers[_weather_index]
 
-	# Aircraft card.
-	var r0 := Rect2(rect.position, Vector2(card_w, rect.size.y))
+	# ---- what you are flying ------------------------------------------------
+	var r0 := Rect2(rect.position, Vector2(card_w, card_h))
 	UITheme.draw_panel(_canvas, r0, UITheme.PANEL, UITheme.ACCENT, 12.0)
-	UITheme.draw_label(_canvas, r0.position + Vector2(20, 28), "aircraft", UITheme.ACCENT, 2.6)
-	UITheme.draw_text(_canvas, r0.position + Vector2(20, 62), aircraft["name"],
-					  UITheme.SIZE_LARGE, UITheme.TEXT)
-	UITheme.draw_text(_canvas, r0.position + Vector2(20, 100),
-					  "%.1f m span   %.2f kg" % [aircraft["span"], aircraft["mass"]],
-					  UITheme.SIZE_LABEL, UITheme.TEXT_DIM)
-	var ay: float = 132.0
-	for line in UITheme.wrap_text(aircraft["description"], 340.0, UITheme.SIZE_LABEL):
-		if ay > r0.end.y - 30.0:
-			break
-		UITheme.draw_text(_canvas, r0.position + Vector2(20, ay), line,
-						  UITheme.SIZE_LABEL, UITheme.TEXT_DIM)
-		ay += 18.0
-	ay += 6.0
-	for row in [["wing loading", "%.0f N/m2" % aircraft["loading"]],
-				["power / weight", "%.0f W/kg" % aircraft["pw"]],
-				["battery", "%dS %.0f mAh" % [aircraft["cells"], aircraft["capacity"]]],
-				["motor", "%.0f KV" % aircraft["kv"]],
-				["cruise / approach", "%.0f / %.0f m/s" % [aircraft["cruise"], aircraft["approach"]]]]:
-		if ay > r0.end.y - 26.0:
-			break
-		UITheme.draw_text(_canvas, r0.position + Vector2(20, ay), row[0],
-						  UITheme.SIZE_LABEL, UITheme.TEXT_FAINT)
-		var value: String = row[1]
-		# ay is an offset from the card top; the values must sit on the same
-		# row as their labels, which the labels get from r0.position.y + ay.
-		UITheme.draw_text(_canvas, Vector2(r0.end.x - 24.0 - UITheme.text_width(value, UITheme.SIZE_BODY),
-										  r0.position.y + ay),
-						  value, UITheme.SIZE_BODY, UITheme.TEXT)
-		ay += 26.0
+	UITheme.draw_label(_canvas, r0.position + Vector2(20, 32), "aircraft",
+					   UITheme.ACCENT, 2.6, UITheme.SIZE_SECTION)
+	UITheme.draw_display(_canvas, r0.position + Vector2(20, 76), aircraft["name"],
+						 UITheme.SIZE_LARGE, UITheme.TEXT)
 
-	# Location card with its preview (the thumbnail is a child laid out in
-	# _layout_review; only the caption is drawn here).
-	var r1 := Rect2(rect.position + Vector2(card_w + gap, 0), Vector2(card_w, rect.size.y))
+	var band: float = float(aircraft.get("difficulty", 0.5))
+	var shade: Color = UITheme.GOOD
+	if band > 0.50: shade = UITheme.ACCENT
+	if band > 0.62: shade = UITheme.WARN
+	if band > 0.72: shade = UITheme.DANGER
+	UITheme.draw_text(_canvas, r0.position + Vector2(20, 112),
+					  "To fly: %s" % Ranking.word(band), UITheme.SIZE_VALUE, shade)
+	if bool(aircraft.get("hand_launched", false)):
+		UITheme.draw_text(_canvas, r0.position + Vector2(20, 142),
+						  "Hand launched - no undercarriage.",
+						  UITheme.SIZE_BODY, UITheme.WARN)
+
+	var ay: float = 182.0
+	# The measured figures, which are the ones that say how it will fly. The
+	# battery chemistry and the motor KV were here instead, and neither tells
+	# a pilot anything at the moment they are about to take off.
+	var performance: Dictionary = aircraft.get("performance", {})
+	for row in [["span / weight", "%.1f m   %.2f kg" % [aircraft["span"], aircraft["mass"]]],
+				["stall speed", "%.1f m/s" % performance.get("stall_speed_mps", 0.0)],
+				["approach speed", "%.1f m/s" % aircraft["approach"]],
+				["roll rate", "%.0f deg/s" % performance.get("roll_rate_deg_per_s", 0.0)],
+				["glide ratio", "%.1f : 1" % performance.get("glide_ratio", 0.0)],
+				["power / weight", "%.0f W/kg" % aircraft["pw"]]]:
+		_review_row(r0, ay, String(row[0]), String(row[1]))
+		ay += 34.0
+
+	# ---- where ---------------------------------------------------------------
+	var r1 := Rect2(rect.position + Vector2(card_w + gap, 0), Vector2(card_w, card_h))
 	UITheme.draw_panel(_canvas, r1, UITheme.PANEL, UITheme.ACCENT, 12.0)
-	UITheme.draw_label(_canvas, r1.position + Vector2(20, 28), "location", UITheme.ACCENT, 2.6)
-	UITheme.draw_text(_canvas, r1.position + Vector2(20, 52 + (card_w - 40.0) * 9.0 / 16.0 + 22.0),
-					  scene["name"], UITheme.SIZE_VALUE, UITheme.TEXT)
+	UITheme.draw_label(_canvas, r1.position + Vector2(20, 32), "location",
+					   UITheme.ACCENT, 2.6, UITheme.SIZE_SECTION)
+	var thumb_h: float = (card_w - 40.0) * 9.0 / 16.0
+	var ly: float = 56.0 + thumb_h + 46.0
+	UITheme.draw_display(_canvas, r1.position + Vector2(20, ly), String(scene["name"]),
+						 UITheme.SIZE_LARGE, UITheme.TEXT)
+	ly += 36.0
+	for line in UITheme.wrap_text(String(scene["description"]), card_w - 40.0,
+								  UITheme.SIZE_BODY):
+		UITheme.draw_text(_canvas, r1.position + Vector2(20, ly), line,
+						  UITheme.SIZE_BODY, UITheme.TEXT_DIM)
+		ly += 28.0
 
-	# Weather card with its preview.
-	var r2 := Rect2(rect.position + Vector2((card_w + gap) * 2.0, 0), Vector2(card_w, rect.size.y))
+	# ---- and in what ---------------------------------------------------------
+	var r2 := Rect2(rect.position + Vector2((card_w + gap) * 2.0, 0),
+					Vector2(card_w, card_h))
 	UITheme.draw_panel(_canvas, r2, UITheme.PANEL, UITheme.ACCENT, 12.0)
-	UITheme.draw_label(_canvas, r2.position + Vector2(20, 28), "weather", UITheme.ACCENT, 2.6)
-	UITheme.draw_text(_canvas, r2.position + Vector2(20, 52 + minf((card_w - 40.0) * 0.62, 120.0) + 22.0),
-					  weather["name"], UITheme.SIZE_VALUE, UITheme.TEXT)
-	UITheme.draw_text(_canvas, r2.position + Vector2(20, 52 + minf((card_w - 40.0) * 0.62, 120.0) + 46.0),
-					  "%.1f m/s wind   grip %.0f%%" % [weather["wind_mps"],
-					  float(weather["ground_grip"]) * 100.0],
-					  UITheme.SIZE_LABEL, UITheme.TEXT_DIM)
+	UITheme.draw_label(_canvas, r2.position + Vector2(20, 32), "weather",
+					   UITheme.ACCENT, 2.6, UITheme.SIZE_SECTION)
+	var wy: float = 56.0 + thumb_h + 46.0
+	UITheme.draw_display(_canvas, r2.position + Vector2(20, wy), String(weather["name"]),
+						 UITheme.SIZE_LARGE, UITheme.TEXT)
+	wy += 40.0
+	var gust: float = float(weather["wind_mps"]) * float(weather["gust"])
+	for row in [["wind", "%.1f m/s" % weather["wind_mps"]],
+				["gusting to", "%.1f m/s" % (float(weather["wind_mps"]) + gust)],
+				["turbulence", "%.1f m/s" % weather["turbulence"]],
+				["ground grip", "%.0f %%" % (float(weather["ground_grip"]) * 100.0)],
+				["thermals", "%.0f %%" % (float(weather["thermal_scale"]) * 100.0)]]:
+		_review_row(r2, wy, String(row[0]), String(row[1]))
+		wy += 34.0
+
+
+## One label-and-value line on a sortie card, the value right-aligned to the
+## card's own edge so the three columns line up with each other.
+func _review_row(card: Rect2, y: float, label: String, value: String) -> void:
+	UITheme.draw_text(_canvas, card.position + Vector2(20, y), label,
+					  UITheme.SIZE_BODY, UITheme.TEXT_FAINT)
+	UITheme.draw_text(_canvas,
+					  Vector2(card.end.x - 24.0 - UITheme.text_width(value, UITheme.SIZE_VALUE),
+							  card.position.y + y),
+					  value, UITheme.SIZE_VALUE, UITheme.TEXT)
 
 
 ## Is THIS card under the pointer?
@@ -1128,19 +1203,11 @@ func _draw_review(size: Vector2) -> void:
 ## It used to answer "is this kind of card the one this step shows", which is
 ## true for every card on the step at once - so the hovered state was passed to
 ## the drawing code as "all of them", and the drawing code, reasonably enough,
-## ignored it. Hover and selection have looked identical since.
+## ignored it. Hover and selection looked identical for months.
 func _focus_card(index: int, kind: String) -> bool:
 	return _hover.get("kind", "") == kind and int(_hover.get("index", -1)) == index
 
 
-## One card: a translucent panel, an accent edge when selected, a brightened
-## edge on hover, and a left rule on the focus step's selection. The pulse is
-## eased in _process, so the glow and the lift grow smoothly - a card that
-## jumps is a button; one that breathes is a UI.
-## Three states, and they have to be told apart without thinking: chosen, under
-## the pointer, and neither. Chosen is a filled accent panel with a heavy edge
-## and a bar down its side; hovered is a lighter panel with a bright hairline
-## and nothing else. Before this they were a 12 % tint and a 26 % tint.
 func _draw_card(rect: Rect2, selected: bool, hovered: bool, pulse: float,
 				lift: float) -> void:
 	var lifted := Rect2(rect.position - Vector2(0, pulse * lift), rect.size)
@@ -1205,8 +1272,9 @@ func _draw_footer(size: Vector2) -> void:
 
 	# The corner hint, readable now.
 	UITheme.draw_text(_canvas, Vector2(0.0, size.y - 36.0),
-					  "arrows choose   enter next   backspace back   esc %s" %
-					  ("quit" if start_screen else "close"),
+					  "arrows choose   enter %s   backspace back   esc %s" %
+					  ["fly" if _step == STEP_REVIEW else "next",
+					   "quit" if start_screen else "close"],
 					  UITheme.SIZE_BODY, UITheme.TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER,
 					  size.x)
 

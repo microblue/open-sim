@@ -171,6 +171,23 @@ func _update_pilot(delta: float) -> void:
 			* ((error - TRACKING_DEADZONE_DEGREES) / 25.0), 0.0, 1.0)
 		_tracked_direction = _tracked_direction.slerp(direction, catch_up).normalized()
 
+	# The head lags on purpose, but it may not LOSE the aeroplane.
+	#
+	# Measured at 22 % of the time out of frame, worst case 23.2 degrees off
+	# centre against a 19 degree half-field (tests/PilotViewCheck.gd) - and
+	# narrowing the field from 50 to 38 degrees, to make the model bigger,
+	# halved the tolerance without anything noticing. A student who cannot see
+	# the model is not being taught anything.
+	#
+	# So the deadzone and the unhurried catch-up stay, and on top of them the
+	# error is CLAMPED: past a little over half the half-field, the head simply
+	# is where it has to be. In ordinary flying this never engages.
+	var limit: float = deg_to_rad(_camera.fov * 0.5 * 0.55) if _camera != null \
+			else deg_to_rad(12.0)
+	if _tracked_direction.angle_to(direction) > limit:
+		_tracked_direction = direction.rotated(
+			direction.cross(_tracked_direction).normalized(), limit).normalized()
+
 	var target: Vector3 = global_position + _tracked_direction * 100.0
 	look_at(target, Vector3.UP)
 	rotate_object_local(Vector3.UP, _look_offset.x)

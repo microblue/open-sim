@@ -261,6 +261,18 @@ bool RCSimulationNode::is_hand_launched() const
     return AircraftLoaded && !CanTakeOffFromGround();
 }
 
+bool RCSimulationNode::has_steerable_nose_wheel() const
+{
+    if (!AircraftLoaded) { return false; }
+    for (const rc::LandingGearSpec& wheel : Definition.LandingGear)
+    {
+        // Body X is forward: a steerable wheel ahead of the CG is a nose
+        // wheel, and one behind it is a tailwheel.
+        if (wheel.Steerable && wheel.PositionBody.x > 0.0) { return true; }
+    }
+    return false;
+}
+
 Vector2 RCSimulationNode::get_fuselage_extent_z() const
 {
     if (!AircraftLoaded) { return Vector2(0.0f, 0.0f); }
@@ -1507,6 +1519,7 @@ void RCSimulationNode::_bind_methods()
     OPENRC_BIND(get_cruise_speed_mps);
     OPENRC_BIND(get_approach_speed_mps);
     OPENRC_BIND(is_hand_launched);
+    OPENRC_BIND(has_steerable_nose_wheel);
     OPENRC_BIND(get_fuselage_extent_z);
     OPENRC_BIND(get_performance);
     OPENRC_BIND(list_aircraft);

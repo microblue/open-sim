@@ -75,6 +75,25 @@ else
     fail "an aircraft cannot fly from its own spawn"
 fi
 
+step "The pilot can see the aeroplane"
+# The default camera in a training simulator. The head lags on purpose, and
+# nothing measured how far that went until it was measured: 22 % of the time
+# out of frame.
+if command -v xvfb-run >/dev/null 2>&1; then
+    PILOT="$(timeout 240 xvfb-run -a -s "-screen 0 1280x720x24" \
+        godot --path Godot --resolution 1280x720 \
+        --script res://tests/PilotViewCheck.gd 2>&1)"
+    PILOT_STATUS=$?
+    echo "$PILOT" | grep -E 'pilot view over'
+    if [ $PILOT_STATUS -eq 0 ]; then
+        pass "the aeroplane stays in the pilot's view"
+    else
+        fail "the pilot loses sight of the aeroplane"
+    fi
+else
+    printf '     %s\n' "pilot view skipped (needs xvfb-run)"
+fi
+
 step "Rendering"
 if command -v xvfb-run >/dev/null 2>&1; then
     rm -f Godot/shots/0_pilot_ground.png

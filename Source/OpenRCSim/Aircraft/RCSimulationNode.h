@@ -246,6 +246,13 @@ public:
      *  the throttle open wondering what is wrong. */
     bool is_hand_launched() const;
 
+    /** True when there is a steerable wheel ahead of the centre of gravity.
+     *
+     *  A tail-dragger has none, and will try to swap ends on every take-off
+     *  roll - which is a thing a beginner feels immediately and which the
+     *  briefing room uses to say how much of a handful an aeroplane is. */
+    bool has_steerable_nose_wheel() const;
+
     /** Where the fuselage runs, in Godot axes: the nose and the tail, relative
      *  to the centre of gravity.
      *
