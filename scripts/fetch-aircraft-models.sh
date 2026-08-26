@@ -28,6 +28,7 @@ MODELS=(
   "sailplane|albertkemp/JSFS|Assets/glTF/underpoly_free_sailplane_glider|scene.gltf"
   "mustang|KieArm/airplane-game|public/models/p-51|scene.glb"
   "spitfire|Mafo369/OpenGLDemos|Assets/soviet_trainer_spitfire|scene.gltf"
+  "biplane|theringsofsaturn/3D-sky-island-portfolio-threejs-react|src/assets/aircarft_biplane|scene-transformed.glb"
 )
 
 fetch_file() {

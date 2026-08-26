@@ -16,13 +16,16 @@ Two of them are now real models of real aeroplanes:
 | Glider 2400 | UNDERPOLY: Free Sailplane Glider | [UNDERPOLY Project](https://sketchfab.com/underpolyproject) | CC-BY-4.0 |
 | Warbird 1100 | P-51 Mustang | [UlissesVinicios](https://sketchfab.com/UlissesVinicios) | CC-BY-4.0 |
 | Sport 1200 | Soviet trainer spitfire | [Batmanya](https://sketchfab.com/Batmanya) | CC-BY-4.0 |
+| Biplane 1300 | Aircarft Biplane | [Nicola Ristagno](https://sketchfab.com/NickFrame) | CC-BY-4.0 |
 
 > This work is based on "Cessna172" by KOG_THORNS, "UNDERPOLY: Free Sailplane
 > Glider" by UNDERPOLY Project, "P-51 Mustang" by UlissesVinicios, and "Soviet
-> trainer spitfire" by Batmanya, each licensed under
+> trainer spitfire" by Batmanya, and "Aircarft Biplane" by Nicola Ristagno,
+> each licensed under
 > [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 
-A Spitfire is not what a Sport 1200 is. It is a low-wing single with a lot of
+Sport 1200 and Warbird 1100 are stand-ins - a Spitfire is not what a Sport
+1200 is. It is a low-wing single with a lot of
 power and a short span, which is what the definition flies like, and it is what
 could be found under a licence this project can accept.
 

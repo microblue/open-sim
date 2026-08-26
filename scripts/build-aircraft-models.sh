@@ -25,6 +25,7 @@ BUILDS=(
   # is, but it is a low-wing single with a lot of power and a short span,
   # which is what the definition flies like.
   "spitfire|scene.gltf|Sport1200"
+  "biplane|scene-transformed.glb|Biplane1300"
 )
 
 [ -d "$SRC" ] || { echo "Run scripts/fetch-aircraft-models.sh first." >&2; exit 1; }

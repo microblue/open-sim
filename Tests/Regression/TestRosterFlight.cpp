@@ -39,6 +39,10 @@ namespace
             {"Sport1200",    4.0, 10.0,  7.0, 13.0,  180.0, 700.0},
             {"Glider2400",   9.0, 26.0,  4.0,  8.5,   30.0, 190.0},
             {"Warbird1100",  4.0, 11.0,  9.0, 17.0,  100.0, 420.0},
+            // The biplane. Two wings interfering with each other make it the
+            // worst glider here by some way, and four ailerons make it the
+            // fastest roller - which is the whole point of the type.
+            {"Biplane1300",  2.5,  8.0,  6.0, 12.0,  250.0, 900.0},
         };
         return fleet;
     }
