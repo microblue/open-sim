@@ -266,12 +266,23 @@ func _draw_power(origin: Vector2) -> void:
 	UITheme.draw_label(_canvas, origin + Vector2(UITheme.S4, 30), "power",
 					   UITheme.TEXT_FAINT, 2.2, UITheme.SIZE_LABEL)
 
+	# The arc is what the MOTOR is doing, not what the stick is asking for.
+	#
+	# It was the stick, and on a wrecked aeroplane lying in the grass it read
+	# 90 % in confident cyan next to an rpm of zero. Every other part of the
+	# screen said CRASHED and the biggest number on it said the motor was
+	# fine. Where the stick is remains visible on the transmitter panel, which
+	# is where a stick belongs.
+	var dead: bool = _sim.has_crashed() or _sim.get_rpm() < 1.0
+	var shown: float = 0.0 if _sim.has_crashed() else _throttle
 	var centre: Vector2 = origin + Vector2(104, 132)
-	UITheme.draw_arc_gauge(_canvas, centre, 60.0, 260.0, _throttle, UITheme.ACCENT, 6.0)
-	var throttle_text: String = "%d" % roundi(_throttle * 100.0)
+	UITheme.draw_arc_gauge(_canvas, centre, 60.0, 260.0, shown,
+						   UITheme.DANGER if dead else UITheme.ACCENT, 6.0)
+	var throttle_text: String = "%d" % roundi(shown * 100.0)
 	UITheme.draw_text(_canvas,
 		centre + Vector2(-UITheme.text_width(throttle_text, UITheme.SIZE_HERO) * 0.5, 12),
-		throttle_text, UITheme.SIZE_HERO, UITheme.TEXT)
+		throttle_text, UITheme.SIZE_HERO,
+		UITheme.TEXT_DIM if dead else UITheme.TEXT)
 	UITheme.draw_label(_canvas, centre + Vector2(-10, 38), "%", UITheme.TEXT_FAINT,
 					   2.2, UITheme.SIZE_LABEL)
 

@@ -161,7 +161,17 @@ rc::PropulsionOutput RCSimulationNode::StepPropulsion(rc::Real dt)
     // command: the sticks still work and the telemetry should still show the
     // throttle they are holding. So the authority multiplies here rather than
     // zeroing the channel.
-    const rc::Real throttle = Channels.Throttle() * Failures.ThrottleAuthority();
+    rc::Real throttle = Channels.Throttle() * Failures.ThrottleAuthority();
+
+    // A wrecked model does not keep making thrust.
+    //
+    // It did: after a crash the power panel read 90 %, eight thousand rpm and
+    // eleven newtons, on an aeroplane lying in the grass with its fin broken
+    // off. Every other part of the screen said CRASHED and that one said the
+    // motor was fine, which is the most misleading thing that can be on a
+    // display. On a real crash the propeller breaks or the ESC faults; either
+    // way the noise stops, and the stopping is most of how a pilot knows.
+    if (Crash.Crashed) { throttle = 0.0; }
     Power.Step(throttle, rc::Dot(airVelocityBody, axis), sample.Density, dt);
 
     const rc::PowerSystemState& state = Power.State();

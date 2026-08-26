@@ -15,6 +15,9 @@ extends Node3D
 enum Mode { PILOT, CHASE, FPV }
 
 const ZOOM_STEPS: Array[float] = [1.0, 2.0, 4.0]
+## How much tighter the pilot looks once the model is in the grass. A third of
+## the field: enough to see which way up it ended and what came off.
+const CRASH_ZOOM: float = 0.34
 ## 38 degrees, not 50.
 ##
 ## The pilot's viewpoint does not move - apparent size is the only distance cue
@@ -51,6 +54,9 @@ const LAYER_PROPELLER: int = 2
 
 var mode: Mode = Mode.PILOT
 var _zoom_index: int = 0
+## How far into the "walk over and look at it" zoom we are, 0 to 1.
+var _crash_zoom: float = 0.0
+var _was_zoomed_on_wreck: bool = false
 var _sim: Node3D
 var _camera: Camera3D
 var _look_offset: Vector2 = Vector2.ZERO
@@ -123,6 +129,29 @@ func _cycle_zoom() -> void:
 	_apply_zoom()
 
 
+## After a crash, look at the wreck.
+##
+## A pilot who has just put a model into the grass walks over to see what they
+## did, and that looking IS the lesson - a beginner crashes constantly and the
+## seconds afterwards are one of the most-visited screens in the product. What
+## they got was a white speck twenty-eight metres away on a 1920-pixel frame,
+## which teaches nothing about what just happened.
+##
+## Only in the pilot view, and only as a field-of-view change: the viewpoint
+## still does not move, because apparent size is the pilot's only distance cue
+## and moving the eye would throw it away.
+func _update_crash_zoom(delta: float) -> void:
+	if _camera == null or _sim == null:
+		return
+	var wrecked: bool = mode == Mode.PILOT and _sim.has_crashed()
+	# Eased, not snapped. A cut to a different focal length reads as a bug.
+	_crash_zoom = move_toward(_crash_zoom, 1.0 if wrecked else 0.0, delta * 0.9)
+	if _crash_zoom > 0.001 or _was_zoomed_on_wreck:
+		_was_zoomed_on_wreck = _crash_zoom > 0.001
+		var wide: float = BASE_FOV / ZOOM_STEPS[_zoom_index]
+		_camera.fov = lerpf(wide, wide * CRASH_ZOOM, _crash_zoom)
+
+
 func _apply_zoom() -> void:
 	if _camera != null:
 		_camera.fov = BASE_FOV / ZOOM_STEPS[_zoom_index]
@@ -148,6 +177,8 @@ func _process(delta: float) -> void:
 		Mode.PILOT: _update_pilot(delta)
 		Mode.CHASE: _update_chase(delta)
 		Mode.FPV:   _update_fpv()
+
+	_update_crash_zoom(delta)
 
 
 func _update_pilot(delta: float) -> void:

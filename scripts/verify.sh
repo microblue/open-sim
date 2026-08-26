@@ -94,6 +94,25 @@ else
     printf '     %s\n' "pilot view skipped (needs xvfb-run)"
 fi
 
+step "After a crash"
+# A beginner crashes constantly, so this is one of the most-visited screens in
+# the product. It used to show a white speck at twenty-eight metres and a power
+# panel reading 90 % on a wreck.
+if command -v xvfb-run >/dev/null 2>&1; then
+    CRASH="$(timeout 300 xvfb-run -a -s "-screen 0 1280x720x24" \
+        godot --path Godot --resolution 1280x720 \
+        --script res://tests/CrashShot.gd 2>&1)"
+    CRASH_STATUS=$?
+    echo "$CRASH" | grep -E 'after the crash|the wreck is'
+    if [ $CRASH_STATUS -eq 0 ]; then
+        pass "the motor stops and the pilot can see the wreck"
+    else
+        fail "the crash state is wrong"
+    fi
+else
+    printf '     %s\n' "crash state skipped (needs xvfb-run)"
+fi
+
 step "Rendering"
 if command -v xvfb-run >/dev/null 2>&1; then
     rm -f Godot/shots/0_pilot_ground.png
