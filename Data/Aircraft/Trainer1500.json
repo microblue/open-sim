@@ -293,10 +293,6 @@
       "in_propwash": true
     }
   ],
-  // The centroid, 135 mm BEHIND the CG. It was 50 mm ahead, which put the nose
-  // 225 mm in front of the propeller - a cowling with the spinner buried
-  // inside it - and the tail 145 mm short of the fin it carries. Found by
-  // looking at the turntable in the menu, not by reading the file.
   "fuselage": {
     "position_m": [
       -0.135,

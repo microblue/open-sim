@@ -579,7 +579,7 @@
         -0.01
       ],
       "down_thrust_deg": 2.0,
-      "right_thrust_deg": 2.5
+      "right_thrust_deg": 2.0
     },
     "propwash": {
       "enabled": true,

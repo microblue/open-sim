@@ -94,6 +94,20 @@ else
     printf '     %s\n' "pilot view skipped (needs xvfb-run)"
 fi
 
+step "The take-off roll"
+# Not "does it go straight hands off" - it should not, and the thrust line is
+# deliberately set for the climb. The question is whether rudder can hold it,
+# because an aeroplane a beginner cannot keep on the strip is one they cannot
+# take off, whatever the physics says.
+ROLL="$(godot --headless --path Godot --script res://tests/TakeoffRoll.gd 2>&1)"
+ROLL_STATUS=$?
+echo "$ROLL" | grep -E '^\s*\[' | sed 's/^/  /'
+if [ $ROLL_STATUS -eq 0 ]; then
+    pass "every aircraft can be held on the runway"
+else
+    fail "an aircraft cannot be held on the runway"
+fi
+
 step "After a crash"
 # A beginner crashes constantly, so this is one of the most-visited screens in
 # the product. It used to show a white speck at twenty-eight metres and a power
