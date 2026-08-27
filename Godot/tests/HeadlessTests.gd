@@ -264,6 +264,49 @@ func _test_the_roster_is_offered_gentlest_first() -> void:
 		"the aeroplane offered first is a gentle one")
 
 
+## Every downloaded airframe faces forwards.
+##
+## Checked across the WHOLE roster and without needing a propeller node, which
+## is what let the Spitfire ship backwards twice: it names no parts, so the
+## check that the propeller is at the front simply skipped it and said nothing.
+##
+## The wing is by a long way the widest thing on an aeroplane and it is in the
+## front half of every aeroplane there has ever been. So the span, weighted
+## along the length, has to land forward of centre.
+func _test_every_airframe_faces_forwards() -> void:
+	print("  which way the airframes face")
+	var restore: String = _sim.aircraft_definition
+	for stem in _sim.list_aircraft():
+		_sim.aircraft_definition = "Data/Aircraft/%s.json" % stem
+		if not _sim.reload_aircraft():
+			continue
+		var model: Node = ModelScript.new()
+		model.name = "FacingModel"
+		model.simulation_path = NodePath("..")
+		_sim.add_child(model)
+		model.call("_build")
+		if model.call("is_airframe_loaded"):
+			var balance: float = model.call("span_balance")
+			if absf(balance - 0.5) > 0.06:
+				print("       %-14s wing at %.3f along the length" % [stem, balance])
+				_check(balance < 0.5,
+					"%s faces forwards - its wing is in the front half" % stem)
+			else:
+				# Said out loud rather than quietly passed. A biplane's wing is
+				# long-chorded and nearly central, so its span balance sits at
+				# 0.53 whichever way round it is: this measure cannot see the
+				# difference and it would be dishonest to imply it had.
+				var fin: Vector2 = model.call("fin_reach")
+				print("       %-14s wing at %.3f - too central to judge by;"
+					% [stem, balance] + " fin reach %.2f nose / %.2f tail"
+					% [fin.x, fin.y])
+				_check(fin.y > fin.x * 1.2,
+					"%s faces forwards - its fin is at the back" % stem)
+		model.free()
+	_sim.aircraft_definition = restore
+	_sim.reload_aircraft()
+
+
 func _test_airframe_is_fitted_to_the_definition() -> void:
 	print("  downloaded airframes")
 	var model: Node = ModelScript.new()
@@ -649,6 +692,7 @@ func _finish_tree() -> void:
 	# Last: building an aeroplane out of a 3.5 MB glb costs frames, and the
 	# section above asserts that no physics step was dropped.
 	_test_the_roster_is_offered_gentlest_first()
+	_test_every_airframe_faces_forwards()
 	_test_airframe_is_fitted_to_the_definition()
 
 	print("\n%d checks, %d failed" % [_checks, _failures])

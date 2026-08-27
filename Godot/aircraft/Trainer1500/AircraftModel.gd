@@ -335,6 +335,40 @@ func aileron_stations_m() -> Vector2:
 	return stations
 
 
+## Where the fitted aeroplane's span is concentrated along its own length: 0 at
+## the nose, 1 at the tail.
+##
+## The check that catches a backwards model, and it needs no propeller node -
+## which is what let the Spitfire ship reversed twice. The wing is by a long
+## way the widest thing on an aeroplane and it is in the front half of every
+## aeroplane there has ever been, so this must come out below a half.
+func span_balance() -> float:
+	return _span_balance(self)
+
+
+## How far the fitted aeroplane reaches above its own midline at each end: x at
+## the nose, y at the tail. A fin does that and nothing at the nose does.
+##
+## The second opinion, for shapes the span balance cannot discriminate - a
+## biplane's wing is long-chorded and nearly central, so its balance sits at
+## 0.53 whichever way round it is.
+func fin_reach() -> Vector2:
+	var points: PackedVector3Array = _vertex_cloud(self)
+	if points.size() < 32:
+		return Vector2.ZERO
+	var box: AABB = _percentile_box(points)
+	var middle: float = box.position.y + box.size.y * 0.5
+	var tip: float = box.size.z * 0.125
+	var front: float = 0.0
+	var back: float = 0.0
+	for point in points:
+		if point.z < box.position.z + tip:
+			front = maxf(front, point.y - middle)
+		elif point.z > box.end.z - tip:
+			back = maxf(back, point.y - middle)
+	return Vector2(front, back)
+
+
 ## True when the aeroplane on screen came out of a .glb rather than a loft.
 func is_airframe_loaded() -> bool:
 	return _airframe_loaded
@@ -468,6 +502,30 @@ func _build_airframe() -> bool:
 	_cut_control_surfaces(holder, config)
 	if OS.has_environment("RC_MODEL_DEBUG"):
 		print("   station after  the cut %+.3f" % propeller_station_m())
+
+	if OS.has_environment("RC_MODEL_PROFILE"):
+		# Span as a function of station, from nose (-Z) to tail (+Z). The wing
+		# is the tall peak and the tailplane the smaller one behind it; if the
+		# small peak is at the FRONT the aeroplane is the wrong way round.
+		var cloud: PackedVector3Array = _vertex_cloud(self)
+		var pbox: AABB = _percentile_box(cloud)
+		var bins := PackedFloat32Array()
+		bins.resize(20)
+		var lo := PackedFloat32Array()
+		lo.resize(20)
+		for i in 20:
+			bins[i] = -INF
+			lo[i] = INF
+		for point in cloud:
+			var k: int = clampi(int((point.z - pbox.position.z)
+									/ maxf(pbox.size.z, 0.001) * 20.0), 0, 19)
+			bins[k] = maxf(bins[k], point.x)
+			lo[k] = minf(lo[k], point.x)
+		var line: String = ""
+		for i in 20:
+			var width: float = (bins[i] - lo[i]) if is_finite(lo[i]) else 0.0
+			line += "%s" % ["_.-=+*#@"[clampi(int(width / _sim.get_wingspan_m() * 8.0), 0, 7)]]
+		print("   span profile nose->tail  %s" % line)
 
 	_airframe_loaded = true
 	var station: float = propeller_station_m()
@@ -863,17 +921,38 @@ func _tail_is_forward(holder: Node3D) -> bool:
 		# the middle of a nine metre aeroplane.
 		return _node_centre(holder, _propeller).z > 0.0
 
-	# Failing that: HOW WIDE the aeroplane is at each end.
+	# Failing that: WHERE THE WING IS. It is in the front half of every
+	# aeroplane there has ever been, and it is by a long way the widest thing
+	# on one - so the span, weighted along the length, lands forward of centre
+	# unless the model is the wrong way round.
 	#
-	# There is a tailplane at one end and a spinner at the other, and nothing
-	# else about a light aeroplane is as lopsided. Two weaker rules were tried
-	# first and both are ambiguous on a warbird: total height at each end (a
-	# cowling above the line and a leg below it can match a fin) and reach
-	# above the midline (the Spitfire's radiator gave 18.2 against its fin's
-	# 16.2, a twelve per cent margin, and it flew backwards).
+	# Three weaker rules were tried first and every one of them is ambiguous on
+	# a warbird, because both ends of a warbird are busy:
+	#
+	#   total height at each end - a cowling above the line and an
+	#   undercarriage leg below it can match a fin;
+	#
+	#   reach above the midline - the Spitfire's radiator gave 18.2 against its
+	#   own fin's 16.2, a twelve per cent margin deciding which way it flies;
+	#
+	#   width at each end - a four-blade propeller disc is WIDER than a
+	#   tailplane, which is what put the Spitfire's tail at the front and left
+	#   it flying backwards for two more commits.
+	var balance: float = _span_balance(holder)
 	var ends: Vector2 = _end_spans(holder)
 	if OS.has_environment("RC_MODEL_DEBUG"):
-		print("   width at the ends: nose %.3f, tail %.3f" % [ends.x, ends.y])
+		print("   wing at %.3f along the length, ends %.2f / %.2f"
+			% [balance, ends.x, ends.y])
+
+	# Decisive only when it IS decisive. The biplane's wing is long-chorded and
+	# nearly central and lands at 0.532, which is a coin toss deciding which
+	# way an aeroplane flies - and it lost the toss.
+	if absf(balance - 0.5) > 0.04:
+		return balance > 0.5
+
+	# Falling back on the ends: a tailplane at one end and a spinner at the
+	# other. This is what the Spitfire's four-blade propeller defeats - a prop
+	# disc is wider than a tailplane - but the biplane's radial cowl is not.
 	return ends.x > ends.y
 
 
@@ -897,7 +976,7 @@ func _fin_is_below(holder: Node3D) -> bool:
 
 
 ## How wide the aeroplane is across the outermost eighth at each end: x the -Z
-## end, y the +Z end. The end with a tailplane on it wins by a long way.
+## end, y the +Z end.
 func _end_spans(holder: Node3D) -> Vector2:
 	var points: PackedVector3Array = _vertex_cloud(holder)
 	if points.size() < 32:
@@ -914,6 +993,44 @@ func _end_spans(holder: Node3D) -> Vector2:
 	if not is_finite(front.x) or not is_finite(back.x):
 		return Vector2.ZERO
 	return Vector2(front.y - front.x, back.y - back.x)
+
+
+## Where the aeroplane's span is concentrated along its own length: 0 at the
+## -Z end, 1 at the +Z end. The wing decides it, because the wing is by a long
+## way the widest thing on an aeroplane.
+##
+## Weighted by the SQUARE of the local width, which sharpens the wing against
+## the tailplane: on the biplane, whose wing is long-chorded and nearly
+## central, a linear weighting leaves the answer at 0.50 and a coin toss.
+func _span_balance(holder: Node3D) -> float:
+	var points: PackedVector3Array = _vertex_cloud(holder)
+	if points.size() < 32:
+		return 0.0
+	var box: AABB = _percentile_box(points)
+	const BINS: int = 24
+	var high := PackedFloat32Array()
+	var low := PackedFloat32Array()
+	high.resize(BINS)
+	low.resize(BINS)
+	for i in BINS:
+		high[i] = -INF
+		low[i] = INF
+	for point in points:
+		var bin: int = clampi(int((point.z - box.position.z)
+								  / maxf(box.size.z, 0.0001) * float(BINS)), 0, BINS - 1)
+		high[bin] = maxf(high[bin], point.x)
+		low[bin] = minf(low[bin], point.x)
+
+	var moment: float = 0.0
+	var total: float = 0.0
+	for i in BINS:
+		if not is_finite(low[i]):
+			continue
+		var width: float = (high[i] - low[i])
+		var weight: float = width * width
+		moment += weight * (float(i) + 0.5) / float(BINS)
+		total += weight
+	return moment / total if total > 0.0 else 0.5
 
 
 ## The centre of a node's own visible geometry, in `reference`'s space.

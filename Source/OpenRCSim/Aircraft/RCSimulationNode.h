@@ -246,6 +246,13 @@ public:
      *  the throttle open wondering what is wrong. */
     bool is_hand_launched() const;
 
+    /** Puts a velocity straight into the state, in the body frame.
+     *
+     *  For diagnostics that need the aeroplane MOVING without the propeller
+     *  turning - "does it wander on its own, or is the motor doing it" is a
+     *  question you cannot ask any other way. */
+    void set_body_velocity(const godot::Vector3& metresPerSecond);
+
     /** True when there is a steerable wheel ahead of the centre of gravity.
      *
      *  A tail-dragger has none, and will try to swap ends on every take-off

@@ -266,6 +266,12 @@ double RCSimulationNode::get_approach_speed_mps() const
     return AircraftLoaded ? Definition.ApproachSpeed : 0.0;
 }
 
+void RCSimulationNode::set_body_velocity(const Vector3& metresPerSecond)
+{
+    State.SetVelocityBody(rc::Vec3(-metresPerSecond.z, metresPerSecond.x,
+                                   -metresPerSecond.y));
+}
+
 bool RCSimulationNode::is_hand_launched() const
 {
     return AircraftLoaded && !CanTakeOffFromGround();
@@ -1528,6 +1534,8 @@ void RCSimulationNode::_bind_methods()
     OPENRC_BIND(get_power_to_weight_w_per_kg);
     OPENRC_BIND(get_cruise_speed_mps);
     OPENRC_BIND(get_approach_speed_mps);
+    ClassDB::bind_method(D_METHOD("set_body_velocity", "metres_per_second"),
+                         &RCSimulationNode::set_body_velocity);
     OPENRC_BIND(is_hand_launched);
     OPENRC_BIND(has_steerable_nose_wheel);
     OPENRC_BIND(get_fuselage_extent_z);
