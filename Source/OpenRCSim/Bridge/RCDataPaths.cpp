@@ -2,6 +2,7 @@
 
 #include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
 
 namespace
@@ -24,26 +25,39 @@ namespace openrc
         }
 
         // globalize_path("res://") gives the project directory when running from
-        // the repository and the executable's directory in an exported build, so
-        // both candidates are derived from it and the first that exists wins.
+        // the repository and the executable's directory in an exported build.
+        // A macOS .app keeps its data in Contents/Resources instead, and the
+        // executable directory is checked too in case res:// points elsewhere.
+        // For each base, the path itself and one level up; the first that
+        // exists wins.
         godot::ProjectSettings* settings = godot::ProjectSettings::get_singleton();
         const godot::String root = (settings != nullptr)
                                  ? settings->globalize_path("res://")
                                  : godot::String("./");
 
+        godot::PackedStringArray bases;
+        bases.push_back(root);
+        if (godot::OS* os = godot::OS::get_singleton())
+        {
+            const godot::String exe = os->get_executable_path().get_base_dir() + godot::String("/");
+            bases.push_back(exe);
+            bases.push_back(exe + godot::String("../Resources/"));
+        }
+
         // Files AND directories. Checking only for a file meant asking for
         // "Data/Aircraft" - a directory - always fell through to the installed
         // candidate, so the hangar listed no aeroplanes at all.
         const godot::String beside = root + relative;
-        if (Exists(beside))
+        for (const godot::String& base : bases)
         {
-            return beside;
-        }
-
-        const godot::String above = root + godot::String("../") + relative;
-        if (Exists(above))
-        {
-            return above;
+            if (Exists(base + relative))
+            {
+                return base + relative;
+            }
+            if (Exists(base + godot::String("../") + relative))
+            {
+                return base + godot::String("../") + relative;
+            }
         }
 
         return beside;

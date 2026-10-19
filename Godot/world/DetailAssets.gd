@@ -90,13 +90,8 @@ static func mesh_for(sim: Node, kind: int, level: int, variant: int) -> Mesh:
 	if _missing.has(key):
 		return null
 
-	var path: String = sim.resolve_data_path("%s/%s.glb" % [LOD_DIR, key])
-	if not FileAccess.file_exists(path):
-		_missing[key] = true
-		return null
-
-	# Loaded through Godot's importer when it has run, straight from the file
-	# when it has not - the second path is what a headless test hits.
+	# Loaded through Godot's importer. An exported build carries the imported
+	# mesh in its pack and not the .glb beside it, so the pack is asked first.
 	var scene: PackedScene = null
 	var resource_path: String = "res://assets/lod/%s.glb" % key
 	if ResourceLoader.exists(resource_path):
