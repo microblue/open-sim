@@ -136,10 +136,22 @@ if(RC_BUILD_GODOT_EXTENSION)
         message(FATAL_ERROR "Unsupported platform for the GDExtension: ${CMAKE_SYSTEM_NAME}")
     endif()
 
+    # macOS ships one universal library (arm64 + x86_64, set with
+    # CMAKE_OSX_ARCHITECTURES before configuring); the others are x86_64.
+    if(APPLE)
+        set(RC_GODOT_ARCH "universal")
+    else()
+        set(RC_GODOT_ARCH "x86_64")
+    endif()
+
+    # $<1:...> keeps multi-config generators (Visual Studio) from adding a
+    # Release/ subdirectory, and a Windows DLL is a RUNTIME output, not LIBRARY.
+    set(RC_GODOT_BIN "${CMAKE_CURRENT_SOURCE_DIR}/Godot/bin")
     set_target_properties(openrcsim PROPERTIES
-        OUTPUT_NAME "openrcsim.${RC_GODOT_PLATFORM}.${GODOTCPP_TARGET}.x86_64"
+        OUTPUT_NAME "openrcsim.${RC_GODOT_PLATFORM}.${GODOTCPP_TARGET}.${RC_GODOT_ARCH}"
         PREFIX "lib"
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Godot/bin")
+        LIBRARY_OUTPUT_DIRECTORY "$<1:${RC_GODOT_BIN}>"
+        RUNTIME_OUTPUT_DIRECTORY "$<1:${RC_GODOT_BIN}>")
 
     message(STATUS "GDExtension: Godot/bin/lib$<TARGET_PROPERTY:openrcsim,OUTPUT_NAME>")
 endif()

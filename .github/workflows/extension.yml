@@ -1,0 +1,65 @@
+# The Godot extension (physics core + bindings) for every platform we ship.
+#
+# Release builds for Linux, Windows and macOS (universal: Intel and Apple
+# silicon). scripts/release.sh downloads these artifacts and exports the game
+# around them; the export itself needs the CC0 asset set, which lives on the
+# release machine rather than in the repository.
+name: extension
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04 rather than 24.04: the library then needs an older glibc,
+          # so it runs on more Linux installs.
+          - name: linux
+            os: ubuntu-22.04
+          - name: windows
+            os: windows-2022
+          - name: macos
+            os: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch godot-cpp
+        shell: bash
+        run: scripts/bootstrap.sh
+
+      - name: Configure
+        shell: bash
+        run: |
+          args=(-S . -B build-ext -DCMAKE_BUILD_TYPE=Release
+                -DRC_BUILD_GODOT_EXTENSION=ON -DGODOTCPP_TARGET=template_release
+                -DGODOTCPP_USE_HOT_RELOAD=OFF -DRC_WARNINGS_AS_ERRORS=OFF)
+          if [ "${{ matrix.name }}" = macos ]; then
+            args+=("-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0)
+          fi
+          cmake "${args[@]}"
+
+      - name: Build
+        run: cmake --build build-ext --config Release --parallel --target openrcsim
+
+      - name: List
+        shell: bash
+        run: ls -la Godot/bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-${{ matrix.name }}
+          path: |
+            Godot/bin/*.so
+            Godot/bin/*.dll
+            Godot/bin/*.dylib
+          if-no-files-found: error
