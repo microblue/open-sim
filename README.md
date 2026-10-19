@@ -265,3 +265,12 @@ Studied for how they solve specific problems, not to be copied wholesale:
 
 The target is RC training fidelity. Where one of these is more complex than that
 goal requires, the complexity is not adopted.
+
+---
+
+## Licence
+
+The code is released under the [MIT License](LICENSE). Bundled assets keep their
+own licences: the aircraft models are CC-BY-4.0 (credits in each
+`Godot/aircraft/*/AIRFRAME-LICENSE.txt`), the Fira Sans fonts are SIL OFL 1.1,
+and the fetched environment assets are CC0.
