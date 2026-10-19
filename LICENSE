@@ -19,14 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
--------------------------------------------------------------------------------
-
-This licence covers the source code, scripts, scenes and data written for this
-project. Bundled third-party assets keep their own licences, which travel with
-them:
-
-- Aircraft models in Godot/aircraft/*/ - CC-BY-4.0, credited in each
-  AIRFRAME-LICENSE.txt
-- Fira Sans fonts in Godot/assets/fonts/ - SIL Open Font License 1.1
-- Downloaded environment assets (Data/Assets/manifest.json) - CC0
