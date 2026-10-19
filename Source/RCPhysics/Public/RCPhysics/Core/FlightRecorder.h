@@ -28,6 +28,8 @@
 #include "RCPhysics/Input/ChannelTypes.h"
 
 #include <cstddef>
+#include <iosfwd>
+#include <string>
 #include <vector>
 
 namespace rc
@@ -52,6 +54,12 @@ namespace rc
         Real Thrust = 0.0;
         Real BatteryCharge = 1.0;
         Real VerticalAirSpeed = 0.0;  ///< what the variometer showed
+        /** Height of the CG above the ground under it [m]; negative when the
+         *  recorder was fed without a ground. The crash analysis reads it. */
+        Real HeightAboveGround = -1.0;
+        /** The FailureKind active at this instant, as its integer value, so
+         *  the recorder does not depend on the failure model. 0 = none. */
+        int Failure = 0;
 
         ChannelValues Controls;
         bool OnGround = false;
@@ -97,6 +105,14 @@ namespace rc
         /** Frame by index, oldest first. For writing a file, or drawing the
          *  path the aircraft took. */
         const FlightFrame& At(std::size_t index) const;
+
+        /** Write every frame kept, oldest first, as CSV: one header row, then
+         *  one row per frame, in SI units except angles, which are degrees
+         *  because that is what a person reading a plot thinks in. Opens in a
+         *  spreadsheet or PlotJuggler as it is. Returns false if the stream
+         *  failed. */
+        bool WriteCsv(std::ostream& out) const;
+        bool WriteCsvFile(const std::string& path) const;
 
         void SetWindow(Real seconds);
         Real Window() const { return WindowSeconds; }

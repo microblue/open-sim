@@ -127,7 +127,12 @@ SectionResult AeroSurface::Evaluate(const AeroEnvironment& environment,
     AirfoilQuery query;
     query.Alpha                = alpha;
     query.Reynolds             = result.Reynolds;
-    query.AspectRatio          = SpecData.EffectiveAspectRatio;
+    // Scaling the induced flow by k is exactly an aspect ratio of AR / k in
+    // both the finite-wing lift slope and the induced drag, so ground effect
+    // needs no separate path through the airfoil model. The floor stops a
+    // section that is touching the ground from becoming an infinite wing.
+    query.AspectRatio          = SpecData.EffectiveAspectRatio
+                               / Max(environment.InducedFactor, 0.05);
     query.ControlDeflection    = deflection;
     query.ControlEffectiveness = ControlEffectiveness;
     query.ControlSpanFraction  = SpecData.HasControl ? SpecData.Control.SpanFraction : 0.0;

@@ -25,6 +25,11 @@
 #include "RCPhysics/Physics/Ground/TerrainField.h"
 #include "RCPhysics/Aircraft/FailureModel.h"
 #include "RCPhysics/Core/FlightRecorder.h"
+#include "RCPhysics/Training/CrashAnalysis.h"
+#include "RCPhysics/Training/FailurePractice.h"
+
+#include <array>
+#include <cstdint>
 #include "RCPhysics/Physics/Environment/LiftField.h"
 #include "RCPhysics/Physics/Ground/TerrainScatter.h"
 #include "RCPhysics/Physics/Propulsion/PowerSystem.h"
@@ -132,6 +137,24 @@ public:
      *  very differently. */
     void set_failsafe_mode(int mode);
     int  get_failsafe_mode() const;
+
+    // ---------------------------------------------------- failure practice --
+    //
+    // One draw per flight: `probability` (0..1) is the chance this flight has
+    // a failure at all, and if it does, it arrives after 20 to 120 s of proper
+    // airborne time - never on the ground. A flight begins at every reset.
+    // Zero turns it off. See RCPhysics/Training/FailurePractice.h.
+    void set_failure_practice(double probability, bool includeRadio, bool notify);
+
+    /** When true, the next reset flies the same flight again - the same
+     *  failure at the same moment - instead of drawing a new one. */
+    void set_failure_practice_repeat(bool repeat);
+
+    /** { enabled, probability, include_radio, notify, repeat, seed, will_fail,
+     *    onset_s, airborne_s, triggered, failure_kind, failure_channel,
+     *    outcome, flights, no_failure, ended_before_onset, survived, crashed } */
+    godot::Dictionary get_failure_practice() const;
+    void reset_failure_practice_stats();
 
     // -------------------------------------------------------------- replay --
     //
@@ -385,6 +408,24 @@ public:
     bool has_crashed() const;
     godot::String get_crash_reason() const;
 
+    /** Why it crashed, read from the last seconds of the flight recorder:
+     *  { cause, title, detail, advice, impact_speed_mps, sink_rate_mps,
+     *    airspeed_mps, bank_deg, path_deg, throttle, onset_height_m,
+     *    onset_to_impact_s, peak_yaw_rate_dps, peak_roll_rate_dps,
+     *    peak_stalled_fraction, failure, struck_part }.
+     *  Empty when there has been no crash. */
+    godot::Dictionary get_crash_report() const;
+
+    /** Write the flight recorder - the last two minutes - as CSV to an
+     *  absolute filesystem path (globalise user:// paths first). Returns false
+     *  if the file could not be written. */
+    bool save_flight_log(const godot::String& path) const;
+
+    /** Height of the CG above the ground under it [m], and the share of
+     *  free-air induced flow the wing keeps there - 1 out of ground effect. */
+    double get_height_above_ground_m() const;
+    double get_ground_effect_factor() const;
+
     double get_simulated_time_s() const;
     int64_t get_total_steps() const;
     int64_t get_dropped_steps() const;
@@ -486,6 +527,13 @@ private:
     void AdvanceReplay(double deltaSeconds);
     double              ThermalScale = 1.0;
     rc::CrashResult     Crash;
+    rc::FailurePractice Practice;
+    bool PracticeNotify = true;
+    bool PracticeRepeat = false;
+    std::uint32_t PracticeFlights = 0;   ///< draws made; seeds the next one
+    /** Outcome tallies for the session, indexed by rc::PracticeOutcome. */
+    std::array<int, 5> PracticeTally{};
+    void BeginPracticeFlight();
     rc::ContactSettings ContactTuning;
     rc::ChannelValues   Channels;
     rc::ChannelValues   ManualChannels;

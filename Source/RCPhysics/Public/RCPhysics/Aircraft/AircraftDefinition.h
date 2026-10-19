@@ -172,6 +172,11 @@ struct AircraftDefinition
      *  value; the field exists so a measured wind-tunnel figure can scale it. */
     Real DownwashScale = 1.0;
 
+    /** Multiplies the strength of ground effect. 1 is the textbook image-vortex
+     *  model (see Aircraft::GroundEffectInducedFactor); 0 switches it off, which
+     *  the validation suite uses to measure what ground effect itself adds. */
+    Real GroundEffectScale = 1.0;
+
     Real CruiseSpeed      = 16.0;
     Real ApproachSpeed    = 11.0;
     Real AirStartAltitude = 50.0;

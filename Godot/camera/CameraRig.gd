@@ -12,6 +12,9 @@
 # loosely, and lets the aircraft wander within the frame.
 extends Node3D
 
+const Settings := preload("res://ui/Settings.gd")
+const Warnings := preload("res://ui/FlightWarnings.gd")
+
 enum Mode { PILOT, CHASE, FPV }
 
 const ZOOM_STEPS: Array[float] = [1.0, 2.0, 4.0]
@@ -28,6 +31,27 @@ const CRASH_ZOOM: float = 0.34
 ## Narrowing the field makes the model bigger without moving the eye, so the
 ## cue still scales correctly with distance.
 const BASE_FOV: float = 38.0
+
+## Pilot-view auto-zoom.
+##
+## The fixed 38 degree field was chosen so a trainer reads well on a circuit, and
+## past a couple of hundred metres the same model is a dozen pixels: its
+## attitude is gone and the pilot is guessing which way up it is. Auto-zoom
+## narrows the field just enough to keep the wingspan at least AUTO_SPAN_PX
+## tall. It never widens past BASE_FOV, so up close nothing changes - and the
+## eye still does not move, so apparent size still falls with distance until
+## the floor is reached. It is a spotter's binoculars, not a chase camera.
+##
+## The manual Z steps are a multiplier on top of it rather than an alternative:
+## "closer than this" means the same thing whether auto-zoom is on or off, and
+## the pilot never has to know which mode is active to get a tighter view.
+const AUTO_SPAN_PX: float = Warnings.FAR_SPAN_PX
+## Narrower than this and the tracking clamp is chasing a model across a field a
+## few metres wide at the aeroplane; any further out than that is FAR anyway.
+const AUTO_MIN_FOV: float = 6.0
+## Half-life of the zoom blend. Quick enough to keep up with a model flying
+## away, slow enough that a turn towards the pilot is not a lurch.
+const AUTO_HALF_LIFE_S: float = 0.15
 
 ## How far off-centre the aircraft may drift before the camera starts to follow.
 const TRACKING_DEADZONE_DEGREES: float = 7.0
@@ -63,6 +87,9 @@ var _look_offset: Vector2 = Vector2.ZERO
 var _mouse_look: bool = false
 var _tracked_direction: Vector3 = Vector3(0.0, 0.0, -1.0)
 var _field: Node3D
+## The pilot view's field before the crash zoom, eased towards its target.
+var _pilot_fov: float = BASE_FOV
+var auto_zoom: bool = true
 
 
 func _ready() -> void:
@@ -81,6 +108,7 @@ func _ready() -> void:
 	add_child(_camera)
 	_apply_cull_mask()
 
+	auto_zoom = bool(Settings.get_value("camera/auto_zoom"))
 	position = Vector3(0.0, pilot_eye_height, 0.0)
 
 
@@ -91,6 +119,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_2: _set_mode(Mode.CHASE)
 			KEY_3: _set_mode(Mode.FPV)
 			KEY_Z: _cycle_zoom()
+			# X, beside Z: the other half of the zoom.
+			KEY_X: set_auto_zoom(not auto_zoom)
 
 	elif event is InputEventMouseButton:
 		# Hold the right button to look around, the way a pilot turns their head.
@@ -129,6 +159,34 @@ func _cycle_zoom() -> void:
 	_apply_zoom()
 
 
+func set_auto_zoom(enabled: bool) -> void:
+	auto_zoom = enabled
+	Settings.set_value("camera/auto_zoom", enabled)
+	print("Pilot auto-zoom %s." % ("on" if enabled else "off"))
+
+
+## The narrowest field the pilot view will reach without the pilot pressing Z:
+## what the FAR chip measures against. With auto-zoom off it is the plain
+## field, because that is what the pilot is actually looking through.
+func get_narrowest_fov() -> float:
+	return AUTO_MIN_FOV if auto_zoom else BASE_FOV
+
+
+## The field auto-zoom wants for the aircraft where it is now, before Z.
+func _auto_fov() -> float:
+	if not auto_zoom or _sim == null or not _sim.has_method("get_wingspan_m"):
+		return BASE_FOV
+	var span: float = float(_sim.get_wingspan_m())
+	var distance: float = (_sim.global_position - global_position).length()
+	if span <= 0.0 or distance <= 0.01:
+		return BASE_FOV
+	var frame_h: float = get_viewport().get_visible_rect().size.y
+	# The field at which the span is exactly AUTO_SPAN_PX tall.
+	var subtended: float = rad_to_deg(2.0 * atan(span * 0.5 / distance))
+	var wanted: float = subtended * frame_h / AUTO_SPAN_PX
+	return clampf(wanted, AUTO_MIN_FOV, BASE_FOV)
+
+
 ## After a crash, look at the wreck.
 ##
 ## A pilot who has just put a model into the grass walks over to see what they
@@ -144,17 +202,40 @@ func _update_crash_zoom(delta: float) -> void:
 	if _camera == null or _sim == null:
 		return
 	var wrecked: bool = mode == Mode.PILOT and _sim.has_crashed()
-	# Eased, not snapped. A cut to a different focal length reads as a bug.
-	_crash_zoom = move_toward(_crash_zoom, 1.0 if wrecked else 0.0, delta * 0.9)
-	if _crash_zoom > 0.001 or _was_zoomed_on_wreck:
-		_was_zoomed_on_wreck = _crash_zoom > 0.001
-		var wide: float = BASE_FOV / ZOOM_STEPS[_zoom_index]
-		_camera.fov = lerpf(wide, wide * CRASH_ZOOM, _crash_zoom)
+	# Eased, not snapped. A cut to a different focal length reads as a bug -
+	# unless the pilot has asked for less motion, in which case it is a cut.
+	var target: float = 1.0 if wrecked else 0.0
+	if Settings.reduced_motion():
+		_crash_zoom = target
+	else:
+		_crash_zoom = move_toward(_crash_zoom, target, delta * 0.9)
+	_was_zoomed_on_wreck = _crash_zoom > 0.001
+
+
+## The pilot view's field, composed every frame: auto-zoom, then the Z step on
+## top of it, then the walk-over-to-the-wreck zoom on top of that.
+##
+## Blended in log space with a half-life, so the blend takes the same time
+## whatever the frame rate and a 38-to-19 change feels like a 12-to-6 one.
+func _update_pilot_fov(delta: float) -> void:
+	var target: float = _auto_fov() / ZOOM_STEPS[_zoom_index]
+	if Settings.reduced_motion() or delta <= 0.0:
+		_pilot_fov = target
+	else:
+		var keep: float = pow(0.5, delta / AUTO_HALF_LIFE_S)
+		_pilot_fov = exp(lerpf(log(target), log(maxf(_pilot_fov, 0.01)), keep))
+	_camera.fov = lerpf(_pilot_fov, _pilot_fov * CRASH_ZOOM, _crash_zoom)
 
 
 func _apply_zoom() -> void:
-	if _camera != null:
-		_camera.fov = BASE_FOV / ZOOM_STEPS[_zoom_index]
+	if _camera == null:
+		return
+	if mode == Mode.PILOT:
+		# The step is the pilot's own keypress, so it is not eased: Z means now.
+		_pilot_fov = _auto_fov() / ZOOM_STEPS[_zoom_index]
+		_camera.fov = _pilot_fov
+	else:
+		_camera.fov = BASE_FOV
 
 
 func get_zoom() -> float:
@@ -172,6 +253,9 @@ func get_mode_name() -> String:
 func _process(delta: float) -> void:
 	if _sim == null or _camera == null:
 		return
+	# Read every frame rather than cached: the settings screen can change it
+	# while the sortie is running.
+	auto_zoom = bool(Settings.get_value("camera/auto_zoom"))
 
 	match mode:
 		Mode.PILOT: _update_pilot(delta)
@@ -179,6 +263,8 @@ func _process(delta: float) -> void:
 		Mode.FPV:   _update_fpv()
 
 	_update_crash_zoom(delta)
+	if mode == Mode.PILOT:
+		_update_pilot_fov(delta)
 
 
 func _update_pilot(delta: float) -> void:
@@ -196,10 +282,17 @@ func _update_pilot(delta: float) -> void:
 	# drifted far enough off-centre to be worth turning for, and then it turns
 	# unhurriedly. The aircraft is therefore almost never dead centre, which is
 	# the point.
+	#
+	# Both are measured in fractions of the FIELD, not in degrees, so the
+	# framing behaves the same through a 4x zoom or a 6 degree auto-zoom as it
+	# does at the base field. In degrees, a 7 degree deadzone is wider than the
+	# whole half-field of a zoomed view and the clamp below did all the work.
+	var scale: float = _camera.fov / BASE_FOV if _camera != null else 1.0
+	var deadzone: float = TRACKING_DEADZONE_DEGREES * scale
 	var error: float = rad_to_deg(_tracked_direction.angle_to(direction))
-	if error > TRACKING_DEADZONE_DEGREES:
+	if error > deadzone:
 		var catch_up: float = clampf(TRACKING_RATE * delta
-			* ((error - TRACKING_DEADZONE_DEGREES) / 25.0), 0.0, 1.0)
+			* ((error - deadzone) / (25.0 * scale)), 0.0, 1.0)
 		_tracked_direction = _tracked_direction.slerp(direction, catch_up).normalized()
 
 	# The head lags on purpose, but it may not LOSE the aeroplane.

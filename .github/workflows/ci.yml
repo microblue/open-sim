@@ -1,0 +1,80 @@
+# The physics core and its validation suite, on every push and pull request.
+#
+# The core is plain C++17 with no engine dependency, so this needs nothing but
+# a compiler: no Godot, no assets, no network beyond the checkout. The
+# in-engine tests need a display and the Godot editor and stay in
+# scripts/verify.sh on a development machine.
+name: physics-core
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The reference build: the same compiler and flags as development,
+          # warnings are errors.
+          - name: linux-gcc
+            os: ubuntu-24.04
+            cxx: g++
+            strict: 'ON'
+          - name: linux-clang
+            os: ubuntu-24.04
+            cxx: clang++
+            strict: 'ON'
+          # Portability builds. Warnings are reported, not fatal, until each
+          # compiler has been brought to zero once.
+          - name: macos-clang
+            os: macos-14
+            cxx: clang++
+            strict: 'OFF'
+          - name: windows-msvc
+            os: windows-2022
+            cxx: ''
+            strict: 'OFF'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        shell: bash
+        run: |
+          args=(-S . -B build -DCMAKE_BUILD_TYPE=Release -DRC_WARNINGS_AS_ERRORS=${{ matrix.strict }})
+          if [ -n "${{ matrix.cxx }}" ]; then args+=(-DCMAKE_CXX_COMPILER=${{ matrix.cxx }}); fi
+          cmake "${args[@]}"
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build --build-config Release --output-on-failure
+
+  invariants:
+    name: architecture
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: The flight model has no engine dependency
+        run: |
+          if grep -rqE '#include <godot_cpp|#include "godot' Source/RCPhysics/; then
+            echo "::error::RCPhysics has picked up an engine dependency"; exit 1
+          fi
+      - name: Frame conversion stays in Bridge/
+        run: |
+          if grep -rlE 'frame::(Position|Vector|Direction|Rotation)' Source/OpenRCSim/ | grep -v Bridge/; then
+            echo "::error::frame conversion has leaked outside Bridge/"; exit 1
+          fi

@@ -473,6 +473,8 @@ AircraftLoadResult AircraftLoader::LoadFromString(const std::string& text,
     if (aerodynamics.IsObject())
     {
         outDefinition.DownwashScale = aerodynamics.GetNumber("downwash_scale", 1.0);
+        outDefinition.GroundEffectScale =
+            Clamp(aerodynamics.GetNumber("ground_effect_scale", 1.0), 0.0, 2.0);
     }
 
     ReadPropulsion(root, outDefinition);

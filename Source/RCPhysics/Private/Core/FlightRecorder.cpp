@@ -1,7 +1,12 @@
 #include "RCPhysics/Core/FlightRecorder.h"
 
+#include "RCPhysics/Core/Units/Units.h"
+
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <cstdio>
+#include <ostream>
 
 namespace rc
 {
@@ -156,5 +161,56 @@ namespace rc
         out.OnGround = nearer.OnGround;
         out.Crashed = nearer.Crashed;
         return out;
+    }
+
+    bool FlightRecorder::WriteCsv(std::ostream& out) const
+    {
+        out << "time_s,north_m,east_m,altitude_m,height_agl_m,"
+               "roll_deg,pitch_deg,heading_deg,"
+               "ground_speed_mps,airspeed_mps,vertical_speed_mps,"
+               "roll_rate_dps,pitch_rate_dps,yaw_rate_dps,"
+               "alpha_deg,stalled_fraction,rpm,thrust_n,battery,air_vertical_mps,"
+               "aileron,elevator,throttle,rudder,flap,aux1,"
+               "on_ground,crashed,failure\n";
+
+        char line[512];
+        for (std::size_t i = 0; i < Count; ++i)
+        {
+            const FlightFrame& f = At(i);
+            const EulerAngles e = f.Orientation.ToEuler();
+            Real heading = units::ToDegrees(e.yaw);
+            if (heading < 0.0) { heading += 360.0; }
+            const ChannelValues& c = f.Controls;
+            std::snprintf(line, sizeof(line),
+                "%.4f,%.3f,%.3f,%.3f,%.3f,"
+                "%.2f,%.2f,%.2f,"
+                "%.3f,%.3f,%.3f,"
+                "%.2f,%.2f,%.2f,"
+                "%.2f,%.3f,%.0f,%.3f,%.4f,%.3f,"
+                "%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,"
+                "%d,%d,%d\n",
+                f.Time, f.PositionWorld.x, f.PositionWorld.y, -f.PositionWorld.z,
+                f.HeightAboveGround,
+                units::ToDegrees(e.roll), units::ToDegrees(e.pitch), heading,
+                f.VelocityWorld.Length(), f.Airspeed, -f.VelocityWorld.z,
+                units::ToDegrees(f.AngularVelocityBody.x),
+                units::ToDegrees(f.AngularVelocityBody.y),
+                units::ToDegrees(f.AngularVelocityBody.z),
+                units::ToDegrees(f.Alpha), f.StalledFraction, f.Rpm, f.Thrust,
+                f.BatteryCharge, f.VerticalAirSpeed,
+                c.Get(RCChannel::Aileron), c.Get(RCChannel::Elevator),
+                c.Get(RCChannel::Throttle), c.Get(RCChannel::Rudder),
+                c.Get(RCChannel::Flap), c.Get(RCChannel::Aux1),
+                f.OnGround ? 1 : 0, f.Crashed ? 1 : 0, f.Failure);
+            out << line;
+        }
+        return static_cast<bool>(out);
+    }
+
+    bool FlightRecorder::WriteCsvFile(const std::string& path) const
+    {
+        std::ofstream file(path, std::ios::out | std::ios::trunc);
+        if (!file) { return false; }
+        return WriteCsv(file) && static_cast<bool>(file.flush());
     }
 }

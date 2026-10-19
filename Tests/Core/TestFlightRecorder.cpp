@@ -9,6 +9,8 @@
 #include "RCPhysics/Core/FlightRecorder.h"
 #include "TestHarness.h"
 
+#include <sstream>
+
 #include <cmath>
 
 namespace
@@ -182,4 +184,41 @@ RC_TEST(FlightRecorder, TheWindowCanBeResized)
     recorder.SetWindow(30.0);
     RC_CHECK(recorder.Empty());
     RC_CHECK_NEAR(recorder.Window(), 30.0, 1e-9);
+}
+
+RC_TEST(FlightRecorder, WritesAReadableCsv)
+{
+    using namespace rc;
+    FlightRecorder recorder(10.0, 10.0);
+    for (int i = 0; i < 30; ++i)
+    {
+        FlightFrame f;
+        f.Time = i * 0.1;
+        f.PositionWorld = Vec3(i, 0.0, -20.0);
+        f.Airspeed = 12.0;
+        f.HeightAboveGround = 20.0;
+        f.Controls.Set(RCChannel::Throttle, 0.75);
+        f.Failure = (i > 20) ? 1 : 0;
+        f.Crashed = (i == 29);
+        recorder.Offer(f);
+    }
+    std::ostringstream out;
+    RC_CHECK(recorder.WriteCsv(out));
+    const std::string text = out.str();
+
+    std::size_t rows = 0;
+    for (char ch : text) { rows += (ch == '\n') ? 1 : 0; }
+    RC_CHECK(rows == recorder.Size() + 1);
+    RC_CHECK(text.rfind("time_s,north_m,", 0) == 0);
+
+    // Same number of fields in the header and in a data row.
+    const std::string header = text.substr(0, text.find('\n'));
+    const std::size_t secondEnd = text.find('\n', header.size() + 1);
+    const std::string row = text.substr(header.size() + 1, secondEnd - header.size() - 1);
+    auto fields = [](const std::string& s) {
+        std::size_t n = 1; for (char ch : s) { n += (ch == ',') ? 1 : 0; } return n; };
+    RC_CHECK(fields(header) == 29);
+    RC_CHECK(fields(row) == fields(header));
+    RC_CHECK(row.find("20.000") != std::string::npos);    // altitude
+    RC_CHECK(text.find(",1,1\n") != std::string::npos);    // the crash row, failure 1
 }

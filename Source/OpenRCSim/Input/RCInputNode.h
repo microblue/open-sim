@@ -143,6 +143,14 @@ public:
     void set_keyboard_enabled(bool enabled);
     bool is_keyboard_enabled() const;
 
+    /** Which transmitter mode the keyboard imitates. 2 (the default): the
+     *  arrows are the right stick, aileron and elevator, and W/S is throttle.
+     *  1: the right stick carries aileron and THROTTLE, so the up/down arrows
+     *  are the throttle and W/S is the elevator - the layout a Mode 1 pilot's
+     *  hands already know. */
+    void set_keyboard_mode(int mode);
+    int  get_keyboard_mode() const;
+
     /** The mapper, for C++ callers such as RCSimulationNode. */
     const rc::ChannelValues& Channels() const { return CurrentChannels; }
     const rc::ChannelMapper& Mapper() const { return Mapper_; }
@@ -183,6 +191,7 @@ private:
     double KeyAileron  = 0.0;
     double KeyRudder   = 0.0;
     bool   KeyboardAllowed = true;
+    bool   KeyboardModeOne = false;
 };
 
 } // namespace openrc

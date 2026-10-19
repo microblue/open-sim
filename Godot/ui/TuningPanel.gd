@@ -14,6 +14,8 @@
 # So the air lives here; the aircraft lives in the file.
 extends CanvasLayer
 
+const Settings := preload("res://ui/Settings.gd")
+
 @export var simulation_path: NodePath
 
 const WIDTH: float = 340.0
@@ -92,7 +94,8 @@ func _process(delta: float) -> void:
 	# Slide in and out rather than appearing: the movement is what tells the eye
 	# the drawer belongs to the edge of the screen.
 	var target: float = 1.0 if visible else 0.0
-	_slide = move_toward(_slide, target, delta * 5.0)
+	_slide = target if Settings.reduced_motion() \
+			else move_toward(_slide, target, delta * 5.0)
 	_nudged += delta
 	if visible or _slide > 0.001:
 		_canvas.queue_redraw()

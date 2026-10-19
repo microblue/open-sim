@@ -101,6 +101,14 @@ void RCSimulationNode::advance(double deltaSeconds)
         {
             const rc::PropulsionOutput propulsion = StepPropulsion(dt);
             LastForces = Plane.ComputeForces(State, Channels, Air, Wind, propulsion, &Ground);
+            if (!Crash.Crashed
+                && Practice.Update(dt, LastForces.WeightOnWheels <= 0.0,
+                                   LastForces.HeightAboveGround))
+            {
+                const rc::PracticeFailure& due = Practice.Plan().Failure;
+                Failures.Induce(due.Kind, due.Channel);
+                RC_LOG(Physics, Warning, "Failure practice: %s", Failures.Describe().c_str());
+            }
             if (!Crash.Crashed)
             {
                 Crash = Plane.Crash().Check(State, Ground, LastForces.Wheels);
@@ -578,6 +586,71 @@ int RCSimulationNode::get_failsafe_mode() const
     return Failures.Settings().Failsafe == rc::FailsafeMode::HoldLast ? 0 : 1;
 }
 
+void RCSimulationNode::BeginPracticeFlight()
+{
+    if (!PracticeRepeat || PracticeFlights == 0) { ++PracticeFlights; }
+    bool hasRudder = false;
+    for (const rc::AeroSurfaceSpec& surface : Definition.Surfaces)
+    {
+        if (surface.HasControl && surface.Control.Channel == rc::RCChannel::Rudder)
+        {
+            hasRudder = true;
+        }
+    }
+    const bool hasMotor = Definition.Propulsion.Motor.KvRadPerSecondPerVolt > 0.0;
+    // A fixed odd multiplier spreads consecutive flights across the seed
+    // space, so flight 2 is not a near neighbour of flight 1.
+    Practice.BeginFlight(PracticeFlights * 2654435761u, hasMotor, hasRudder);
+}
+
+void RCSimulationNode::set_failure_practice(double probability, bool includeRadio, bool notify)
+{
+    rc::FailurePracticeSettings settings = Practice.Settings();
+    settings.Probability = probability;
+    settings.IncludeRadio = includeRadio;
+    Practice.Configure(settings);
+    PracticeNotify = notify;
+    // Re-draw the current flight under the new settings, keeping its seed:
+    // changing the odds in the menu should not quietly skip a flight.
+    const bool repeat = PracticeRepeat;
+    PracticeRepeat = true;
+    BeginPracticeFlight();
+    PracticeRepeat = repeat;
+}
+
+void RCSimulationNode::set_failure_practice_repeat(bool repeat) { PracticeRepeat = repeat; }
+
+Dictionary RCSimulationNode::get_failure_practice() const
+{
+    Dictionary out;
+    const rc::FailurePlan& plan = Practice.Plan();
+    const bool atRest = LastForces.OnGround && State.VelocityWorld.Length() < 0.3;
+    out["enabled"] = Practice.Settings().Probability > 0.0;
+    out["probability"] = Practice.Settings().Probability;
+    out["include_radio"] = Practice.Settings().IncludeRadio;
+    out["notify"] = PracticeNotify;
+    out["repeat"] = PracticeRepeat;
+    out["seed"] = static_cast<int64_t>(plan.Seed);
+    out["will_fail"] = plan.WillFail;
+    out["onset_s"] = plan.OnsetAirborneTime;
+    out["airborne_s"] = Practice.QualifiedAirborneTime();
+    out["triggered"] = Practice.Triggered();
+    out["failure_kind"] = static_cast<int>(plan.Failure.Kind);
+    out["failure_channel"] = static_cast<int>(plan.Failure.Channel);
+    out["outcome"] = String(rc::ToString(Practice.Outcome(Crash.Crashed, atRest, false)));
+    int flights = 0;
+    for (int count : PracticeTally) { flights += count; }
+    out["flights"] = flights;
+    out["no_failure"] = PracticeTally[static_cast<std::size_t>(rc::PracticeOutcome::NoFailure)];
+    out["ended_before_onset"] =
+        PracticeTally[static_cast<std::size_t>(rc::PracticeOutcome::EndedBeforeOnset)];
+    out["survived"] = PracticeTally[static_cast<std::size_t>(rc::PracticeOutcome::Survived)];
+    out["crashed"] = PracticeTally[static_cast<std::size_t>(rc::PracticeOutcome::Crashed)];
+    return out;
+}
+
+void RCSimulationNode::reset_failure_practice_stats() { PracticeTally.fill(0); }
+
 void RCSimulationNode::RecordFrame()
 {
     if (!AircraftLoaded) { return; }
@@ -596,6 +669,8 @@ void RCSimulationNode::RecordFrame()
     frame.Thrust = Power.State().Thrust;
     frame.BatteryCharge = Power.State().StateOfCharge;
     frame.VerticalAirSpeed = get_air_vertical_speed_mps();
+    frame.HeightAboveGround = LastForces.HeightAboveGround;
+    frame.Failure = static_cast<int>(Failures.State().Kind);
 
     frame.Controls = CommandedChannels;
     frame.OnGround = LastForces.OnGround;
@@ -1043,8 +1118,22 @@ void RCSimulationNode::ResetPhysicsState()
     Wind.Reset();
     Plane.ResetAeroState();
     Power.Reset();
+    // The flight that is ending is scored before its crash state is cleared -
+    // but only if it flew. Resetting on the ground, or the menu resetting the
+    // aircraft as it builds the world, is not a flight.
+    if (Practice.Settings().Probability > 0.0
+        && (Practice.QualifiedAirborneTime() > 0.0 || Crash.Crashed))
+    {
+        const bool atRest = LastForces.OnGround && State.VelocityWorld.Length() < 0.3;
+        const rc::PracticeOutcome outcome = Practice.Outcome(Crash.Crashed, atRest, true);
+        if (outcome != rc::PracticeOutcome::Pending)
+        {
+            ++PracticeTally[static_cast<std::size_t>(outcome)];
+        }
+    }
     Crash = rc::CrashResult{};
     Failures.ClearAll();
+    BeginPracticeFlight();
     // The lift field lives on the wind, so rising air reaches the aerodynamics
     // through the same per-section sampling the wind does.
     Wind.SetLiftField(Lift.Settings().Enabled ? &Lift : nullptr);
@@ -1257,6 +1346,48 @@ String RCSimulationNode::get_crash_reason() const
 {
     return Crash.Crashed ? String(Crash.Reason.c_str()) : String();
 }
+
+Dictionary RCSimulationNode::get_crash_report() const
+{
+    Dictionary out;
+    if (!Crash.Crashed || !AircraftLoaded) { return out; }
+
+    rc::CrashAnalysisSettings settings = rc::CrashAnalysisSettingsFor(Plane.Definition());
+    settings.GearImpactLimit = Plane.Crash().GetImpactLimit();
+    const rc::CrashReport report = rc::AnalyzeCrash(Recorder, Crash, settings);
+
+    out["cause"] = String(rc::ToString(report.Cause));
+    out["title"] = String(report.Title.c_str());
+    out["detail"] = String(report.Detail.c_str());
+    out["advice"] = String(report.Advice.c_str());
+    out["impact_speed_mps"] = report.ImpactSpeed;
+    out["sink_rate_mps"] = report.SinkRate;
+    out["airspeed_mps"] = report.Airspeed;
+    out["bank_deg"] = report.BankDegrees;
+    out["path_deg"] = report.PathDegrees;
+    out["throttle"] = report.Throttle;
+    out["onset_height_m"] = report.OnsetHeight;
+    out["onset_to_impact_s"] = report.OnsetToImpact;
+    out["peak_yaw_rate_dps"] = report.PeakYawRateDegrees;
+    out["peak_roll_rate_dps"] = report.PeakRollRateDegrees;
+    out["peak_stalled_fraction"] = report.PeakStalledFraction;
+    out["failure"] = report.Failure;
+    out["struck_part"] = String(report.StruckPart.c_str());
+    return out;
+}
+
+bool RCSimulationNode::save_flight_log(const String& path) const
+{
+    const bool written = Recorder.WriteCsvFile(std::string(path.utf8().get_data()));
+    if (!written)
+    {
+        RC_LOG(Physics, Warning, "Could not write the flight log to %s", path.utf8().get_data());
+    }
+    return written;
+}
+
+double RCSimulationNode::get_height_above_ground_m() const { return LastForces.HeightAboveGround; }
+double RCSimulationNode::get_ground_effect_factor() const { return LastForces.GroundEffectFactor; }
 
 double RCSimulationNode::get_simulated_time_s() const { return Clock.SimulatedTimeSeconds(); }
 int64_t RCSimulationNode::get_total_steps() const { return static_cast<int64_t>(Clock.TotalStepCount()); }
@@ -1495,6 +1626,11 @@ void RCSimulationNode::_bind_methods()
     OPENRC_BIND(get_failure_rate_per_minute);
     OPENRC_BIND1(set_failsafe_mode, "mode");
     OPENRC_BIND(get_failsafe_mode);
+    ClassDB::bind_method(D_METHOD("set_failure_practice", "probability", "include_radio", "notify"),
+                         &RCSimulationNode::set_failure_practice);
+    OPENRC_BIND1(set_failure_practice_repeat, "repeat");
+    OPENRC_BIND(get_failure_practice);
+    OPENRC_BIND(reset_failure_practice_stats);
     OPENRC_BIND(get_replay_duration);
     OPENRC_BIND(get_replay_earliest);
     OPENRC_BIND(get_replay_latest);
@@ -1641,6 +1777,10 @@ void RCSimulationNode::_bind_methods()
     OPENRC_BIND1(is_wheel_skidding, "index");
     OPENRC_BIND(has_crashed);
     OPENRC_BIND(get_crash_reason);
+    OPENRC_BIND(get_crash_report);
+    OPENRC_BIND1(save_flight_log, "path");
+    OPENRC_BIND(get_height_above_ground_m);
+    OPENRC_BIND(get_ground_effect_factor);
 
     OPENRC_BIND(get_simulated_time_s);
     OPENRC_BIND(get_total_steps);

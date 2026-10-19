@@ -51,6 +51,43 @@ The telemetry and the replay show what the **pilot** asked for, not what the
 servos did. A jammed servo should not make the stick display lie about where the
 stick is.
 
+## Failure practice
+
+The training mode. One setting - the chance a flight has a failure at all - and
+four rules (`RCPhysics/Training/FailurePractice.h`):
+
+- **One draw per flight.** 30 % means three flights in ten. A rate per minute
+  makes a long flight certain to fail and teaches the pilot to wait for it.
+- **Never on the ground.** The failure arrives after 20 to 120 s of proper
+  airborne time - more than 5 m up, wheels unloaded - so it is always an
+  emergency to fly, never a model that will not take off.
+- **One, and it stays** until the next flight.
+- **Counted honestly.** A flight that ends before its failure came is scored as
+  exactly that, not as a clean flight; a reset in the air after the failure
+  counts with the crashes. A flight that never got airborne is not scored.
+
+The draw comes from a seed: whether, then when, then what, in that order, so the
+same flight can be flown again - the same failure at the same moment - until it
+is flown well. A glider is never given a dead stick it cannot have, and an
+aircraft without a rudder never has one jam. Radio failures are opt-in.
+
+## Why it crashed
+
+After a crash the simulator reads the last five seconds of the flight recorder
+and says, in one line, what happened and what to do differently
+(`RCPhysics/Training/CrashAnalysis.h`). The rules are ordered and the first that
+fits wins: a failure first - a model that lost its motor and stalled on the way
+down crashed because of the motor - then a tree, then a crash that happened on
+the ground (a wingtip, a nose-over), then spin, tip stall and stall, then a
+hard landing, a spiral or dive, and finally flying into the ground with the wings
+level.
+
+The regression suite holds each aircraft to its character: the same
+mishandling - full up elevator and full rudder from 25 m - spirals the trainer
+without stalling it, snaps the warbird into a spin, stalls the glider straight
+ahead and drops a wing on the sport aerobat. A flight model change that erases
+those differences fails the build.
+
 ## Random failures
 
 Off by default: a lesson decides when things break, and an unasked-for failure

@@ -96,6 +96,13 @@ void Aircraft::RestoreAeroState(const std::vector<bool>& state)
     }
 }
 
+Real Aircraft::GroundEffectInducedFactor(Real heightOverSpan)
+{
+    if (!(heightOverSpan > 0.0)) { return 0.0; }
+    const Real x = Sq(16.0 * heightOverSpan);
+    return x / (1.0 + x);
+}
+
 Real Aircraft::DownwashVelocityFrom(Real lift, Real localSpeed, Real density) const
 {
     const Real span = Max(Definition_.WingSpan, 0.05);
@@ -219,6 +226,37 @@ AircraftForces Aircraft::ComputeForces(const RigidBodyState& state,
     Real stalledArea = 0.0;
     Real wingLift = 0.0;
 
+    // ------------------------------------------------------- ground effect --
+    // The ground is sampled once, under the CG, and each section's own height
+    // is that plus its vertical offset - so a banked aircraft has its low wing
+    // deeper in ground effect than its high one, and that alone produces the
+    // rolling moment a pilot feels in a crosswind flare. One terrain query per
+    // step instead of one per section; over a few metres of wingspan the
+    // terrain under the wing is the terrain under the CG.
+    const Real span = Max(Definition_.WingSpan, 0.1);
+    const Real groundEffectScale = Definition_.GroundEffectScale;
+    Real groundZ = 0.0;
+    bool groundEffectActive = false;
+    if (ground != nullptr)
+    {
+        groundZ = ground->Sample(state.PositionWorld.x, state.PositionWorld.y).SurfaceHeight;
+        forces.HeightAboveGround = groundZ - state.PositionWorld.z;
+        // Beyond two spans the factor is 1 to four decimal places; skip the work.
+        groundEffectActive = groundEffectScale > 0.0
+                          && forces.HeightAboveGround < 2.0 * span;
+    }
+    auto inducedFactorAt = [&](const Vec3& positionBody) -> Real
+    {
+        if (!groundEffectActive) { return 1.0; }
+        const Real z = state.PositionWorld.z + state.Orientation.Rotate(positionBody).z;
+        const Real phi = GroundEffectInducedFactor((groundZ - z) / span);
+        return 1.0 - groundEffectScale * (1.0 - phi);
+    };
+    if (groundEffectActive)
+    {
+        forces.GroundEffectFactor = inducedFactorAt(Vec3::Zero());
+    }
+
     // Sections are evaluated in two passes. The wing goes first because the
     // tail flies in its downwash, and that coupling is not a detail: it roughly
     // halves how much elevator a trim change costs, and it is what produces the
@@ -277,7 +315,16 @@ AircraftForces Aircraft::ComputeForces(const RigidBodyState& state,
         // is blowing over a wing that is barely moving.
         if (spec.Role == SurfaceRole::HorizontalTail && downwashVelocity != 0.0)
         {
-            propwash += Vec3(0.0, 0.0, -downwashVelocity);
+            // The same image vortex that unloads the wing's induced flow also
+            // straightens the air reaching the tail. Less downwash means more
+            // tail lift and a nose-down pitch change as the aircraft sinks
+            // into ground effect - which is why a flare needs more up
+            // elevator in the last foot than it did at two.
+            propwash += Vec3(0.0, 0.0, -downwashVelocity * inducedFactorAt(spec.PositionBody));
+        }
+        if (isWing)
+        {
+            environment.InducedFactor = inducedFactorAt(spec.PositionBody);
         }
 
         bool separated = Separated[i];

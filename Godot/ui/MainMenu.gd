@@ -24,10 +24,12 @@ const WeatherLib := preload("res://world/Weather.gd")
 const SoundBank := preload("res://audio/SoundBank.gd")
 const StageScript := preload("res://ui/AircraftStage.gd")
 const Ranking := preload("res://ui/AircraftRanking.gd")
+const Settings := preload("res://ui/Settings.gd")
 
 signal fly_requested(aircraft_stem: String, scene_id: String, weather_id: String)
 signal wizard_requested
 signal tuning_requested
+signal settings_requested
 
 @export var input_path: NodePath
 @export var simulation_path: NodePath
@@ -98,6 +100,7 @@ var _thumbs: Array[TextureRect] = []
 var _thumb_textures: Dictionary = {}
 var _transmitter_origin := Vector2.ZERO
 var _setup_rect := Rect2()
+var _settings_rect := Rect2()
 var _quit_rect := Rect2()
 var _back_rect := Rect2()
 var _next_rect := Rect2()
@@ -131,11 +134,14 @@ func _ready() -> void:
 	_music.name = "MenuMusic"
 	_music.stream = SoundBank.menu_music()
 	_music.volume_db = -18.0
+	# On the menu bus, so the settings screen's music level reaches it live.
+	_music.bus = Settings.BUS_MENU
 	add_child(_music)
 	_music.play()
 
 	_sfx = AudioStreamPlayer.new()
 	_sfx.name = "MenuSfx"
+	_sfx.bus = Settings.BUS_MENU
 	add_child(_sfx)
 
 	# The aeroplane itself, turning. A chooser that answers "which aeroplane?"
@@ -161,6 +167,9 @@ func _ready() -> void:
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_overlay.draw.connect(_draw_overlay)
 	_canvas.add_child(_overlay)
+
+	if Settings.reduced_motion():
+		_appear = 1.0
 
 	_gather()
 
@@ -290,6 +299,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				queue_free()
 		KEY_F3, KEY_C: _activate({"action": "setup"})
+		KEY_O: _activate({"action": "settings"})
 		KEY_F4: _activate({"action": "tuning"})
 		_:
 			return
@@ -329,6 +339,8 @@ func _activate(entry: Dictionary) -> void:
 	match entry.get("action", ""):
 		"setup": wizard_requested.emit(); queue_free()
 		"tuning": tuning_requested.emit(); queue_free()
+		# The menu stays: settings open over it and close back to it.
+		"settings": settings_requested.emit()
 		"quit": get_tree().quit()
 		"back":
 			_set_step(_step - 1) if _step > STEP_AIRCRAFT else _close_or_quit()
@@ -446,11 +458,13 @@ func _layout() -> void:
 	_refresh_backdrop()
 
 	var header_y: float = 44.0
-	_transmitter_origin = Vector2(size.x - PAD - 360.0 - 12.0 - 150.0 - 12.0 - 118.0,
-								  header_y)
+	_transmitter_origin = Vector2(size.x - PAD - 360.0 - 12.0 - 150.0 - 12.0
+								  - 196.0 - 12.0 - 118.0, header_y)
 	_setup_rect = Rect2(_transmitter_origin.x + 372.0, header_y, 150.0, 72.0)
-	_quit_rect = Rect2(_transmitter_origin.x + 534.0, header_y, 118.0, 72.0)
+	_settings_rect = Rect2(_transmitter_origin.x + 534.0, header_y, 196.0, 72.0)
+	_quit_rect = Rect2(_transmitter_origin.x + 742.0, header_y, 118.0, 72.0)
 	_hit.append({"rect": _setup_rect, "action": "setup"})
+	_hit.append({"rect": _settings_rect, "action": "settings"})
 	_hit.append({"rect": _quit_rect, "action": "quit"})
 
 	# Breadcrumb: four steps across the top, clickable, with the current step
@@ -843,6 +857,14 @@ func _draw_header(size: Vector2, shift: Vector2) -> void:
 	UITheme.draw_display(_canvas, _setup_rect.position + Vector2(0, 48) + shift,
 						 "SETUP", UITheme.SIZE_TITLE, UITheme.ACCENT,
 						 HORIZONTAL_ALIGNMENT_CENTER, _setup_rect.size.x)
+
+	UITheme.draw_panel(_canvas, Rect2(_settings_rect.position + shift, _settings_rect.size),
+			Color(1, 1, 1, 0.06) if _hover.get("action", "") == "settings" else UITheme.PANEL,
+			UITheme.ACCENT if _hover.get("action", "") == "settings" else UITheme.STROKE_STRONG,
+			10.0)
+	UITheme.draw_display(_canvas, _settings_rect.position + Vector2(0, 48) + shift,
+						 "SETTINGS", UITheme.SIZE_TITLE, UITheme.TEXT,
+						 HORIZONTAL_ALIGNMENT_CENTER, _settings_rect.size.x)
 
 	UITheme.draw_panel(_canvas, Rect2(_quit_rect.position + shift, _quit_rect.size),
 					   UITheme.PANEL, UITheme.STROKE_STRONG, 10.0)
@@ -1332,7 +1354,7 @@ func _draw_footer(size: Vector2) -> void:
 
 	# The corner hint, readable now.
 	UITheme.draw_text(_canvas, Vector2(0.0, size.y - 36.0),
-					  "arrows choose   enter %s   backspace back   esc %s" %
+					  "arrows choose   enter %s   backspace back   O settings   esc %s" %
 					  ["fly" if _step == STEP_REVIEW else "next",
 					   "quit" if start_screen else "close"],
 					  UITheme.SIZE_BODY, UITheme.TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER,

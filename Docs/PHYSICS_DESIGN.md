@@ -365,6 +365,32 @@ ground, what is its normal) and for airframe-to-terrain contact after a crash.
 The wheel forces themselves are ours, computed in `Physics/Ground/` and fed
 through the same `ForceAccumulator` as everything else.
 
+### Ground effect
+
+Within about half a span of the ground, the wing's mirror image in the surface
+cancels part of its own trailing vortices. The section model already carries the
+induced flow inside its aspect ratio - in the finite-wing lift slope and in the
+induced drag - so ground effect is one number per section, the share of
+free-air induced flow it still sees:
+
+```
+phi(h/b) = (16 h/b)^2 / (1 + (16 h/b)^2)          McCormick, image vortex
+AR_effective = AR / phi
+```
+
+`h` is each section's own height, so a banked aircraft has its low wing deeper
+in ground effect than its high one and gets a rolling moment towards wings level
+- the one a pilot feels in a crosswind flare. The tail's downwash is scaled by
+the same factor at the tail's height: less downwash means more tail lift and the
+nose-down change of trim that makes a flare need more elevator in its last
+few centimetres. CL max is unchanged; only the angle a given lift needs.
+
+The ground is sampled once, under the CG, and skipped entirely above two spans,
+where `phi` is 1 to four decimal places. `aerodynamics.ground_effect_scale` in
+the aircraft file scales it, and 0 turns it off; the tests use that to measure
+what it adds. Measured on the Trainer at a tenth of a span: the same lift for
+0.43 deg less angle of attack and 5 % less drag; a high wing, a modest float.
+
 ---
 
 ## 11. Environment

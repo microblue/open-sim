@@ -16,6 +16,14 @@
 # so a 240 Hz simulation does not produce a flickering readout.
 extends CanvasLayer
 
+const Settings := preload("res://ui/Settings.gd")
+const Warnings := preload("res://ui/FlightWarnings.gd")
+
+## How long a chip stays up after its condition clears. Without it a sink rate
+## hovering on the threshold blinks the chip on and off several times a second,
+## which reads as a fault rather than as a warning.
+const CHIP_LINGER_S: float = 0.6
+
 @export var simulation_path: NodePath
 @export var input_path: NodePath
 ## Mode 2: throttle and rudder on the left gimbal, elevator and aileron on the
@@ -42,6 +50,10 @@ var _fps_accumulator: float = 0.0
 var _fps_frames: int = 0
 var _alert_phase: float = 0.0
 var _vario_shown: float = 0.0
+## Chips on screen: id -> {text, level, left (seconds of linger), alpha}.
+var _chips: Dictionary = {}
+## Display order, so a chip does not jump sideways when another one clears.
+var _chip_order: Array[String] = ["low", "far", "battery"]
 
 
 func _ready() -> void:
@@ -66,9 +78,20 @@ func _unhandled_input(event: InputEvent) -> void:
 			_diagnostics = not _diagnostics
 
 
+## A short confirmation in the banner slot - "flight log saved" - for when a
+## key did something with no other visible effect. Outranked by every warning.
+var _notice_text: String = ""
+var _notice_left: float = 0.0
+
+func show_notice(text: String, seconds: float = 3.0) -> void:
+	_notice_text = text
+	_notice_left = seconds
+
+
 func _process(delta: float) -> void:
 	if _sim == null or not visible:
 		return
+	_notice_left = maxf(_notice_left - delta, 0.0)
 
 	_fps_accumulator += delta
 	_fps_frames += 1
@@ -100,6 +123,10 @@ func _process(delta: float) -> void:
 				break
 	_throttle = lerpf(_throttle, _sim.get_channels()[2], quick)
 
+	# The radio in the pilot's hands decides which gimbal carries the throttle.
+	mode_two = int(Settings.get_value("controls/stick_mode")) != 1
+	_update_chips(delta)
+
 	_alert_phase += delta
 	_canvas.queue_redraw()
 
@@ -127,11 +154,13 @@ func _draw_hud() -> void:
 	_draw_attitude_block(Vector2(size.x * 0.5,
 			strip + 112.0 - (140.0 if replay_open else 0.0)))
 	_draw_alerts(Vector2(size.x * 0.5, size.y * 0.13))
+	_draw_chips(Vector2(size.x * 0.5, UITheme.S5))
 	# Immediately left of the altimeter, aligned with it, the way a vario tape
 	# sits beside an altimeter on a panel. Centred on the screen's middle it
 	# drew straight through the height readout.
 	_draw_variometer(Vector2(size.x - UITheme.S5 - 240.0 - 42.0, size.y * 0.42 + 84.0))
-	_draw_hints(Vector2(size.x * 0.5, size.y - UITheme.S4))
+	if bool(Settings.get_value("interface/key_hints")):
+		_draw_hints(Vector2(size.x * 0.5, size.y - UITheme.S4))
 
 	if _diagnostics:
 		# Left side: the tuning drawer owns the right edge, and two drawers
@@ -180,12 +209,13 @@ func _draw_speed(origin: Vector2) -> void:
 
 	UITheme.draw_label(_canvas, origin + Vector2(UITheme.S4, 30), "airspeed",
 					   UITheme.TEXT_FAINT, 2.2, UITheme.SIZE_LABEL)
-	var speed_text: String = "%.1f" % _airspeed
+	var system: String = Settings.units()
+	var speed: PackedStringArray = Settings.format_speed(_airspeed, system)
 	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, 88),
-					  speed_text, UITheme.SIZE_HERO, UITheme.TEXT)
+					  speed[0], UITheme.SIZE_HERO, UITheme.TEXT)
 	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4 + 10.0
-					  + UITheme.text_width(speed_text, UITheme.SIZE_HERO), 88),
-					  "m/s", UITheme.SIZE_BODY, UITheme.TEXT_DIM)
+					  + UITheme.text_width(speed[0], UITheme.SIZE_HERO), 88),
+					  speed[1], UITheme.SIZE_BODY, UITheme.TEXT_DIM)
 
 	# Stall margin as a track: how much of the usable band is left below.
 	var stall_speed: float = 7.9
@@ -198,9 +228,12 @@ func _draw_speed(origin: Vector2) -> void:
 	UITheme.draw_track(_canvas, Rect2(origin + Vector2(UITheme.S4, 106),
 									  Vector2(rect.size.x - UITheme.S4 * 2.0, 5)),
 					   fraction, colour)
+	# The other unit underneath, quietly. The aircraft briefs quote m/s, so a
+	# pilot reading km/h or mph can still relate the number to the brief.
+	var secondary: String = "%.0f km/h" % (_airspeed * 3.6) if system == "si" \
+			else "%.1f m/s" % _airspeed
 	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, 140),
-					  "%.0f km/h" % (_airspeed * 3.6),
-					  UITheme.SIZE_BODY, UITheme.TEXT_FAINT)
+					  secondary, UITheme.SIZE_BODY, UITheme.TEXT_FAINT)
 
 
 func _draw_altitude(origin: Vector2) -> void:
@@ -209,12 +242,13 @@ func _draw_altitude(origin: Vector2) -> void:
 
 	UITheme.draw_label(_canvas, origin + Vector2(UITheme.S4, 30), "height",
 					   UITheme.TEXT_FAINT, 2.2, UITheme.SIZE_LABEL)
-	var height_text: String = "%.0f" % maxf(_altitude, 0.0)
+	var system: String = Settings.units()
+	var height: PackedStringArray = Settings.format_height(maxf(_altitude, 0.0), system)
 	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, 88),
-					  height_text, UITheme.SIZE_HERO, UITheme.TEXT)
+					  height[0], UITheme.SIZE_HERO, UITheme.TEXT)
 	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4 + 10.0
-					  + UITheme.text_width(height_text, UITheme.SIZE_HERO), 88),
-					  "m", UITheme.SIZE_BODY, UITheme.TEXT_DIM)
+					  + UITheme.text_width(height[0], UITheme.SIZE_HERO), 88),
+					  height[1], UITheme.SIZE_BODY, UITheme.TEXT_DIM)
 
 	var climbing: bool = _climb > 0.15
 	var sinking: bool = _climb < -0.15
@@ -222,7 +256,7 @@ func _draw_altitude(origin: Vector2) -> void:
 	var colour: Color = UITheme.GOOD if climbing else \
 		(UITheme.WARN if _climb < -2.5 else UITheme.TEXT_DIM)
 	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, 140),
-					  "%s %+.1f m/s" % [arrow, _climb],
+					  "%s %s" % [arrow, Settings.format_climb(_climb, system)],
 					  UITheme.SIZE_BODY, colour)
 
 
@@ -404,7 +438,8 @@ func _draw_variometer(centre: Vector2) -> void:
 		_canvas.draw_rect(Rect2(rect.position.x, middle, width, -bar), colour)
 
 	UITheme.draw_text(_canvas, Vector2(centre.x, rect.position.y - 16.0),
-			"%+.1f" % _vario_shown, UITheme.SIZE_BODY, colour,
+			("%+.0f" % (_vario_shown * 196.8504)) if Settings.units() == "imperial"
+				else ("%+.1f" % _vario_shown), UITheme.SIZE_BODY, colour,
 			HORIZONTAL_ALIGNMENT_CENTER)
 	UITheme.draw_label(_canvas, Vector2(centre.x - 12.0, rect.end.y + 20.0),
 			"VARIO", UITheme.TEXT_FAINT, 2.0, UITheme.SIZE_MICRO)
@@ -431,7 +466,9 @@ func _draw_alerts(centre: Vector2) -> void:
 	# ground is noise, and noise is how a warning stops being read.
 	var flying: bool = not _sim.is_on_ground() or _sim.get_airspeed_mps() > 6.0
 
-	if _sim.has_failure():
+	# Failure practice can hide the words and keep the symptoms, so the pilot
+	# has to work out what broke from how the aeroplane is behaving.
+	if _sim.has_failure() and bool(Settings.get_value("practice/failure_notice")):
 		# Above everything else, including the crash banner. A pilot with a
 		# jammed servo needs to know that before they need to know they are
 		# approaching the stall: the stall is a consequence they can still fly
@@ -449,6 +486,9 @@ func _draw_alerts(centre: Vector2) -> void:
 		colour = UITheme.DANGER
 	elif flying and _stall > 0.06:
 		text = "APPROACHING THE STALL"
+	elif _notice_left > 0.0:
+		text = _notice_text
+		colour = UITheme.ACCENT
 	elif _input != null and not _input.is_connected() and not _keys_learned:
 		# The keyboard is flying it. Says what the keys are, because the old
 		# line sent a player with no radio to a wizard that needs one - a dead
@@ -459,8 +499,12 @@ func _draw_alerts(centre: Vector2) -> void:
 		# yet and the wrong way to say something they have already acted on -
 		# it sat there through every flight, blocking the sky, telling someone
 		# who was already flying on the keyboard how to fly on the keyboard.
-		text = "NO TRANSMITTER - FLYING ON THE KEYBOARD" \
-			+ "   ARROWS ELEVATOR/AILERON   W/S THROTTLE   A/D RUDDER   F3 SET UP A RADIO"
+		if mode_two:
+			text = "NO TRANSMITTER - FLYING ON THE KEYBOARD" \
+				+ "   ARROWS ELEVATOR/AILERON   W/S THROTTLE   A/D RUDDER   F3 SET UP A RADIO"
+		else:
+			text = "NO TRANSMITTER - FLYING ON THE KEYBOARD (MODE 1)" \
+				+ "   ARROWS THROTTLE/AILERON   W/S ELEVATOR   A/D RUDDER   F3 SET UP A RADIO"
 		colour = UITheme.WARN
 	elif _input != null and _input.is_connected() \
 			and not _input.get_profile_problem().is_empty():
@@ -482,8 +526,10 @@ func _draw_alerts(centre: Vector2) -> void:
 	else:
 		return
 
-	# A slow pulse, so it reads as live without becoming a strobe.
-	var pulse: float = 0.72 + 0.28 * sin(_alert_phase * 4.0)
+	# A slow pulse, so it reads as live without becoming a strobe - and none at
+	# all for a pilot who has asked for less motion.
+	var pulse: float = 1.0 if Settings.reduced_motion() \
+			else 0.72 + 0.28 * sin(_alert_phase * 4.0)
 	# Measured with the letterspacing the banner is actually drawn with; using
 	# the unspaced width left the last words hanging outside the panel.
 	var width: float = UITheme.label_width(text, 2.2, UITheme.SIZE_VALUE) \
@@ -498,15 +544,112 @@ func _draw_alerts(centre: Vector2) -> void:
 					   UITheme.SIZE_VALUE)
 
 
+## Works out which chips should be up, from the pure rules in FlightWarnings,
+## and eases each one in and out.
+func _update_chips(delta: float) -> void:
+	var rig: Node = get_parent().get_node_or_null("CameraRig") if get_parent() != null \
+			else null
+	var at: Vector3 = _sim.global_position
+	var span_px: float = -1.0
+	# FAR is a pilot-view question: from the chase or the cockpit the model is
+	# never far.
+	if rig != null and rig.get("mode") == 0 and rig.has_method("get_narrowest_fov"):
+		span_px = Warnings.span_pixels(_sim.get_wingspan_m(),
+				(at - (rig as Node3D).global_position).length(),
+				rig.get_narrowest_fov(), _canvas.size.y)
+	var state: Dictionary = {
+		"crashed": _sim.has_crashed(),
+		"airborne": not _sim.is_on_ground(),
+		"sink_mps": -_climb,
+		"height_m": at.y - _sim.get_terrain_height(at.x, at.z),
+		"span_px": span_px,
+		"battery": _sim.get_battery_charge(),
+		"has_battery": _sim.get_battery_cells() > 0,
+	}
+	var live: Dictionary = {}
+	for chip in Warnings.evaluate(state):
+		live[chip["id"]] = chip
+
+	var rate: float = 1000.0 if Settings.reduced_motion() else delta * 6.0
+	for id in _chip_order:
+		var entry: Dictionary = _chips.get(id, {})
+		if live.has(id):
+			entry["text"] = live[id]["text"]
+			entry["level"] = live[id]["level"]
+			entry["left"] = CHIP_LINGER_S
+		elif not entry.is_empty():
+			entry["left"] = float(entry["left"]) - delta
+		if entry.is_empty():
+			continue
+		# Crashed clears at once: the banner takes over and the chips would
+		# only be repeating stale news about an aeroplane that is in the grass.
+		var wanted: float = 1.0 if float(entry["left"]) > 0.0 \
+				and not state["crashed"] else 0.0
+		entry["alpha"] = move_toward(float(entry.get("alpha", 0.0)), wanted, rate)
+		if wanted == 0.0 and float(entry["alpha"]) <= 0.0:
+			_chips.erase(id)
+		else:
+			_chips[id] = entry
+
+
+## The chip row: short facts, top centre, above the banner and separate from
+## it. Steady rather than pulsing - a chip is something to fold into what the
+## pilot is doing, not an alarm.
+func _draw_chips(top_centre: Vector2) -> void:
+	if _chips.is_empty():
+		return
+	var spacing: float = 2.0
+	var size: int = UITheme.SIZE_LABEL
+	var height: float = 38.0
+	var gap: float = UITheme.S3
+	var widths: Array[float] = []
+	var shown: Array[Dictionary] = []
+	var total: float = 0.0
+	for id in _chip_order:
+		if not _chips.has(id):
+			continue
+		var chip: Dictionary = _chips[id]
+		var w: float = UITheme.label_width(chip["text"], spacing, size) + UITheme.S5 * 2.0
+		widths.append(w)
+		shown.append(chip)
+		total += w
+	total += gap * float(shown.size() - 1)
+
+	var x: float = top_centre.x - total * 0.5
+	for i in shown.size():
+		var chip: Dictionary = shown[i]
+		var colour: Color = UITheme.DANGER if chip["level"] == Warnings.DANGER \
+				else UITheme.WARN
+		var a: float = float(chip["alpha"])
+		var rect := Rect2(Vector2(x, top_centre.y), Vector2(widths[i], height))
+		UITheme.draw_panel(_canvas, rect,
+				Color(colour.r * 0.22, colour.g * 0.14, colour.b * 0.14, 0.88 * a),
+				Color(colour.r, colour.g, colour.b, 0.6 * a), height * 0.5)
+		UITheme.draw_label(_canvas, rect.position + Vector2(UITheme.S5, 26.0),
+				chip["text"], Color(colour.r, colour.g, colour.b, a), spacing, size)
+		x += widths[i] + gap
+
+
 func _draw_hints(centre: Vector2) -> void:
-	var text: String = "F1 hud    F2 sections    F3 transmitter    F4 tuning    " \
-		+ "F5 reload    R reset    1/2/3 camera    Z zoom    M menu    " \
-		+ "H hangar    L location"
+	var text: String = "F1 hud  F2 sections  F3 radio  F4 tuning  F5 reload  " \
+		+ "R reset  1/2/3 camera  Z zoom  X auto  G height cue  " \
+		+ "M menu  H hangar  L location  O settings  P pause"
 	# At SIZE_MICRO in TEXT_FAINT this was a grey smear along the bottom of
 	# the frame. It is the only list of what the keys do.
-	var width: float = UITheme.text_width(text, UITheme.SIZE_BODY)
+	#
+	# It has to fit between the transmitter and power panels, which reach the
+	# same line. The list grew; rather than run under both panels it steps
+	# down a size, and only as far as it must.
+	var room: float = 2.0 * minf(centre.x - (UITheme.S5 + 348.0 + UITheme.S4),
+			_canvas.size.x - UITheme.S5 - 320.0 - UITheme.S4 - centre.x)
+	var size: int = UITheme.SIZE_BODY
+	for candidate in [UITheme.SIZE_BODY, UITheme.SIZE_LABEL, UITheme.SIZE_MICRO]:
+		size = candidate
+		if UITheme.text_width(text, size) <= room:
+			break
+	var width: float = UITheme.text_width(text, size)
 	UITheme.draw_text(_canvas, centre + Vector2(-width * 0.5, 0), text,
-					  UITheme.SIZE_BODY, UITheme.TEXT_DIM)
+					  size, UITheme.TEXT_DIM)
 
 
 ## The per-section drawer. This is the wall of numbers, and it is behind a key

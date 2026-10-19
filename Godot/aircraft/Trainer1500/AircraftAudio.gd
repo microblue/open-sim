@@ -12,6 +12,7 @@
 extends Node3D
 
 const BankScript := preload("res://audio/SoundBank.gd")
+const SettingsScript := preload("res://ui/Settings.gd")
 
 ## Blades passing per revolution. Two-blade prop, so the fundamental the ear
 ## hears is twice the shaft frequency.
@@ -45,6 +46,7 @@ var _was_crashed: bool = false
 
 func _ready() -> void:
 	_sim = get_node_or_null(simulation_path) as RCSimulationNode
+	SettingsScript.ensure_buses()
 
 	_engine = _player("Engine", BankScript.engine(), 0.0)
 	_wind = _player("Airflow", BankScript.airflow(), -8.0)
@@ -77,6 +79,8 @@ func _player(player_name: String, stream: AudioStream, db: float) -> AudioStream
 	player.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_SQUARE_DISTANCE
 	player.unit_size = 6.0
 	player.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_PHYSICS_STEP
+	# The world's bus, which the settings screen's game volume drives.
+	player.bus = SettingsScript.BUS_GAME
 	add_child(player)
 	return player
 

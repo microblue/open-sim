@@ -71,6 +71,13 @@ struct AircraftForces
     Real DownwashVelocity = 0.0;   ///< m/s, downward
     Real DownwashAngle = 0.0;      ///< rad, for the HUD
 
+    /** Height of the CG above the ground under it [m], and the share of
+     *  free-air induced flow the wing still sees there (1 = out of ground
+     *  effect). Both stay at their free-air values when no ground provider
+     *  was supplied. */
+    Real HeightAboveGround = -1.0;
+    Real GroundEffectFactor = 1.0;
+
     /** Per-wheel ground contact. Empty when no ground provider was supplied. */
     std::vector<WheelResult> Wheels;
 
@@ -107,6 +114,19 @@ public:
     /** Propeller-induced flow at a body-frame point, expressed as an addition
      *  to the section's relative airflow. Public so the debug view can draw the
      *  wake cone and the validation suite can probe it. */
+    /** Ground effect, as the fraction of free-air induced flow a wing keeps at
+     *  a height h above the ground, given as h / wingspan.
+     *
+     *  McCormick's image-vortex result:
+     *
+     *      phi = (16 h/b)^2 / (1 + (16 h/b)^2)
+     *
+     *  At half a span up it is 0.98 - effectively free air - and at a tenth of
+     *  a span, which is a 1.5 m model holding off a few inches above the grass,
+     *  it is 0.72: the wing behaves as if it had 40 % more aspect ratio. That
+     *  is the float that makes a too-fast approach run the length of the strip. */
+    static Real GroundEffectInducedFactor(Real heightOverSpan);
+
     Vec3 PropwashAt(const Vec3& positionBody, const PropulsionOutput& propulsion,
                     Real spanExtent = 0.0,
                     const Vec3& spanDirectionBody = Vec3::UnitY()) const;

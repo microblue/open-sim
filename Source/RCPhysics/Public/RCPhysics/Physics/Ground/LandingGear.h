@@ -118,6 +118,12 @@ struct CrashResult
     std::string Reason;
     Real ImpactSpeed = 0.0;   ///< m/s along the ground normal at the moment of contact
     Vec3 PointBody = Vec3::Zero();
+    /** Which hard point hit ("wing_tip_left", "propeller", ...), or "gear"
+     *  for a collapse. Read by the crash analysis, which needs the part as
+     *  data rather than as a sentence. */
+    std::string PointName;
+    bool StruckObstacle = false;
+    bool GearCollapsed = false;
 };
 
 /** V0.1 crash detection: no structural model, just "did something that is not a

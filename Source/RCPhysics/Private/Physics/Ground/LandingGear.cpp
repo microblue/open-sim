@@ -221,6 +221,30 @@ void CrashModel::Configure(const AircraftDefinition& definition)
     // than sinking to the fin.
     if (rightMost > 0.0) { Hull.push_back({"wing_tip_right_upper", rightTip - Vec3(0, 0, radius)}); }
     if (leftMost  < 0.0) { Hull.push_back({"wing_tip_left_upper",  leftTip  - Vec3(0, 0, radius)}); }
+
+    // Every hull point except the belly is ALSO a crash point. Nothing lands
+    // on its back or on the top of a wingtip: an aircraft arriving inverted
+    // touches one of these first, and while they were hull-only the wreck
+    // tumbled on them for a fifth of a second before a crash point reached
+    // the ground - so the crash, to the crash analysis and to the pilot,
+    // happened after the cartwheel instead of at its start.
+    const std::size_t crashPointCount = Points.size();
+    for (std::size_t i = crashPointCount; i < Hull.size(); ++i)
+    {
+        const HardPoint& point = Hull[i];
+        if (point.Name == "spine")
+        {
+            Points.push_back({"canopy", point.PositionBody});
+        }
+        else if (point.Name == "wing_tip_right_upper")
+        {
+            Points.push_back({"wing_tip_right", point.PositionBody});
+        }
+        else if (point.Name == "wing_tip_left_upper")
+        {
+            Points.push_back({"wing_tip_left", point.PositionBody});
+        }
+    }
 }
 
 CrashResult CrashModel::Check(const RigidBodyState& state,
@@ -241,6 +265,8 @@ CrashResult CrashModel::Check(const RigidBodyState& state,
             {
                 result.Crashed = true;
                 result.Reason = "landing gear collapsed on touchdown";
+                result.PointName = "gear";
+                result.GearCollapsed = true;
                 result.ImpactSpeed = descent;
                 result.PointBody = wheel.ContactPointBody;
                 return result;
@@ -258,7 +284,9 @@ CrashResult CrashModel::Check(const RigidBodyState& state,
         if (world.z >= sample.SurfaceHeight)
         {
             result.Crashed = true;
-            result.Reason = point.Name + (ground.IsObstacle(world.x, world.y)
+            result.StruckObstacle = ground.IsObstacle(world.x, world.y);
+            result.PointName = point.Name;
+            result.Reason = point.Name + (result.StruckObstacle
                                           ? " struck a tree"
                                           : " struck the ground");
             result.ImpactSpeed = state.VelocityWorld.Length();

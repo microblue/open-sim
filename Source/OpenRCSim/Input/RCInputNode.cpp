@@ -83,6 +83,10 @@ void RCInputNode::set_keyboard_enabled(bool enabled)
 
 bool RCInputNode::is_keyboard_enabled() const { return KeyboardAllowed; }
 
+void RCInputNode::set_keyboard_mode(int mode) { KeyboardModeOne = (mode == 1); }
+
+int RCInputNode::get_keyboard_mode() const { return KeyboardModeOne ? 1 : 2; }
+
 void RCInputNode::ApplyKeyboard(double deltaSeconds)
 {
     if (!is_using_keyboard())
@@ -122,18 +126,27 @@ void RCInputNode::ApplyKeyboard(double deltaSeconds)
         else           { value = std::max(-1.0, value - throw_rate); }
     };
 
-    // Right stick: elevator and ailerons on the arrow keys. UP pitches the
-    // nose DOWN, as a transmitter's elevator stick does.
-    axis(Key::KEY_DOWN, Key::KEY_UP, KeyElevator);
+    // Mode 2: the arrows are the right stick - elevator and ailerons - and
+    // W/S/A/D the left, throttle and rudder. Mode 1 swaps elevator and
+    // throttle between the sticks, so the up/down arrows become the throttle.
+    // Either way the stick that is pushed AWAY pitches the nose DOWN, as a
+    // transmitter's elevator does.
+    const Key pitchForward = KeyboardModeOne ? Key::KEY_W : Key::KEY_UP;
+    const Key pitchBack    = KeyboardModeOne ? Key::KEY_S : Key::KEY_DOWN;
+    const Key throttleUp   = KeyboardModeOne ? Key::KEY_UP : Key::KEY_W;
+    const Key throttleDown = KeyboardModeOne ? Key::KEY_DOWN : Key::KEY_S;
+
+    axis(pitchBack, pitchForward, KeyElevator);
     axis(Key::KEY_RIGHT, Key::KEY_LEFT, KeyAileron);
-    // Left stick: rudder on A/D. The throttle latches instead of centring.
+    // Rudder on A/D in both modes: it is the left stick's horizontal axis.
+    // The throttle latches instead of centring.
     axis(Key::KEY_D, Key::KEY_A, KeyRudder);
 
-    if (input->is_key_pressed(Key::KEY_W))
+    if (input->is_key_pressed(throttleUp))
     {
         KeyThrottle = std::min(1.0, KeyThrottle + throw_rate * 0.5);
     }
-    else if (input->is_key_pressed(Key::KEY_S))
+    else if (input->is_key_pressed(throttleDown))
     {
         KeyThrottle = std::max(0.0, KeyThrottle - throw_rate * 0.5);
     }
@@ -505,6 +518,8 @@ void RCInputNode::_bind_methods()
     ClassDB::bind_method(D_METHOD("set_keyboard_enabled", "enabled"),
                          &RCInputNode::set_keyboard_enabled);
     ClassDB::bind_method(D_METHOD("is_keyboard_enabled"), &RCInputNode::is_keyboard_enabled);
+    ClassDB::bind_method(D_METHOD("set_keyboard_mode", "mode"), &RCInputNode::set_keyboard_mode);
+    ClassDB::bind_method(D_METHOD("get_keyboard_mode"), &RCInputNode::get_keyboard_mode);
     ClassDB::bind_method(D_METHOD("is_throttle_armed"), &RCInputNode::is_throttle_armed);
     ClassDB::bind_method(D_METHOD("get_profile_problem"), &RCInputNode::get_profile_problem);
     ClassDB::bind_method(D_METHOD("resolve_data_path", "relative"), &RCInputNode::resolve_data_path);

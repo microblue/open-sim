@@ -87,6 +87,9 @@ func _start() -> void:
 	_test_wind()
 	_test_reset()
 	_test_audio()
+	_test_settings_store()
+	_test_warning_chips()
+	_test_keyboard_mode()
 
 	_sim.wind_speed_mps = 0.0
 	_sim.turbulence_mps = 0.0
@@ -94,6 +97,205 @@ func _start() -> void:
 	_sim.reset_state()
 	_start_altitude = _sim.get_altitude_m()
 	print("\n  free glide, elevator neutral, still air")
+
+
+## Failure practice through the real node: at 100 % a flight in the air gets
+## its failure after 20 to 120 s, and not before.
+func _test_failure_practice() -> void:
+	print("\n  failure practice")
+	# Gravity off, so the model stays well up and flying on its own: this is
+	# about WHEN the failure arrives, not about flying the aeroplane.
+	_sim.set_gravity_enabled(false)
+	_sim.spawn_mode = RCSimulationNode.SPAWN_AIR
+	_sim.spawn_altitude_m = 120.0
+	_sim.set_failure_practice(1.0, false, true)
+	_sim.reset_state()
+	var plan: Dictionary = _sim.get_failure_practice()
+	_check(bool(plan["will_fail"]), "at 100 % the flight is drawn to fail")
+	_check_range(float(plan["onset_s"]), 20.0, 120.0, "the failure is due 20 to 120 s in")
+	_sim.set_manual_channel(RCInputNode.CHANNEL_THROTTLE, 0.55)
+	run_for(maxf(float(plan["onset_s"]) - 2.0, 0.0))
+	_check(not _sim.has_failure(), "nothing breaks before it is due")
+	run_for(4.0)
+	var after: Dictionary = _sim.get_failure_practice()
+	_check(bool(after["triggered"]), "it arrives when due (%.1f s airborne)" % after["airborne_s"])
+	_check(_sim.has_failure(), "and the aircraft has it")
+	var seed: int = int(after["seed"])
+
+	# The same flight again: same seed, same moment.
+	_sim.set_failure_practice_repeat(true)
+	_sim.reset_state()
+	_sim.set_failure_practice_repeat(false)
+	_check(int(_sim.get_failure_practice()["seed"]) == seed, "Shift+R flies the same flight")
+	_sim.reset_state()
+	_check(int(_sim.get_failure_practice()["seed"]) != seed, "R draws a new one")
+	_check(int(_sim.get_failure_practice()["flights"]) >= 1, "flights that flew are scored")
+
+	_sim.set_gravity_enabled(true)
+	_sim.set_failure_practice(0.0, false, true)
+	_sim.reset_failure_practice_stats()
+	_sim.clear_failures()
+	_sim.clear_manual_channels()
+	_sim.reset_state()
+	_check(not bool(_sim.get_failure_practice()["will_fail"]), "0 % turns it off")
+
+
+func _test_keyboard_mode() -> void:
+	var input := RCInputNode.new()
+	_check(input.get_keyboard_mode() == 2, "the keyboard starts in Mode 2")
+	input.set_keyboard_mode(1)
+	_check(input.get_keyboard_mode() == 1, "the keyboard can fly Mode 1")
+	input.free()
+
+
+## The preferences file. The two promises that matter are the ones a pilot
+## would never notice until they were broken: an unreadable file is kept, not
+## overwritten, and a file from a newer build is never downgraded.
+func _test_settings_store() -> void:
+	print("  settings store")
+	var Store := preload("res://ui/Settings.gd")
+	var path: String = "user://test_settings.cfg"
+	var bad: String = path + ".bad"
+	for stale in [path, bad]:
+		if FileAccess.file_exists(stale):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(stale))
+
+	# Missing file: defaults, and a save creates it.
+	Store.load_from(path)
+	_check(Store.get_value("controls/stick_mode") == 2, "stick mode defaults to Mode 2")
+	_check(Store.get_value("display/units") == "si", "units default to what the HUD always showed")
+	_check(not Store.is_read_only(), "a missing file is writable")
+
+	# Round trip.
+	Store.set_value("display/units", "imperial")
+	Store.set_value("controls/stick_mode", 1)
+	Store.set_value("audio/game_volume", 0.35)
+	Store.set_value("interface/key_hints", false)
+	_check(FileAccess.file_exists(path), "setting a value saves the file")
+	Store.load_from(path)
+	_check(Store.get_value("display/units") == "imperial", "units survive a reload")
+	_check(Store.get_value("controls/stick_mode") == 1, "stick mode survives a reload")
+	_check_near(float(Store.get_value("audio/game_volume")), 0.35, 1e-6,
+			"volume survives a reload")
+	_check(Store.get_value("interface/key_hints") == false, "a false bool survives a reload")
+	var written := ConfigFile.new()
+	written.load(path)
+	_check(int(written.get_value("meta", "schema", -1)) == Store.SCHEMA_VERSION,
+			"the file carries its schema version")
+
+	# Hand-edited nonsense is coerced, not trusted.
+	written.set_value("display", "units", "furlongs")
+	written.set_value("audio", "menu_volume", 7.5)
+	written.set_value("controls", "stick_mode", "two")
+	written.save(path)
+	Store.load_from(path)
+	_check(Store.get_value("display/units") == "si", "an unknown unit falls back")
+	_check_near(float(Store.get_value("audio/menu_volume")), 1.0, 1e-6,
+			"an out-of-range volume is clamped")
+	_check(Store.get_value("controls/stick_mode") == 2, "a mistyped stick mode falls back")
+
+	# Corrupt: renamed to .bad, defaults used, and the next save is a fresh file.
+	var corrupt := FileAccess.open(path, FileAccess.WRITE)
+	corrupt.store_string("[display\nunits = \"imperial\n=== not a config file ===\n")
+	corrupt.close()
+	Store.load_from(path)
+	_check(FileAccess.file_exists(bad), "an unreadable file is kept as settings.cfg.bad")
+	_check(not FileAccess.file_exists(path), "the unreadable file is moved, not left in place")
+	_check(Store.get_value("display/units") == "si", "an unreadable file gives defaults")
+	_check(not Store.status().is_empty(), "an unreadable file is reported")
+	var kept: String = FileAccess.get_file_as_string(bad)
+	_check(kept.find("not a config file") >= 0, "the .bad file holds the original contents")
+
+	# Newer schema: read what we understand, never write.
+	var newer := ConfigFile.new()
+	newer.set_value("meta", "schema", Store.SCHEMA_VERSION + 1)
+	newer.set_value("display", "units", "metric")
+	newer.set_value("future", "thing", 42)
+	newer.save(path)
+	var before: String = FileAccess.get_file_as_string(path)
+	Store.load_from(path)
+	_check(Store.is_read_only(), "a newer-schema file is opened read-only")
+	_check(Store.get_value("display/units") == "metric", "a newer-schema file is still read")
+	Store.set_value("display/units", "imperial")
+	_check(not Store.save(), "saving over a newer-schema file is refused")
+	_check(FileAccess.get_file_as_string(path) == before,
+			"a newer-schema file is left byte for byte as it was")
+	_check(Store.get_value("display/units") == "imperial",
+			"a change still applies for the session")
+
+	# Units, as the HUD will show them.
+	_check(Store.format_speed(10.0, "metric")[0] == "36", "10 m/s is 36 km/h")
+	_check(Store.format_speed(10.0, "imperial")[0] == "22", "10 m/s is 22 mph")
+	_check(Store.format_speed(10.0, "si")[1] == "m/s", "SI speed is m/s")
+	_check(Store.format_height(100.0, "imperial")[0] == "328", "100 m is 328 ft")
+	_check(Store.format_climb(-1.0, "imperial") == "-197 ft/min", "1 m/s down is 197 ft/min")
+
+	for stale in [path, bad]:
+		if FileAccess.file_exists(stale):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(stale))
+	# Back to defaults in memory, without touching the pilot's own file.
+	Store.load_from(path)
+
+
+## The warning chips are a pure function of a handful of numbers, so each rule
+## can be stated as a number and checked on both sides of it.
+func _test_warning_chips() -> void:
+	print("  warning chips")
+	var W := preload("res://ui/FlightWarnings.gd")
+	var ids := func(state: Dictionary) -> Array:
+		return W.evaluate(state).map(func(c: Dictionary) -> String: return c["id"])
+
+	_check(ids.call({}).is_empty(), "nothing known, nothing shown")
+	var cruising: Dictionary = {"airborne": true, "sink_mps": 0.5, "height_m": 40.0,
+			"span_px": 80.0, "battery": 0.8, "has_battery": true}
+	_check(ids.call(cruising).is_empty(), "a model in a normal circuit shows no chips")
+
+	# LOW: sinking faster than 2 m/s AND under 2 s from the ground.
+	var low: Dictionary = cruising.duplicate()
+	low["sink_mps"] = 3.0
+	low["height_m"] = 5.0
+	_check(ids.call(low) == ["low"], "3 m/s down at 5 m is LOW (1.7 s)")
+	low["height_m"] = 7.0
+	_check(ids.call(low).is_empty(), "3 m/s down at 7 m is not LOW yet (2.3 s)")
+	low["sink_mps"] = 1.9
+	low["height_m"] = 1.0
+	_check(ids.call(low).is_empty(), "a gentle 1.9 m/s flare is not LOW")
+	low["sink_mps"] = 3.0
+	low["airborne"] = false
+	_check(ids.call(low).is_empty(), "on the wheels it is not LOW")
+	var low_chip: Dictionary = W.evaluate({"airborne": true, "sink_mps": 4.0,
+			"height_m": 2.0})[0]
+	_check(low_chip["level"] == W.DANGER, "LOW is red")
+	_check(String(low_chip["text"]).begins_with("LOW"), "LOW says LOW")
+
+	# FAR: wingspan under 30 px at the narrowest zoom, and only when measured.
+	var far: Dictionary = cruising.duplicate()
+	far["span_px"] = 29.0
+	_check(ids.call(far) == ["far"], "29 px of wingspan is FAR")
+	far["span_px"] = -1.0
+	_check(ids.call(far).is_empty(), "outside the pilot view there is no FAR")
+	# 1.5 m at 300 m through 6 degrees on a 1080-line frame: about 52 px.
+	_check_near(W.span_pixels(1.5, 300.0, 6.0, 1080.0), 51.6, 0.5,
+			"span on screen is the subtended angle over the field")
+	_check(W.span_pixels(1.5, 600.0, 6.0, 1080.0) < W.FAR_SPAN_PX,
+			"a trainer at 600 m is FAR even at 6 degrees")
+
+	# BATTERY: below a fifth, and only if there is a battery.
+	var flat: Dictionary = cruising.duplicate()
+	flat["battery"] = 0.19
+	_check(ids.call(flat) == ["battery"], "19 % is BATTERY LOW")
+	flat["battery"] = 0.21
+	_check(ids.call(flat).is_empty(), "21 % is not")
+	flat["battery"] = 0.0
+	flat["has_battery"] = false
+	_check(ids.call(flat).is_empty(), "no battery, no battery chip")
+
+	# Several at once, in a fixed order; none on a wreck.
+	var everything: Dictionary = {"airborne": true, "sink_mps": 5.0, "height_m": 3.0,
+			"span_px": 10.0, "battery": 0.05, "has_battery": true}
+	_check(ids.call(everything) == ["low", "far", "battery"], "chips stack in a fixed order")
+	everything["crashed"] = true
+	_check(ids.call(everything).is_empty(), "a wreck shows no chips - the banner has it")
 
 
 ## The sound bank is generated, not shipped, so nothing catches a silent or
@@ -638,6 +840,23 @@ func _finish_dive() -> void:
 
 	_check(_sim.has_crashed(), "flying it into the ground counts as a crash")
 
+	# And it says why. A full-power dive is not a stall and not a landing.
+	var report: Dictionary = _sim.get_crash_report()
+	print("       why: %s - %s" % [report.get("title", "?"), report.get("detail", "")])
+	_check(not String(report.get("title", "")).is_empty(), "a crash comes with a reason")
+	_check(not String(report.get("advice", "")).is_empty(), "and with advice")
+	_check(["spiral_dive", "flew_into_ground"].has(String(report.get("cause", ""))),
+		"a powered dive into the ground is called a dive, not a stall (%s)"
+		% report.get("cause", ""))
+
+	# The recording that explained it can be saved for a spreadsheet.
+	var log_path: String = ProjectSettings.globalize_path("user://headless_flight_log.csv")
+	_check(_sim.save_flight_log(log_path), "the flight log is written")
+	var csv: String = FileAccess.get_file_as_string(log_path)
+	_check(csv.begins_with("time_s,north_m,"), "the flight log has its header")
+	_check(csv.count("\n") > 100, "the flight log holds the flight")
+	DirAccess.remove_absolute(log_path)
+
 	# The number that matters. A section centre a few centimetres under is the
 	# solver leaving its deliberate sliver plus half a wing thickness; metres
 	# under is the aircraft falling through the world.
@@ -694,6 +913,9 @@ func _finish_tree() -> void:
 	_test_the_roster_is_offered_gentlest_first()
 	_test_every_airframe_faces_forwards()
 	_test_airframe_is_fitted_to_the_definition()
+	# After everything: it resets the aircraft, which clears the recording the
+	# replay check reads, and flies a minute synchronously.
+	_test_failure_practice()
 
 	print("\n%d checks, %d failed" % [_checks, _failures])
 	if _failures == 0:

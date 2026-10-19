@@ -120,6 +120,13 @@ struct AeroEnvironment
     Vec3 AngularVelocityBody = Vec3::Zero();
 
     AtmosphereSample Atmosphere;
+
+    /** How much of the free-air induced flow this section still sees, 0..1.
+     *  Ground effect is what lowers it: near the ground the wing's image in
+     *  the surface cancels part of its own trailing vortices, so the section
+     *  behaves as if its aspect ratio were larger - a steeper lift curve and
+     *  less induced drag, both from the one number. 1 is free air. */
+    Real InducedFactor = 1.0;
 };
 
 class AeroSurface

@@ -17,26 +17,40 @@ EdgeTX/OpenTX radio set up AETR is recognised and bound automatically - no
 wizard. Anything else: press `F3`. Full notes, including the Godot gamepad
 mapping and the throttle interlock, in [Docs/TRANSMITTER_SETUP.md](Docs/TRANSMITTER_SETUP.md).
 
-## Status — V0.1 complete
+## Status — V0.2 in progress
 
-All eight milestones are done. The aircraft taxis, takes off, climbs, turns,
-stalls, recovers, approaches, flares and lands, driven by a real transmitter,
-in a field that looks like a field.
+V0.1's eight milestones are done: the aircraft taxis, takes off, climbs, turns,
+stalls, recovers, approaches, flares and lands, driven by a real transmitter, in
+a field that looks like a field. V0.2 is about what a pilot takes away from a
+flight. See [Docs/ROADMAP.md](Docs/ROADMAP.md).
 
-**The briefing room.** On launch the main menu is the whole pre-flight: four
+**Why it crashed.** After a crash a card says what happened and what to do
+differently - "Tip stall: a wing dropped at 26 m, rolling at 208 deg/s; 12.6 m/s
+against a stall speed of 7.9" - read from the last seconds of the flight
+recorder, so it is always something the replay can show. The suite holds each
+aircraft to its character: the same mishandling spirals the trainer, spins the
+warbird, stalls the glider and drops a wing on the aerobat.
+
+**Failure practice.** One draw per flight, never on the ground, counted
+honestly, and repeatable: `Shift+R` flies the same failure at the same moment
+again. The notice can be hidden, leaving only the symptoms.
+
+**Ground effect.** Per section, from each section's own height, so the low wing
+in a banked flare is lifted and the nose drops as the tail's downwash goes.
+
+**Settings, warnings, cues.** Volumes, window mode, units, Mode 1 or Mode 2
+(keyboard included), LOW / FAR / BATTERY chips, a pilot-view auto-zoom that
+keeps a distant model readable, a vertical height cue on the ground, pause on
+losing focus. `F10` saves the last two minutes as a CSV flight log.
+
+**The briefing room.** On launch the main menu is the whole pre-flight: five
 aircraft with the numbers that tell them apart, five places and five weather
 states each with a rendered preview, and the radio's status with its setup
-button - all on one screen, mouse and keyboard, nothing behind a keypress. One
-Enter flies. In flight, `M` brings the same room back.
-
-**Grass that stands on the ground.** The scanned grass cards used to float a
-quarter of a metre in the air and translate whole in the wind - roots and all.
-The card is now built from the bake metrics, so the clump sits on the ground at
-its real size, and the sway bends from the roots up: tips travel, roots do not.
+button. One Enter flies. In flight, `M` brings the same room back, `O` settings.
 
 ```
-223 tests, 8689 checks, 0 failed      physics core, ~2 s
- 68 checks, 0 failed                  in-engine
+336 tests, 21590 checks, 0 failed     physics core, ~2 s, on every push (CI)
+193 checks, 0 failed                  in-engine
 ```
 
 **Trainer 1500, measured and locked.** Every number below came out of flying the

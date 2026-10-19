@@ -77,6 +77,48 @@ transmitter gates bottom left; power bottom right; attitude, angle of attack and
 wing separation across the bottom centre. One banner slot at the top for the one
 thing that needs saying — never two at once.
 
+Above the banner, a row of **warning chips**: short, steady, colour-coded facts
+that can be true together, hidden when there are none. They are worked out by a
+pure function (`Godot/ui/FlightWarnings.gd`) so the in-engine tests can pin each
+rule down. Every threshold is a display aid, chosen for what a pilot can act on,
+not derived from the flight model:
+
+| chip | shows when | colour |
+|---|---|---|
+| `LOW · SINKING` | airborne, sinking faster than 2 m/s, under 2 s from the ground at that rate | danger |
+| `FAR · COME CLOSER` | pilot view, wingspan under 30 px of the 1080-line frame at the narrowest the view will go (6° with auto-zoom, 38° without) | warn |
+| `BATTERY LOW` | under 20 % charge | warn |
+
+The banner keeps the stall, the crash and the failures; a chip never replaces
+it, and none show on a wreck.
+
+**Pilot-view auto-zoom** (`X`). Narrows the pilot camera just enough that the
+wingspan stays at least 30 px tall, between 6° and the 38° base field, blended
+in log space with a 0.15 s half-life. The eye never moves, so apparent size still
+falls with distance until the floor is reached. `Z` is a multiplier on top of it.
+The tracking deadzone is measured in fractions of the field, so framing behaves
+the same at any zoom.
+
+**Height cue** (`G`). A soft plan-view silhouette on the ground *straight below*
+the model — not along the sun, whose real shadow is left alone. 0.6 opacity near
+the ground, 0.15 by 50 m, gone by 80 m. Each vertex is pulled towards the camera
+along its own view ray so it draws over the grass cards without moving on screen,
+by no more than the model's own height allows, so it never paints over the model.
+
+**Settings** (`O`, or the header button on the briefing room). One card, rows
+that change live, saved to `user://settings.cfg` as they change: game and menu
+volume (the `Game` and `Menu` audio buses, created in code), window mode (with a
+15 s keep-or-revert), units (metric km/h·m, imperial mph·ft·ft/min, SI m/s·m),
+stick mode (Mode 1 moves the throttle gate on the HUD; the keyboard fallback
+lives in `RCInputNode` and stays Mode 2), key hints, reduced motion, auto-zoom and
+the height cue. An unreadable file is renamed `settings.cfg.bad`; a file from a
+newer schema is read but never overwritten.
+
+**Paused.** The flight pauses when the window loses focus, and on `P`. It never
+resumes by itself: coming back is a key or a click, because a model that resumed
+on focus would be in a turn the pilot did not see start. A flying key still held
+when any screen closes is ignored until it has been released.
+
 **Briefing room (the main menu).** Everything that decides a sortie on one
 screen, over the live field: four aircraft with the numbers that tell them
 apart, five places and five weather states each with a rendered preview, and the
@@ -121,6 +163,9 @@ Layout is checked by rendering it, not by assertion:
 godot --path Godot --script res://tests/UiShots.gd
 ```
 
-writes each interface state to `Godot/shots/`. That is also how the rendering
+writes each interface state to `Godot/shots/`. The settings screen, the warning
+chips, the height cue and the pause card have their own pass,
+`res://tests/FeatureShots.gd`, which also checks that a held key is ignored after
+a screen closes and that a pause does not resume by itself. That is also how the rendering
 bugs in `MILESTONES.md` were found — four of them were invisible to any test and
 turned up only by looking at a frame and reading the pixel values back.

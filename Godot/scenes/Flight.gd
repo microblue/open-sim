@@ -39,6 +39,16 @@ const LoadingScript := preload("res://ui/LoadingScreen.gd")
 const ScenePresetsLib := preload("res://world/ScenePresets.gd")
 const WeatherLib := preload("res://world/Weather.gd")
 const AudioScript := preload("res://aircraft/Trainer1500/AircraftAudio.gd")
+const Settings := preload("res://ui/Settings.gd")
+const SettingsScreenScript := preload("res://ui/SettingsScreen.gd")
+const CrashCardScript := preload("res://ui/CrashCard.gd")
+const PauseScript := preload("res://ui/PauseOverlay.gd")
+const HeightCueScript := preload("res://world/HeightCue.gd")
+
+## The keys the C++ keyboard fallback flies on. Listed here only so a key still
+## held from navigating a menu can be recognised - see _refresh_hud_visibility.
+const FLIGHT_KEYS: Array[Key] = [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT,
+								 KEY_W, KEY_A, KEY_S, KEY_D]
 
 @onready var aircraft: RCSimulationNode = $Aircraft
 @onready var transmitter: RCInputNode = $Transmitter
@@ -51,9 +61,23 @@ var _last_profile_problem: String = ""
 ## True while the world is being built behind the loading screen, so a second
 ## Fly cannot start a second build on top of the first.
 var _loading: bool = false
+## True once a sortie has been built, so there is a flight to pause.
+var _world_built: bool = false
+## Only an application that has HAD focus can lose it. Under a bare X server
+## with no window manager the first event can be a focus-out, and a scripted
+## render that paused itself on frame one would photograph a pause card.
+var _had_focus: bool = false
+## Set while the keyboard is being withheld until the flying keys are let go.
+var _keys_held_from_screen: bool = false
 
 
 func _ready() -> void:
+	# Preferences first: the window mode and the mixer are in effect before the
+	# first frame is drawn or the first note of menu music plays.
+	Settings.ensure_loaded()
+	Settings.apply_all()
+	_apply_flight_settings()
+
 	# A profile the pilot saved themselves always wins. Failing that, a radio we
 	# recognise gets bound automatically a moment from now, once Godot has
 	# finished enumerating joypads.
@@ -88,6 +112,7 @@ func _ready() -> void:
 	add_child(tuning)
 
 	aircraft.reset_state()
+	_add_crash_card()
 	_print_help()
 
 	# The briefing room opens NOW, on the first frame, whatever the radio is
@@ -102,16 +127,57 @@ func _ready() -> void:
 	_open_menu(true)
 
 
+## The settings the simulation itself reads, rather than a screen: the keyboard
+## layout and failure practice. Applied at start and whenever settings close.
+func _apply_flight_settings() -> void:
+	transmitter.set_keyboard_mode(int(Settings.get_value("controls/stick_mode")))
+	aircraft.set_failure_practice(float(Settings.get_value("practice/failure_chance")),
+		bool(Settings.get_value("practice/radio_failures")),
+		bool(Settings.get_value("practice/failure_notice")))
+
+
+## The crash card rides on the HUD's layer, so it shows and hides with it.
+func _add_crash_card() -> void:
+	var hud: Node = get_node_or_null("FlightHUD")
+	if hud == null or hud.has_node("CrashCard"):
+		return
+	var card := CrashCardScript.new()
+	card.name = "CrashCard"
+	hud.add_child(card)
+	card.bind(aircraft)
+
+
+## F10: the flight recorder's last two minutes as CSV, for a spreadsheet or
+## PlotJuggler - sticks against what the aeroplane did, which is how an
+## instructor reads a flight. Never overwrites: every save gets its own name.
+func _save_flight_log() -> void:
+	var directory: String = "user://flights"
+	DirAccess.make_dir_recursive_absolute(directory)
+	var stamp: String = Time.get_datetime_string_from_system(false, true) \
+		.replace(":", "").replace(" ", "_").replace("-", "")
+	var path: String = ProjectSettings.globalize_path("%s/flight_%s.csv" % [directory, stamp])
+	if aircraft.save_flight_log(path):
+		print("Flight log saved: %s" % path)
+		var hud: Node = get_node_or_null("FlightHUD")
+		if hud != null and hud.has_method("show_notice"):
+			hud.show_notice("FLIGHT LOG SAVED   -   %s" % path.get_file())
+	else:
+		push_warning("Could not save the flight log to %s" % path)
+
+
 func _print_help() -> void:
 	print("""
 OpenRC Simulator
   1 / 2 / 3   pilot / chase / FPV camera
-  Z           pilot-view zoom  1x -> 2x -> 4x
+  Z           pilot-view zoom  1x -> 2x -> 4x    X  pilot-view auto-zoom on / off
+  G           height cue (mark on the ground below the model) on / off
   right drag  look around
-  R           reset
+  R           reset (a new flight)   Shift+R  the same flight again (failure practice)
+  F10         save the last two minutes as a CSV flight log
   F1          hide the telemetry overlay      F2  per-section detail
   F4          tuning panel (wind, weather, physics rate)
   M           menu       H   hangar (aircraft)   L  location (place, weather)
+  O           settings   P   pause (also on losing window focus)
   Tab         replay the last two minutes
   4 5 6 7 8   dead stick / jammed aileron / elevator linkage / radio loss / brownout
   9           clear the failure
@@ -134,9 +200,18 @@ func _unhandled_input(event: InputEvent) -> void:
 	match event.keycode:
 		KEY_R when has_node("ReplayBar"):
 			get_node("ReplayBar").queue_free()
+		KEY_R when event.shift_pressed:
+			# The same flight again: with failure practice on, the same failure
+			# at the same moment, to be flown until it is flown well.
+			aircraft.set_failure_practice_repeat(true)
+			aircraft.reset_state()
+			aircraft.set_failure_practice_repeat(false)
+			print("Reset: the same flight again.")
 		KEY_R:
 			aircraft.reset_state()
 			print("Reset.")
+		KEY_F10:
+			_save_flight_log()
 		KEY_F5:
 			# Hot reload: edit the aircraft JSON, press F5, feel the difference.
 			# This is the tuning loop, and it is why AircraftDefinition owns no
@@ -154,6 +229,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			_open_menu(false)
 		KEY_H:
 			_open_hangar()
+		KEY_O:
+			_open_settings()
+		KEY_P:
+			_pause("paused")
+		KEY_G:
+			var cue: Node = get_node_or_null("Field/HeightCue")
+			if cue != null:
+				cue.toggle()
 		KEY_L:
 			# L for location. It was W, which is also the keyboard throttle:
 			# opening the throttle opened the world screen.
@@ -256,6 +339,7 @@ func _open_menu(start: bool = false) -> void:
 	menu.start_screen = start
 	menu.wizard_requested.connect(_open_wizard)
 	menu.tuning_requested.connect(_open_tuning)
+	menu.settings_requested.connect(_open_settings)
 	menu.fly_requested.connect(_fly_from_menu)
 	# The HUD has nothing to say while the aeroplane is parked behind a menu,
 	# and its panels showed through in the corners - a transmitter readout
@@ -272,9 +356,15 @@ func _open_menu(start: bool = false) -> void:
 ## HUD to tune the aeroplane in flight, and the numbers it is tuning against
 ## are the ones the HUD is showing.
 func _modal_open() -> bool:
+	return _screen_open() or has_node("PauseOverlay")
+
+
+## The full-frame screens. The pause card owns the keyboard like they do, but
+## not the frame - see _refresh_hud_visibility.
+func _screen_open() -> bool:
 	return has_node("MainMenu") or has_node("ControllerWizard") \
 			or has_node("Hangar") or has_node("WorldScreen") \
-			or has_node("LoadingScreen")
+			or has_node("LoadingScreen") or has_node("SettingsScreen")
 
 
 ## Hands the frame and the keyboard to whichever screen is up, or back to the
@@ -286,11 +376,28 @@ func _refresh_hud_visibility() -> void:
 	var modal: bool = _modal_open()
 	var hud: Node = get_node_or_null("FlightHUD")
 	if hud != null:
-		hud.visible = not modal
+		# Left up behind the pause card: frozen, it answers "where was I, and
+		# how high" before the pilot takes the sticks back.
+		hud.visible = not _screen_open()
 	# The keyboard fallback reads the keys directly, so nothing a screen does
 	# with an event can stop it. It has to be told.
+	#
+	# And told twice. Closing a screen is often done with a key that was held
+	# a moment before - an arrow walked down the menu, still down as Enter
+	# lands - and handing the keyboard straight back turned that arrow into a
+	# full elevator input on the first frame of the sortie. So a flying key
+	# that is already down when a screen closes is ignored until it has been
+	# let go; _process hands the keyboard back then.
 	if transmitter != null:
-		transmitter.set_keyboard_enabled(not modal)
+		if modal:
+			_keys_held_from_screen = false
+			transmitter.set_keyboard_enabled(false)
+		elif _flight_keys_down():
+			_keys_held_from_screen = true
+			transmitter.set_keyboard_enabled(false)
+		else:
+			_keys_held_from_screen = false
+			transmitter.set_keyboard_enabled(true)
 	# 1/2/3, Z and right-drag belong to the sortie, not to a briefing.
 	if camera_rig != null:
 		camera_rig.set_process_unhandled_input(not modal)
@@ -331,6 +438,7 @@ func _fly_from_menu(stem: String, scene_id: String, weather_id: String) -> void:
 	await get_tree().create_timer(0.35).timeout
 	loader.dismiss()
 	_loading = false
+	_world_built = true
 	_refresh_hud_visibility()
 
 
@@ -351,6 +459,11 @@ func _build_world(loader: Node, stem: String, scene_id: String,
 		field.simulation_path = NodePath("../../Aircraft")
 		$Field.add_child(field)
 		camera_rig.field_path = camera_rig.get_path_to(field)
+		# Straight down, not along the sun - see HeightCue.gd.
+		var cue := HeightCueScript.new()
+		cue.name = "HeightCue"
+		cue.simulation_path = NodePath("../../Aircraft")
+		$Field.add_child(cue)
 		await get_tree().process_frame
 
 		loader.report(0.18, "raising the terrain")
@@ -421,6 +534,49 @@ func _display_name(stem: String) -> String:
 	return stem.capitalize()
 
 
+func _flight_keys_down() -> bool:
+	for key in FLIGHT_KEYS:
+		if Input.is_key_pressed(key):
+			return true
+	return false
+
+
+## Settings, over whatever is showing - the menu or the sortie.
+func _open_settings() -> void:
+	if has_node("SettingsScreen"):
+		return
+	var screen := SettingsScreenScript.new()
+	screen.name = "SettingsScreen"
+	screen.tree_exited.connect(_refresh_hud_visibility, CONNECT_DEFERRED)
+	screen.tree_exited.connect(_apply_flight_settings, CONNECT_DEFERRED)
+	add_child(screen)
+	_refresh_hud_visibility()
+
+
+## Stops the whole tree. Only the pause card keeps running, and only the pilot
+## can start it again - see PauseOverlay.gd for why focus coming back does not.
+func _pause(reason: String) -> void:
+	if not _world_built or _loading or has_node("PauseOverlay"):
+		return
+	var overlay := PauseScript.new()
+	overlay.name = "PauseOverlay"
+	overlay.reason = reason
+	overlay.resumed.connect(func() -> void: get_tree().paused = false)
+	overlay.tree_exited.connect(_refresh_hud_visibility, CONNECT_DEFERRED)
+	add_child(overlay)
+	_refresh_hud_visibility()
+	get_tree().paused = true
+
+
+func _notification(what: int) -> void:
+	match what:
+		NOTIFICATION_APPLICATION_FOCUS_IN:
+			_had_focus = true
+		NOTIFICATION_APPLICATION_FOCUS_OUT:
+			if _had_focus:
+				_pause("the window lost focus")
+
+
 func _open_tuning() -> void:
 	var tuning: Node = get_node_or_null("TuningPanel")
 	if tuning != null:
@@ -448,6 +604,10 @@ func _process(delta: float) -> void:
 	# aircraft drives itself from the transmitter, so the only work here is the
 	# one-shot search for a radio we already know how to bind.
 	_check_profile_problem()
+
+	if _keys_held_from_screen and not _flight_keys_down() and not _modal_open():
+		_keys_held_from_screen = false
+		transmitter.set_keyboard_enabled(true)
 
 	if _autobind_pending:
 		_autobind_remaining -= delta
