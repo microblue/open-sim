@@ -49,7 +49,7 @@ jobs:
           cmake "${args[@]}"
 
       - name: Build
-        run: cmake --build build-ext --config Release --parallel --target openrcsim
+        run: cmake --build build-ext --config Release --parallel 4 --target openrcsim
 
       - name: List
         shell: bash

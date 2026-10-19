@@ -122,6 +122,11 @@ if(RC_BUILD_GODOT_EXTENSION)
          "${CMAKE_CURRENT_SOURCE_DIR}/Source/OpenRCSim/*.cpp")
 
     add_library(openrcsim SHARED ${OPENRCSIM_SOURCES})
+
+    # godot-cpp links the static MSVC runtime (/MT); everything linked into the
+    # same DLL has to match it.
+    set_target_properties(rcphysics openrcsim PROPERTIES
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     target_link_libraries(openrcsim PRIVATE rcphysics godot::cpp rc_compile_options)
 
     # Godot resolves the library by filename, so the name must encode platform,
