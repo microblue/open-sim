@@ -17,6 +17,28 @@ EdgeTX/OpenTX radio set up AETR is recognised and bound automatically - no
 wizard. Anything else: press `F3`. Full notes, including the Godot gamepad
 mapping and the throttle interlock, in [Docs/TRANSMITTER_SETUP.md](Docs/TRANSMITTER_SETUP.md).
 
+## First flight
+
+The first launch asks how you will fly - transmitter or keyboard - and lets you
+try the controls, then **Start first flight** coaches six steps: take off,
+climb to 20 m, set cruise power, turn around, fly back over the field, land.
+Crash part-way and you retry from that step, not from the runway. After that
+the main menu opens with your last aircraft, place and weather and FLY
+selected: Enter flies.
+
+| key | | key | |
+|---|---|---|---|
+| `W` `S` | throttle up / down (Mode 2) | `C` | next view: follow, pilot, FPV |
+| `A` `D` | rudder | `H` / `F1` | controls card |
+| arrows | aileron and elevator | `Esc` | pause menu |
+| `R` | fly again | `M` | main menu |
+| `T` | restart in the air | `O` | settings |
+| `Tab` | replay the last two minutes | `F3` | set up a transmitter |
+| `V` | HUD: clean / standard / detailed | `F2` | aerodynamic detail |
+
+Number keys `4`-`8` cause a failure on purpose and `9` clears it, once
+Settings → Practice → Failure keys is on.
+
 ## Status — V0.2 in progress
 
 V0.1's eight milestones are done: the aircraft taxis, takes off, climbs, turns,
@@ -43,14 +65,25 @@ in a banked flare is lifted and the nose drops as the tail's downwash goes.
 keeps a distant model readable, a vertical height cue on the ground, pause on
 losing focus. `F10` saves the last two minutes as a CSV flight log.
 
-**The briefing room.** On launch the main menu is the whole pre-flight: five
+**Guided from the first launch.** The first start asks how you will fly (a
+transmitter over USB, or the keyboard), which stick mode, and which view, with
+the controls drawn rather than listed: the keys move a picture of the sticks,
+and connecting a radio is three steps with the live state of each. In flight a
+hint bar says the one thing to do next ("hold W to open the throttle"), the
+corner always shows `C` view, `H` help and `Esc` menu, and a locator marks the
+model when it is small or points to it when it is out of view. The default view
+follows the model with the horizon level; `C` switches to the pilot's view on
+the field or FPV. The height shown is above the ground underneath, so a model
+out over a valley is still visibly flying.
+
+**The briefing room.** After that, the main menu is the whole pre-flight: five
 aircraft with the numbers that tell them apart, five places and five weather
-states each with a rendered preview, and the radio's status with its setup
-button. One Enter flies. In flight, `M` brings the same room back, `O` settings.
+states each with a rendered preview, and what you are flying with. One Enter
+flies. In flight, `Esc` pauses with everything one choice away.
 
 ```
 336 tests, 21590 checks, 0 failed     physics core, ~2 s, on every push (CI)
-193 checks, 0 failed                  in-engine
+201 checks, 0 failed                  in-engine
 ```
 
 **Trainer 1500, measured and locked.** Every number below came out of flying the

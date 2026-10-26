@@ -18,7 +18,9 @@ const Settings := preload("res://ui/Settings.gd")
 
 @export var simulation_path: NodePath
 
-const WIDTH: float = 340.0
+const WIDTH: float = 360.0
+const PAD: float = 20.0
+const ROW_H: float = 40.0
 
 var _sim: RCSimulationNode
 var _canvas: Control
@@ -105,60 +107,63 @@ func _draw_panel() -> void:
 	if _sim == null or _slide <= 0.001:
 		return
 
-	var eased: float = 1.0 - pow(1.0 - _slide, 3.0)
+	var eased: float = UITheme.ease_out(_slide)
 	var size: Vector2 = _canvas.size
-	var height: float = 128.0 + float(_rows.size()) * 30.0
-	var origin := Vector2(size.x - UITheme.S5 - WIDTH + (1.0 - eased) * (WIDTH + 40.0),
-						  UITheme.S5 + 78.0)
+	var height: float = 64.0 + float(_rows.size()) * ROW_H + 92.0
+	var origin := Vector2(roundf(size.x - UITheme.HUD_M - WIDTH + (1.0 - eased) * (WIDTH + 60.0)),
+			UITheme.HUD_M + 96.0)
+	var card := Rect2(origin, Vector2(WIDTH, height))
+	UITheme.draw_modal(_canvas, card)
 
-	UITheme.draw_panel(_canvas, Rect2(origin, Vector2(WIDTH, height)),
-					   UITheme.PANEL_SOLID, UITheme.STROKE_STRONG, 12.0)
-
-	UITheme.draw_label(_canvas, origin + Vector2(UITheme.S4, 26), "session tuning",
-					   UITheme.ACCENT, 2.6)
-	UITheme.draw_rule(_canvas, origin + Vector2(UITheme.S4, 38), WIDTH - UITheme.S4 * 2.0)
+	UITheme.draw_label(_canvas, origin + Vector2(PAD, 38.0), "Session tuning", UITheme.TEXT_DIM)
+	UITheme.draw_keycap(_canvas, origin + Vector2(WIDTH - PAD - UITheme.keycap_width("F4",
+			UITheme.SIZE_KEY), 18.0), "F4", UITheme.SIZE_KEY)
+	UITheme.draw_rule(_canvas, origin + Vector2(0, 60.0), WIDTH, UITheme.STROKE)
 
 	for i in _rows.size():
 		var row: Array = _rows[i]
-		var y: float = 58.0 + float(i) * 30.0
+		var top: float = origin.y + 66.0 + float(i) * ROW_H
 		var active: bool = i == _selected
 		var value: float = float(_sim.get(row[1]))
+		var r := Rect2(origin.x + 8.0, top, WIDTH - 16.0, ROW_H - 4.0)
 
 		if active:
-			UITheme.draw_panel(_canvas,
-				Rect2(origin + Vector2(UITheme.S2, y - 4), Vector2(WIDTH - UITheme.S2 * 2, 28)),
-				Color(UITheme.ACCENT.r, UITheme.ACCENT.g, UITheme.ACCENT.b, 0.10),
-				Color(0, 0, 0, 0), 6.0)
-			_canvas.draw_rect(Rect2(origin + Vector2(UITheme.S2, y - 4), Vector2(2, 28)),
-							  UITheme.ACCENT, true)
+			_canvas.draw_colored_polygon(UITheme.rounded_rect(r, UITheme.R_SM), UITheme.SURFACE_2)
+			_canvas.draw_rect(Rect2(r.position + Vector2(0, 8), Vector2(3, r.size.y - 16)),
+					UITheme.ACCENT)
 
-		UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, y + 13), row[0],
-						  UITheme.SIZE_LABEL,
-						  UITheme.TEXT if active else UITheme.TEXT_DIM)
+		var label: String = String(row[0])
+		label = label.substr(0, 1).to_upper() + label.substr(1)
+		UITheme.draw_text(_canvas, Vector2(origin.x + PAD, top + 22.0), label, UITheme.SIZE_BODY_S,
+				UITheme.TEXT if active else UITheme.TEXT_DIM)
 
-		var text: String = "%.0f %s" % [value, row[3]] if absf(float(row[2])) >= 1.0 \
-			else "%.1f %s" % [value, row[3]]
-		var width: float = UITheme.text_width(text, UITheme.SIZE_LABEL)
+		var number: String = "%.0f" % value if absf(float(row[2])) >= 1.0 else "%.1f" % value
 		# A brief flash on the value that just changed, so a keypress is visibly
 		# connected to a number.
 		var flash: float = clampf(1.0 - _nudged * 3.0, 0.0, 1.0) if active else 0.0
-		UITheme.draw_text(_canvas, origin + Vector2(WIDTH - UITheme.S4 - width, y + 13),
-						  text, UITheme.SIZE_LABEL,
-						  UITheme.ACCENT if active else UITheme.TEXT_DIM)
+		var colour: Color = (UITheme.TEXT if active else UITheme.TEXT_DIM) \
+				.lerp(UITheme.ACCENT_HI, flash * 0.7)
+		var unit: String = String(row[3])
+		var unit_w: float = 0.0 if unit.is_empty() else UITheme.text_width(unit, UITheme.SIZE_KEY) + 6.0
+		var right: float = origin.x + WIDTH - PAD
+		UITheme.draw_numeral(_canvas, Vector2(right - unit_w, top + 22.0), number,
+				UITheme.SIZE_BODY, colour, true, false)
+		if not unit.is_empty():
+			UITheme.draw_text(_canvas, Vector2(right - unit_w + 6.0, top + 22.0), unit,
+					UITheme.SIZE_KEY, UITheme.TEXT_FAINT)
 
 		var span: float = maxf(float(row[5]) - float(row[4]), 0.001)
-		UITheme.draw_track(_canvas,
-			Rect2(origin + Vector2(UITheme.S4, y + 19), Vector2(WIDTH - UITheme.S4 * 2, 2)),
-			(value - float(row[4])) / span,
-			Color(UITheme.ACCENT.r, UITheme.ACCENT.g, UITheme.ACCENT.b,
-				  0.9 if active else 0.35).lerp(Color.WHITE, flash * 0.5))
+		var track := Rect2(origin.x + PAD, top + 30.0, WIDTH - PAD * 2.0, 2.0)
+		_canvas.draw_rect(track, Color(1, 1, 1, 0.10))
+		_canvas.draw_rect(Rect2(track.position, Vector2(track.size.x
+				* clampf((value - float(row[4])) / span, 0.0, 1.0), 2.0)),
+				UITheme.ACCENT if active else Color(UITheme.ACCENT.r, UITheme.ACCENT.g,
+				UITheme.ACCENT.b, 0.35))
 
-	var footer: float = height - 52.0
-	UITheme.draw_rule(_canvas, origin + Vector2(UITheme.S4, footer),
-					  WIDTH - UITheme.S4 * 2.0)
-	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, footer + 20),
-					  "left / right adjust     F5 reload     R reset",
-					  UITheme.SIZE_MICRO, UITheme.TEXT_FAINT)
-	UITheme.draw_text(_canvas, origin + Vector2(UITheme.S4, footer + 36),
-					  "aircraft parameters live in the JSON",
-					  UITheme.SIZE_MICRO, UITheme.TEXT_FAINT)
+	var footer: float = origin.y + height - 92.0
+	UITheme.draw_rule(_canvas, Vector2(origin.x, footer), WIDTH, UITheme.STROKE)
+	UITheme.draw_footer_hints(_canvas, Vector2(origin.x + PAD, footer + 28.0),
+			[[["LEFT", "RIGHT"], "adjust"], [["F5"], "reload"], [["R"], "reset"]],
+			UITheme.TEXT_DIM, UITheme.SIZE_KEY)
+	UITheme.draw_text(_canvas, Vector2(origin.x + PAD, footer + 70.0),
+			"Aircraft parameters live in the JSON.", UITheme.SIZE_BODY_S, UITheme.TEXT_FAINT)

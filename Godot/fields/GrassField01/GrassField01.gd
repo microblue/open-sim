@@ -970,7 +970,13 @@ func _build_cones() -> void:
 func _build_windsock() -> Node3D:
 	var root := Node3D.new()
 	root.name = "Windsock"
-	root.position = Vector3(STRIP_CENTRE_X + 7.0, 0.0, STRIP_CENTRE_Z + 22.0)
+	# Across the strip from the pilot and beyond it, not between them. It
+	# stood 12 m out on the pilot's line to the runway and filled a third of
+	# the pilot's view of it. Out here it is always farther away than a model
+	# on the strip or the approach, so it can never hide one, and it is still
+	# in the same glance as the runway - which is where a wind is read.
+	root.position = Vector3(STRIP_CENTRE_X - STRIP_HALF_WIDTH - 10.0, 0.0,
+			STRIP_CENTRE_Z - 6.0)
 	add_child(root)
 
 	var pole := _box(Vector3(0.09, 3.2, 0.09), Vector3.ZERO, Color(0.72, 0.72, 0.74), "Pole")

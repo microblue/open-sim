@@ -45,12 +45,58 @@ const DEFAULTS: Dictionary = {
 	"interface/reduced_motion": false,
 	"camera/auto_zoom": true,
 	"camera/height_cue": true,
+	# The view a flight starts in. Follow keeps the model in frame from behind,
+	# which is where a beginner can see what it is doing; the pilot's view is
+	# the real thing, standing on the field.
+	"camera/view": "follow",
+	# A marker on the model when it is small, and an arrow at the edge of the
+	# frame when it is out of it.
+	"interface/locator": true,
+	# Set once the first-run setup (input, stick mode, view) has been seen.
+	"onboarding/done": false,
 	# Failure practice: the chance a flight has a failure at all (0 is off),
 	# whether radio failures are in the pool, and whether the pilot is told.
 	"practice/failure_chance": 0.0,
 	"practice/radio_failures": false,
 	"practice/failure_notice": true,
+	# Number keys 4-8 cause a failure on purpose and 9 clears it. Off unless
+	# the pilot asks: a beginner mashing keys must not get a dead servo.
+	"practice/failure_keys": false,
+	# The last loadout flown, so a returning pilot is one key from the air.
+	# Empty means "the default".
+	"last/aircraft": "",
+	"last/scene": "",
+	"last/weather": "",
+	"last/spawn": "runway",
+	# How much the flight overlay shows: clean, standard or detailed.
+	"interface/hud": "standard",
+	# The two stick gates: auto (keyboard only), on, off.
+	"interface/stick_display": "auto",
+	# Hints: always, learn (stop offering one after it has been done three
+	# times), off. interface/key_hints = false still means off.
+	"interface/hints": "learn",
+	# Hint id -> times the pilot has done what it asks.
+	"hints/learned": {},
+	# Ticked "I already fly RC models" in the setup: hints start learned.
+	"onboarding/experienced": false,
+	"onboarding/first_flight_done": false,
+	"onboarding/first_crash_seen": false,
 }
+
+## String settings that take one of a fixed set of values.
+const ENUMS: Dictionary = {
+	"display/units": ["metric", "imperial", "si"],
+	"display/window_mode": ["windowed", "fullscreen"],
+	"camera/view": ["follow", "pilot", "fpv"],
+	"last/spawn": ["runway", "air", "approach"],
+	"interface/hud": ["clean", "standard", "detailed"],
+	"interface/stick_display": ["auto", "on", "off"],
+	"interface/hints": ["always", "learn", "off"],
+}
+
+## After this many successes a hint stops offering itself (it still shows if
+## the pilot is stuck).
+const HINT_LEARNED_AFTER: int = 3
 
 ## Audio buses the game mixes into. Created in code if the project has no bus
 ## layout that declares them, so nothing depends on an editor-saved resource.
@@ -183,17 +229,19 @@ static func _validated(key: String, value: Variant) -> Variant:
 		TYPE_BOOL:
 			return bool(value) if typeof(value) == TYPE_BOOL else fallback
 		TYPE_INT:
-			# The only integer is the stick mode, and it has two values.
 			if typeof(value) != TYPE_INT and typeof(value) != TYPE_FLOAT:
 				return fallback
-			return 1 if int(value) == 1 else 2
+			if key == "controls/stick_mode":
+				return 1 if int(value) == 1 else 2
+			return int(value)
 		TYPE_STRING:
 			var text: String = String(value) if typeof(value) == TYPE_STRING else ""
-			if key == "display/units":
-				return text if UNITS.has(text) else fallback
-			if key == "display/window_mode":
-				return text if WINDOW_MODES.has(text) else fallback
+			if ENUMS.has(key):
+				return text if (ENUMS[key] as Array).has(text) else fallback
 			return text
+		TYPE_DICTIONARY:
+			return (value as Dictionary).duplicate(true) if typeof(value) == TYPE_DICTIONARY \
+					else (fallback as Dictionary).duplicate(true)
 	return fallback
 
 
@@ -274,3 +322,35 @@ static func units() -> String:
 
 static func reduced_motion() -> bool:
 	return bool(get_value("interface/reduced_motion"))
+
+
+# ------------------------------------------------------------------- hints ---
+
+## "always", "learn" or "off". The older on/off switch still wins when off.
+static func hint_mode() -> String:
+	if not bool(get_value("interface/key_hints")):
+		return "off"
+	return String(get_value("interface/hints"))
+
+
+static func hint_count(id: String) -> int:
+	if bool(get_value("onboarding/experienced")):
+		return HINT_LEARNED_AFTER
+	return int((get_value("hints/learned") as Dictionary).get(id, 0))
+
+
+## True once the pilot has done what hint `id` asks often enough that it no
+## longer needs offering (only in "learn" mode).
+static func hint_learned(id: String) -> bool:
+	return hint_mode() == "learn" and hint_count(id) >= HINT_LEARNED_AFTER
+
+
+## Records one success for hint `id`.
+static func hint_success(id: String) -> void:
+	var learned: Dictionary = (get_value("hints/learned") as Dictionary).duplicate()
+	learned[id] = int(learned.get(id, 0)) + 1
+	set_value("hints/learned", learned)
+
+
+static func reset_hints() -> void:
+	set_value("hints/learned", {})

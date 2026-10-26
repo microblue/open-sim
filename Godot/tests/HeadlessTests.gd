@@ -90,6 +90,9 @@ func _start() -> void:
 	_test_settings_store()
 	_test_warning_chips()
 	_test_keyboard_mode()
+	_test_context_hints()
+	_test_hint_rules()
+	_test_hud_phase()
 
 	_sim.wind_speed_mps = 0.0
 	_sim.turbulence_mps = 0.0
@@ -138,6 +141,234 @@ func _test_failure_practice() -> void:
 	_sim.clear_manual_channels()
 	_sim.reset_state()
 	_check(not bool(_sim.get_failure_practice()["will_fail"]), "0 % turns it off")
+
+
+## The hint bar says the one thing to do next, in the words of the controls in
+## use - and nothing at all on a wreck.
+func _test_context_hints() -> void:
+	print("  what the hint bar says")
+	var hints := load("res://ui/ContextHints.gd")
+	var parked := {"input": "keyboard", "mode": 2, "on_ground": true, "airspeed": 0.0,
+			"throttle": 0.0, "flown": false, "air_s": 0.0}
+	var first: Array = hints.evaluate(parked)
+	_check(first.size() == 1 and first[0]["keys"] == ["W"],
+		"parked, Mode 2 keyboard: hold W to open the throttle")
+	parked["mode"] = 1
+	first = hints.evaluate(parked)
+	_check(first.size() == 1 and first[0]["keys"] == ["UP"],
+		"parked, Mode 1 keyboard: the up arrow is the throttle")
+	var rolling := parked.duplicate()
+	rolling["mode"] = 2
+	rolling["airspeed"] = 8.0
+	rolling["throttle"] = 1.0
+	var roll: Array = hints.evaluate(rolling)
+	_check(roll.size() == 2 and roll[1]["keys"] == ["DOWN"],
+		"rolling: keep straight, then the down arrow lifts off")
+	var radio := parked.duplicate()
+	radio["input"] = "radio"
+	radio["mode"] = 2
+	radio["armed"] = false
+	var arm: Array = hints.evaluate(radio)
+	_check(arm.size() == 1 and String(arm[0]["text"]).find("left stick") >= 0,
+		"an unarmed Mode 2 radio is told to close the left stick")
+	var crashed := parked.duplicate()
+	crashed["crashed"] = true
+	_check(hints.evaluate(crashed).is_empty(), "no hint on a wreck")
+	var up := {"input": "keyboard", "mode": 2, "on_ground": false, "flown": true,
+			"air_s": 3.0, "airspeed": 14.0, "throttle": 0.6}
+	_check(hints.evaluate(up).size() == 3, "just airborne: how to turn, climb and throttle")
+	up["air_s"] = 60.0
+	_check(hints.evaluate(up).is_empty(), "a minute in, the hints have gone")
+	var landed := {"input": "keyboard", "mode": 2, "on_ground": true, "flown": true,
+			"airspeed": 0.2, "throttle": 0.0}
+	var after: Array = hints.evaluate(landed)
+	_check(after.size() == 2 and after[0]["keys"] == ["R"], "landed: fly again or watch")
+
+
+## The newer hint rules: far from home, lost in the pilot view, the landing
+## script, too slow on the approach, the one-time view lesson, escalation and
+## learning.
+func _test_hint_rules() -> void:
+	print("  hint rules: home, landing, escalation, learning")
+	var hints := load("res://ui/ContextHints.gd")
+	var ids := func(state: Dictionary) -> Array:
+		return hints.evaluate(state).map(func(h: Dictionary) -> String: return h.get("id", ""))
+	var cruise := {"input": "keyboard", "mode": 2, "on_ground": false, "flown": true,
+			"air_s": 60.0, "airspeed": 15.0, "throttle": 0.6, "phase": "cruise",
+			"view": "follow"}
+	_check(hints.evaluate(cruise).is_empty(), "cruising near the field: no hint")
+
+	# Far from home: past 150 m, and the hint names the distance and the side.
+	var far := cruise.duplicate()
+	far["distance_home"] = 151.0
+	far["home_dir"] = "behind"
+	var turn_back: Array = hints.evaluate(far)
+	_check(turn_back.size() == 1 and turn_back[0]["id"] == "far"
+			and turn_back[0].get("level", "") == "warn", "151 m out: turn back, in amber")
+	_check(String(turn_back[0]["text"]).find("151 m behind you") >= 0,
+			"the hint says how far and which way")
+	far["distance_home"] = 149.0
+	_check(ids.call(far).is_empty(), "149 m out: still close enough")
+	far["distance_home"] = -1.0
+	_check(ids.call(far).is_empty(), "no home known: no far hint")
+
+	# Lost in the pilot view: more than 2 s out of frame.
+	var lost := cruise.duplicate()
+	lost["view"] = "pilot"
+	lost["offscreen_s"] = 2.1
+	var c: Array = hints.evaluate(lost)
+	_check(c.size() == 1 and c[0]["keys"] == ["C"], "out of frame 2.1 s in the pilot view: press C")
+	lost["offscreen_s"] = 1.9
+	_check(ids.call(lost).is_empty(), "out of frame 1.9 s: not yet")
+	lost["offscreen_s"] = 5.0
+	lost["view"] = "follow"
+	_check(ids.call(lost).is_empty(), "the follow view never says press C for the follow view")
+
+	# The landing script.
+	var land := cruise.duplicate()
+	land["phase"] = "landing"
+	land["height_m"] = 10.0
+	land["air_mps"] = 12.0
+	land["stall_mps"] = 7.0
+	land["aligned"] = false
+	_check(String(hints.evaluate(land)[0]["text"]).begins_with("Line up"),
+			"landing, not lined up: line up with the runway")
+	land["aligned"] = true
+	var settle: Array = hints.evaluate(land)
+	_check(settle.size() == 2 and settle[0]["keys"] == ["S"],
+			"landing, lined up: throttle back, nose slightly down")
+	land["height_m"] = 2.9
+	var flare: Array = hints.evaluate(land)
+	_check(flare.size() == 1 and flare[0]["keys"] == ["DOWN"]
+			and String(flare[0]["text"]).find("flare") >= 0, "under 3 m: ease back to flare")
+	land["height_m"] = 10.0
+	land["air_mps"] = 7.0 * 1.14
+	var slow: Array = hints.evaluate(land)
+	_check(slow.size() == 1 and slow[0]["id"] == "slow" and slow[0].get("level", "") == "warn",
+			"below 1.15 x the stall speed on the approach: too slow")
+	land["air_mps"] = 7.0 * 1.16
+	_check(ids.call(land) == ["land", "land"], "at 1.16 x the stall speed: not too slow")
+	land["input"] = "radio"
+	land["mode"] = 1
+	land["height_m"] = 2.0
+	_check(String(hints.evaluate(land)[0]["text"]).find("left stick") >= 0,
+			"a Mode 1 radio flares with the left stick")
+
+	# Teach C, once, when the HUD says it is due.
+	var teach := cruise.duplicate()
+	teach["teach_view"] = true
+	var lesson: Array = hints.evaluate(teach)
+	_check(lesson.size() == 1 and lesson[0]["id"] == "view" and lesson[0]["keys"] == ["C"],
+			"the view lesson shows C")
+
+	# Escalation: pulse at 6 s, the controls card line at 15 s.
+	_check(hints.escalation(5.9) == 0 and hints.escalation(6.0) == 1
+			and hints.escalation(15.0) == 2, "escalation steps at 6 s and 15 s")
+	var parked := {"input": "keyboard", "mode": 2, "on_ground": true, "airspeed": 0.0,
+			"throttle": 0.0, "flown": false}
+	parked["stuck_s"] = 14.0
+	_check(hints.evaluate(parked).size() == 1, "stuck 14 s: still one hint")
+	parked["stuck_s"] = 15.0
+	var help: Array = hints.evaluate(parked)
+	_check(help.size() == 2 and help[1]["keys"] == ["H"] and int(help[1].get("line", 1)) == 2,
+			"stuck 15 s: a second line offers H for all the controls")
+
+	# Learning: a learned hint stops showing until the pilot is stuck 6 s.
+	var learned := parked.duplicate()
+	learned["stuck_s"] = 0.0
+	learned["hint_mode"] = "learn"
+	learned["learned"] = ["throttle"]
+	_check(hints.evaluate(learned).is_empty(), "a learned hint is not offered up front")
+	learned["stuck_s"] = 6.0
+	_check(ids.call(learned) == ["throttle"], "it comes back once the pilot is stuck 6 s")
+	learned["hint_mode"] = "always"
+	learned["stuck_s"] = 0.0
+	_check(ids.call(learned) == ["throttle"], "\"always\" ignores what has been learned")
+	learned["hint_mode"] = "off"
+	_check(hints.evaluate(learned).is_empty(), "\"off\" shows no lessons")
+	var unarmed := learned.duplicate()
+	unarmed["input"] = "radio"
+	unarmed["armed"] = false
+	_check(ids.call(unarmed) == ["arm"], "even off, an unarmed motor is explained")
+	var far_learned := far.duplicate()
+	far_learned["distance_home"] = 200.0
+	far_learned["hint_mode"] = "learn"
+	far_learned["learned"] = ["far", "turn", "throttle", "takeoff", "land", "view"]
+	_check(ids.call(far_learned) == ["far"], "safety hints are never learned away")
+
+	# The pure helper the HUD's learning rests on.
+	var Store := preload("res://ui/Settings.gd")
+	var path: String = "user://test_hint_settings.cfg"
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	Store.load_from(path)
+	_check(not Store.hint_learned("turn"), "a fresh pilot has learned nothing")
+	for i in Store.HINT_LEARNED_AFTER:
+		Store.hint_success("turn")
+	_check(Store.hint_learned("turn"), "three successes and the turn hint is learned")
+	Store.reset_hints()
+	_check(not Store.hint_learned("turn"), "reset hints forgets it")
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	Store.load_from(path)
+
+
+## Which part of the flight the HUD thinks it is in, and what it shows there.
+func _test_hud_phase() -> void:
+	print("  HUD phase")
+	var P := preload("res://ui/HudPhase.gd")
+	_check(P.evaluate({}) == P.PARKED, "nothing known: parked")
+	_check(P.evaluate({"on_ground": true, "ground_speed": 1.9}) == P.PARKED,
+			"1.9 m/s on the wheels is parked")
+	_check(P.evaluate({"on_ground": true, "ground_speed": 2.0}) == P.ROLL,
+			"2.0 m/s on the wheels is the roll")
+	_check(P.evaluate({"on_ground": true, "crashed": true}) == P.CRASHED, "a wreck is crashed")
+	var air := {"on_ground": false, "air_s": 19.9, "height_m": 40.0, "sink_mps": 0.0,
+			"throttle": 0.6, "distance_home": 50.0}
+	_check(P.evaluate(air) == P.CLIMB, "19.9 s up: climb-out")
+	air["air_s"] = 20.0
+	_check(P.evaluate(air) == P.CRUISE, "20 s up: cruise")
+	var land := {"on_ground": false, "air_s": 60.0, "height_m": 14.9, "sink_mps": 0.31,
+			"throttle": 0.34, "distance_home": 119.0}
+	_check(P.evaluate(land) == P.LANDING, "low, sinking, power off, near the field: landing")
+	for key in ["height_m", "sink_mps", "throttle", "distance_home"]:
+		var off: Dictionary = land.duplicate()
+		off[key] = {"height_m": 15.0, "sink_mps": 0.3, "throttle": 0.35,
+				"distance_home": 120.0}[key]
+		_check(P.evaluate(off) == P.CRUISE, "landing needs %s on the right side" % key)
+	var unknown: Dictionary = land.duplicate()
+	unknown["distance_home"] = -1.0
+	_check(P.evaluate(unknown) == P.CRUISE, "no field known: never landing")
+
+	var parked: Dictionary = P.elements(P.PARKED, "standard", "follow", 1.0, 0.0)
+	_check(not parked["speed"] and not parked["height"], "parked: no speed, no height")
+	_check(parked["throttle"] and parked["battery"], "parked: throttle and battery")
+	var roll: Dictionary = P.elements(P.ROLL, "standard")
+	_check(roll["speed"] and not roll["height"], "rolling: speed, not height")
+	var cruise: Dictionary = P.elements(P.CRUISE, "standard", "follow", 0.41, 81.0)
+	_check(cruise["speed"] and cruise["height"], "cruise: speed and height")
+	_check(not cruise["battery"], "airborne at 41 %: no battery")
+	_check(P.elements(P.CRUISE, "standard", "follow", 0.39)["battery"],
+			"airborne at 39 %: the battery shows")
+	_check(not cruise["ring"], "follow view: no attitude ring in Standard")
+	_check(P.elements(P.CRUISE, "standard", "pilot")["ring"], "pilot view: the ring shows")
+	_check(not P.elements(P.CRUISE, "standard", "FPV")["ring"], "FPV: no ring")
+	_check(cruise["home"], "81 m out in cruise: home indicator")
+	_check(not P.elements(P.CRUISE, "standard", "follow", 1.0, 79.0)["home"],
+			"79 m out: no home indicator")
+	_check(not P.elements(P.CLIMB, "standard", "follow", 1.0, 200.0)["home"],
+			"climb-out: no home indicator")
+	var wreck: Dictionary = P.elements(P.CRASHED, "standard")
+	_check(wreck["dim"] and not wreck["hints"] and not wreck["chips"],
+			"crashed: dimmed, no hints, no chips")
+	var detailed: Dictionary = P.elements(P.CRUISE, "detailed", "follow")
+	_check(detailed["ring"] and detailed["engineering"] and detailed["battery"],
+			"Detailed: ring always, engineering data, battery")
+	var clean: Dictionary = P.elements(P.CRUISE, "clean", "pilot", 0.1, 500.0)
+	_check(clean["speed"] and clean["height"], "Clean: speed and height")
+	_check(not (clean["throttle"] or clean["battery"] or clean["ring"] or clean["home"]
+			or clean["identity"] or clean["legend"] or clean["hints"]),
+			"Clean: nothing else")
 
 
 func _test_keyboard_mode() -> void:
@@ -294,6 +525,17 @@ func _test_warning_chips() -> void:
 	var everything: Dictionary = {"airborne": true, "sink_mps": 5.0, "height_m": 3.0,
 			"span_px": 10.0, "battery": 0.05, "has_battery": true}
 	_check(ids.call(everything) == ["low", "far", "battery"], "chips stack in a fixed order")
+	_check(W.evaluate(everything)[2]["text"] == "BATTERY CRITICAL"
+			and W.evaluate(everything)[2]["level"] == W.DANGER, "5 % is BATTERY CRITICAL, red")
+	var stall: Dictionary = cruising.duplicate()
+	stall["stall"] = 0.10
+	_check(ids.call(stall) == ["stall"], "10 % of the wing stalled is a STALL WARNING chip")
+	stall["stall"] = 0.35
+	_check(ids.call(stall).is_empty(), "35 % is the banner's, not a chip")
+	stall["stall"] = 0.10
+	stall["airborne"] = false
+	stall["flying"] = false
+	_check(ids.call(stall).is_empty(), "parked in a tailwind: no stall chip")
 	everything["crashed"] = true
 	_check(ids.call(everything).is_empty(), "a wreck shows no chips - the banner has it")
 

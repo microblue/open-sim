@@ -1,7 +1,15 @@
 # OpenRC Simulator - the three camera modes.
 #
-# The pilot view is the one that matters. Everything about it is shaped by one
-# constraint from the design brief:
+#   1  FOLLOW  behind and above the model, horizon level. The default: a
+#              beginner can always see the aeroplane and which way it is going.
+#   2  PILOT   standing on the field, the way an RC pilot actually sees it.
+#   3  FPV     bolted to the airframe.
+#
+# C cycles them. The enum keeps its historical order (PILOT is 0) because the
+# scripted checks select modes by number.
+#
+# The pilot view is the one RC flying is about. Everything about it is shaped by
+# one constraint from the design brief:
 #
 #     the aircraft must NOT be pinned to the centre of the screen
 #
@@ -16,6 +24,22 @@ const Settings := preload("res://ui/Settings.gd")
 const Warnings := preload("res://ui/FlightWarnings.gd")
 
 enum Mode { PILOT, CHASE, FPV }
+
+## The keys and names, in the order C cycles through them.
+const CYCLE: Array[int] = [1, 0, 2]      # FOLLOW (CHASE), PILOT, FPV
+const VIEW_IDS: Dictionary = {"follow": 1, "pilot": 0, "fpv": 2}
+
+## Follow view geometry, in wingspans: far enough back to see the whole model
+## and the ground ahead of it, close enough that it stays big.
+const FOLLOW_BACK_SPANS: float = 2.4
+const FOLLOW_UP_SPANS: float = 0.62
+const FOLLOW_MIN_BACK: float = 3.6
+const FOLLOW_MAX_BACK: float = 9.0
+## A wider lens than the pilot's: from behind, the context ahead matters.
+const FOLLOW_FOV: float = 52.0
+## How quickly the camera swings round behind a turn. Slower than the turn
+## itself, so a bank reads as a bank before the view catches up.
+const FOLLOW_SWING_HALF_LIFE: float = 0.45
 
 const ZOOM_STEPS: Array[float] = [1.0, 2.0, 4.0]
 ## How much tighter the pilot looks once the model is in the grass. A third of
@@ -90,6 +114,9 @@ var _field: Node3D
 ## The pilot view's field before the crash zoom, eased towards its target.
 var _pilot_fov: float = BASE_FOV
 var auto_zoom: bool = true
+## The follow view's heading, horizontal and unit length.
+var _follow_heading: Vector3 = Vector3(0, 0, -1)
+var _follow_last_at: Vector3 = Vector3.INF
 
 
 func _ready() -> void:
@@ -110,6 +137,7 @@ func _ready() -> void:
 
 	auto_zoom = bool(Settings.get_value("camera/auto_zoom"))
 	position = Vector3(0.0, pilot_eye_height, 0.0)
+	_set_mode(VIEW_IDS.get(String(Settings.get_value("camera/view")), Mode.CHASE))
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -141,8 +169,15 @@ func _apply_cull_mask() -> void:
 	_camera.cull_mask = (LAYER_ALL & ~LAYER_PROPELLER) if mode == Mode.FPV else LAYER_ALL
 
 
-func _set_mode(new_mode: Mode) -> void:
-	mode = new_mode
+## The next view in the cycle: follow, pilot, FPV.
+func cycle_mode() -> void:
+	var at: int = CYCLE.find(int(mode))
+	_set_mode(CYCLE[(at + 1) % CYCLE.size()])
+
+
+func _set_mode(new_mode: int) -> void:
+	mode = new_mode as Mode
+	_follow_last_at = Vector3.INF
 	_look_offset = Vector2.ZERO
 	if mode != Mode.PILOT:
 		# Optical zoom is a pilot-view idea: it stands in for a spotter, or for
@@ -234,6 +269,8 @@ func _apply_zoom() -> void:
 		# The step is the pilot's own keypress, so it is not eased: Z means now.
 		_pilot_fov = _auto_fov() / ZOOM_STEPS[_zoom_index]
 		_camera.fov = _pilot_fov
+	elif mode == Mode.CHASE:
+		_camera.fov = FOLLOW_FOV
 	else:
 		_camera.fov = BASE_FOV
 
@@ -245,7 +282,7 @@ func get_zoom() -> float:
 func get_mode_name() -> String:
 	match mode:
 		Mode.PILOT: return "pilot"
-		Mode.CHASE: return "chase"
+		Mode.CHASE: return "follow"
 		Mode.FPV:   return "FPV"
 	return "?"
 
@@ -318,19 +355,57 @@ func _update_pilot(delta: float) -> void:
 	rotate_object_local(Vector3.RIGHT, _look_offset.y)
 
 
+## Behind and above the model, with the horizon kept level.
+##
+## The camera does not roll or pitch with the aeroplane - a view that banks
+## with the model hides the bank, which is the one thing a beginner most needs
+## to see. Its distance is fixed, so the model is the same size wherever it
+## goes; only the direction it is seen from lags, swinging round behind a turn
+## a little after the turn starts.
 func _update_chase(delta: float) -> void:
-	var behind: Vector3 = _sim.global_transform.basis.z.normalized()
-	var up: Vector3 = _sim.global_transform.basis.y.normalized()
-	# Closer in than it was - 5.5 m behind a 1.5 m aeroplane left it a third of
-	# the frame tall on a wide field and much less on a narrow one.
-	var desired: Vector3 = _sim.global_position + behind * 3.4 + up * 0.9 \
-			+ Vector3.UP * 0.4
+	var at: Vector3 = _sim.global_position
+	var span: float = float(_sim.get_wingspan_m()) if _sim.has_method("get_wingspan_m") else 1.5
+	var back: float = clampf(span * FOLLOW_BACK_SPANS, FOLLOW_MIN_BACK, FOLLOW_MAX_BACK)
+	var up: float = maxf(span * FOLLOW_UP_SPANS, 1.1)
 
-	global_position = global_position.lerp(desired, clampf(6.0 * delta, 0.0, 1.0))
+	# Where the model is going: its track over the ground when it is moving, its
+	# nose when it is not. A wreck keeps the heading it had, so the view does
+	# not spin round a tumbling airframe.
+	var wanted: Vector3 = _follow_heading
+	var crashed: bool = _sim.has_method("has_crashed") and _sim.has_crashed()
+	if not crashed:
+		var velocity: Vector3 = _sim.get_velocity_world() if _sim.has_method("get_velocity_world") \
+				else Vector3.ZERO
+		var track := Vector3(velocity.x, 0.0, velocity.z)
+		var nose: Vector3 = -_sim.global_transform.basis.z
+		nose.y = 0.0
+		if track.length() > 3.0:
+			wanted = track.normalized()
+		elif nose.length() > 0.2:
+			wanted = nose.normalized()
+
+	# A reset or a respawn moves the model a long way in one frame: cut, do not
+	# swing round from wherever the last flight ended.
+	var jumped: bool = _follow_last_at == Vector3.INF or at.distance_to(_follow_last_at) > 25.0
+	_follow_last_at = at
+	if jumped or Settings.reduced_motion() or delta <= 0.0:
+		_follow_heading = wanted
+	else:
+		var keep: float = pow(0.5, delta / FOLLOW_SWING_HALF_LIFE)
+		var blended: Vector3 = wanted.slerp(_follow_heading, keep)
+		if blended.length() > 0.01:
+			_follow_heading = blended.normalized()
+
+	# Right-drag orbits the view round the model.
+	var heading: Vector3 = _follow_heading.rotated(Vector3.UP, _look_offset.x)
+	var lift: float = up + sin(clampf(_look_offset.y, -1.0, 1.0)) * back
+	global_position = at - heading * back + Vector3.UP * lift
 	_keep_above_ground()
-	look_at(_sim.global_position, Vector3.UP)
-	rotate_object_local(Vector3.UP, _look_offset.x)
-	rotate_object_local(Vector3.RIGHT, _look_offset.y)
+	# Aimed a little ahead of the model, so it sits slightly low in the frame
+	# with the sky it is flying into above it.
+	var aim: Vector3 = at + heading * (back * 0.18) + Vector3.UP * (up * 0.25)
+	if global_position.distance_to(aim) > 0.1:
+		look_at(aim, Vector3.UP)
 
 
 ## Lift the camera to the surface if it has gone under.

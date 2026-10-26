@@ -27,6 +27,14 @@ const FAR_SPAN_PX: float = 30.0
 ## BATTERY LOW. A LiPo holds its voltage and then falls off a cliff; at a fifth
 ## left there is still a comfortable circuit and landing, and not much more.
 const BATTERY_LOW: float = 0.20
+## BATTERY CRITICAL. Land now: what is left is the landing.
+const BATTERY_CRITICAL: float = 0.15
+
+## STALL WARNING. Part of the wing has let go but most of it is still flying:
+## between these two fractions it is a chip; above the upper one the HUD's
+## banner says STALL instead (never both).
+const STALL_WARN: float = 0.06
+const STALL_BANNER: float = 0.30
 
 const WARN: String = "warn"
 const DANGER: String = "danger"
@@ -53,10 +61,19 @@ static func span_pixels(span_m: float, distance_m: float, fov_deg: float,
 ##                          negative when not in the pilot view
 ##   battery        float   0..1 state of charge
 ##   has_battery    bool
+##   stall          float   0..1 fraction of the wing stalled
+##   flying         bool    airborne or rolling fast (defaults to airborne);
+##                          a parked model in a tailwind is "stalled" and
+##                          saying so would be noise
 static func evaluate(state: Dictionary) -> Array[Dictionary]:
 	var chips: Array[Dictionary] = []
 	if bool(state.get("crashed", false)):
 		return chips
+
+	var stall: float = float(state.get("stall", 0.0))
+	if bool(state.get("flying", state.get("airborne", false))) \
+			and stall > STALL_WARN and stall <= STALL_BANNER:
+		chips.append({"id": "stall", "text": "STALL WARNING", "level": WARN})
 
 	var sink: float = float(state.get("sink_mps", 0.0))
 	var height: float = float(state.get("height_m", INF))
@@ -68,8 +85,11 @@ static func evaluate(state: Dictionary) -> Array[Dictionary]:
 	if span_px >= 0.0 and span_px < FAR_SPAN_PX:
 		chips.append({"id": "far", "text": "FAR · COME CLOSER", "level": WARN})
 
-	if bool(state.get("has_battery", false)) \
-			and float(state.get("battery", 1.0)) < BATTERY_LOW:
-		chips.append({"id": "battery", "text": "BATTERY LOW", "level": WARN})
+	var charge: float = float(state.get("battery", 1.0))
+	if bool(state.get("has_battery", false)) and charge < BATTERY_LOW:
+		if charge < BATTERY_CRITICAL:
+			chips.append({"id": "battery", "text": "BATTERY CRITICAL", "level": DANGER})
+		else:
+			chips.append({"id": "battery", "text": "BATTERY LOW", "level": WARN})
 
 	return chips

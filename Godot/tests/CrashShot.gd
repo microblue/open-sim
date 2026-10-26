@@ -43,6 +43,8 @@ func _process(_delta: float) -> bool:
 		_sim.spawn_mode = RCSimulationNode.SPAWN_AIR
 		_sim.spawn_altitude_m = 30.0
 		_sim.reset_state()
+		# The pilot's view: the wreck is judged from where the pilot stands.
+		_scene.get_node("CameraRig").call("_set_mode", 0)
 		# Straight in, which is how most of them happen.
 		_sim.set_manual_channel(RCInputNode.CHANNEL_THROTTLE, 0.9)
 		_sim.set_manual_channel(RCInputNode.CHANNEL_ELEVATOR, -0.85)

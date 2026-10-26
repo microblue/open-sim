@@ -94,6 +94,30 @@ else
     printf '     %s\n' "pilot view skipped (needs xvfb-run)"
 fi
 
+step "Below the field"
+# The terrain falls away from the strip. A model out over a valley is below the
+# field and still in the air; only touching the ground ends a flight.
+BELOW="$(timeout 120 godot --headless --path Godot --script res://tests/BelowDatumCheck.gd 2>&1)"
+BELOW_STATUS=$?
+echo "$BELOW" | grep -E '^\s+\[(ok|FAIL)\]'
+if [ $BELOW_STATUS -eq 0 ]; then
+    pass "flying below the field is flying"
+else
+    fail "a model below the field's height crashed in the air"
+fi
+
+step "The guided first flight"
+# The six-step checklist a first-time pilot is coached through: each step's
+# goal, its hint in keyboard and transmitter words, and where a retry starts.
+FIRST="$(timeout 120 godot --headless --path Godot --script res://tests/FirstFlightCheck.gd 2>&1)"
+FIRST_STATUS=$?
+echo "$FIRST" | grep -E '^\s+\[FAIL\]|first flight:'
+if [ $FIRST_STATUS -eq 0 ]; then
+    pass "the first-flight checklist follows the flight"
+else
+    fail "the first-flight checklist is wrong"
+fi
+
 step "The take-off roll"
 # Not "does it go straight hands off" - it should not, and the thrust line is
 # deliberately set for the climb. The question is whether rudder can hold it,

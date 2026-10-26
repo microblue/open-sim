@@ -34,6 +34,7 @@ func _process(_delta: float) -> bool:
 			return false
 		_sim = _scene.get_node_or_null("Aircraft") as RCSimulationNode
 		_rig = _scene.get_node_or_null("CameraRig") as Node3D
+		_rig.call("_set_mode", 0)      # this check is about the pilot's view
 		_camera = _rig.get_node_or_null("Camera3D") as Camera3D
 		if _camera == null:
 			for child in _rig.find_children("*", "Camera3D", true, false):

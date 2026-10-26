@@ -87,30 +87,30 @@ func _process(delta: float) -> void:
 func _draw_screen() -> void:
 	var size: Vector2 = _canvas.size
 	# A dark wash over the backdrop, heaviest at the bottom where the type is.
-	_canvas.draw_rect(Rect2(Vector2.ZERO, size), Color(0.03, 0.045, 0.06, 0.42))
+	_canvas.draw_rect(Rect2(Vector2.ZERO, size), Color(UITheme.SCRIM.r, UITheme.SCRIM.g,
+			UITheme.SCRIM.b, 0.30))
+	UITheme.draw_scrim(_canvas, Rect2(0.0, size.y * 0.45, size.x, size.y * 0.55), 0.0, 0.72)
 
-	var bar_w: float = minf(size.x * 0.52, 900.0)
-	var bar_x: float = (size.x - bar_w) * 0.5
-	var bar_y: float = size.y * 0.72
+	var bar_w: float = minf(size.x - 2.0 * UITheme.S8, 900.0)
+	var bar_x: float = roundf((size.x - bar_w) * 0.5)
+	var bar_y: float = roundf(size.y * 0.72)
 
-	UITheme.draw_label(_canvas, Vector2(bar_x, bar_y - 96.0), "loading",
-					   UITheme.ACCENT, 5.0, UITheme.SIZE_SECTION)
-	UITheme.draw_display(_canvas, Vector2(bar_x, bar_y - 40.0), sortie,
-						 UITheme.SIZE_LARGE, UITheme.TEXT)
+	UITheme.draw_label(_canvas, Vector2(bar_x, bar_y - 84.0), "Loading", UITheme.TEXT_DIM,
+			UITheme.TRACK_CAPS, UITheme.SIZE_CAPS_L, true)
+	UITheme.draw_display(_canvas, Vector2(bar_x, bar_y - 30.0), sortie.replace("   -   ", "  ·  "), 40, UITheme.TEXT,
+			HORIZONTAL_ALIGNMENT_LEFT, -1.0, true)
 
-	# The bar. Deliberately tall - a hairline progress bar on a 4K screen is a
-	# rumour, and this is the only thing on the screen that is moving.
-	var track := Rect2(bar_x, bar_y, bar_w, 14.0)
-	_canvas.draw_rect(track, Color(1, 1, 1, 0.10), true)
-	var filled: float = _shown * bar_w
-	if filled > 1.0:
-		var fill := Rect2(track.position, Vector2(filled, track.size.y))
-		UITheme.draw_glow(_canvas, fill, UITheme.ACCENT, 8.0, 2)
-		_canvas.draw_rect(fill, UITheme.ACCENT, true)
+	# The bar: a rounded track and a solid fill. No glow - it is the only thing
+	# moving on the screen, which is emphasis enough.
+	var track := Rect2(bar_x, bar_y, bar_w, 6.0)
+	_canvas.draw_colored_polygon(UITheme.rounded_rect(track, 3.0), Color(1, 1, 1, 0.14))
+	var filled: float = roundf(_shown * bar_w)
+	if filled > 6.0:
+		_canvas.draw_colored_polygon(UITheme.rounded_rect(Rect2(track.position,
+				Vector2(filled, track.size.y)), 3.0), UITheme.ACCENT)
 
-	UITheme.draw_text(_canvas, Vector2(bar_x, bar_y + 46.0), _stage,
-					  UITheme.SIZE_BODY, UITheme.TEXT_DIM)
-	UITheme.draw_text(_canvas, Vector2(bar_x, bar_y + 46.0),
-					  "%d%%" % roundi(_shown * 100.0),
-					  UITheme.SIZE_BODY, UITheme.ACCENT,
-					  HORIZONTAL_ALIGNMENT_RIGHT, bar_w)
+	var stage: String = _stage.substr(0, 1).to_upper() + _stage.substr(1)
+	UITheme.draw_text(_canvas, Vector2(bar_x, bar_y + 36.0), stage, UITheme.SIZE_BODY,
+			UITheme.TEXT_DIM, HORIZONTAL_ALIGNMENT_LEFT, -1.0, true)
+	UITheme.draw_numeral(_canvas, Vector2(bar_x + bar_w, bar_y + 36.0),
+			"%d%%" % roundi(_shown * 100.0), UITheme.SIZE_BODY, UITheme.TEXT, true, true)
