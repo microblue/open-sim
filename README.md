@@ -8,6 +8,11 @@ should make you better at flying a real RC airplane** — and it should look lik
 
 Both of those have to be true at once. Neither is allowed to eat the other.
 
+![The main menu: the aircraft on its stand, the loadout as four cards, and FLY one Enter away](Docs/screenshots/menu.jpg)
+
+**Download** for Windows, macOS and Linux from the
+[latest release](https://github.com/microblue/open-sim/releases/latest) - unzip and run.
+
 ---
 
 ## Transmitter
@@ -16,6 +21,31 @@ Put the radio in USB Joystick (HID) mode and plug it in before starting. An
 EdgeTX/OpenTX radio set up AETR is recognised and bound automatically - no
 wizard. Anything else: press `F3`. Full notes, including the Godot gamepad
 mapping and the throttle interlock, in [Docs/TRANSMITTER_SETUP.md](Docs/TRANSMITTER_SETUP.md).
+
+## What it looks like
+
+<table>
+<tr>
+<td width="50%"><img src="Docs/screenshots/setup.jpg" alt="First launch: transmitter or keyboard"><br><sub><b>First launch.</b> Transmitter or keyboard - a plugged-in radio is detected and named.</sub></td>
+<td width="50%"><img src="Docs/screenshots/setup-keys.jpg" alt="Try the keys"><br><sub><b>Try the keys.</b> Each key moves a stick on the drawn transmitter, and ticks once tried.</sub></td>
+</tr>
+<tr>
+<td><img src="Docs/screenshots/first-flight.jpg" alt="Guided first flight on the runway"><br><sub><b>Guided first flight.</b> Six steps, one hint at a time.</sub></td>
+<td><img src="Docs/screenshots/first-flight-turn.jpg" alt="Guided first flight, turning around"><br><sub><b>Step 4, turning around.</b> Crash here and you retry from step 4, not from the runway.</sub></td>
+</tr>
+<tr>
+<td><img src="Docs/screenshots/follow.jpg" alt="Follow view with the flight display"><br><sub><b>Follow view</b> (the default). Speed, attitude and height in one cluster; the speed bar is banded by this aircraft's own stall speed.</sub></td>
+<td><img src="Docs/screenshots/pilot-view.jpg" alt="Pilot's view, model far away"><br><sub><b>Pilot's view.</b> Brackets on a distant model, the way back to the field, and a hint to turn back.</sub></td>
+</tr>
+<tr>
+<td><img src="Docs/screenshots/crash.jpg" alt="Crash card"><br><sub><b>Why it crashed</b>, what to try next, and one click to fly again, retry in the air, or watch the replay.</sub></td>
+<td><img src="Docs/screenshots/aircraft.jpg" alt="Choosing an aircraft"><br><sub><b>Five aircraft</b>, described in plain words first and measured numbers second.</sub></td>
+</tr>
+<tr>
+<td><img src="Docs/screenshots/transmitter.jpg" alt="Transmitter setup check page"><br><sub><b>Transmitter setup.</b> Each channel's expected direction, live, with a reversed one flagged.</sub></td>
+<td><img src="Docs/screenshots/help.jpg" alt="Controls card"><br><sub><b>Controls</b> (<code>H</code>): the keys drawn, and every other key grouped by what it is for.</sub></td>
+</tr>
+</table>
 
 ## First flight
 
